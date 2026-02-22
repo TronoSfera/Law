@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: Legal Case Tracker API (FastAPI)
+  version: 1.3.0
+servers:
+  - url: http://localhost:8000
+components:
+  securitySchemes:
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    PublicCookieAuth:
+      type: apiKey
+      in: cookie
+      name: public_jwt
+paths:
+  /health:
+    get:
+      responses: { "200": { "description": "OK" } }
+  /api/public/quotes:
+    get:
+      responses: { "200": { "description": "OK" } }
+  /api/public/otp/send:
+    post:
+      responses: { "200": { "description": "OK" }, "429": { "description": "Too Many Requests" } }
+  /api/public/otp/verify:
+    post:
+      responses: { "200": { "description": "OK" }, "400": { "description": "Invalid code" } }
+  /api/admin/auth/login:
+    post:
+      responses: { "200": { "description": "OK" }, "401": { "description": "Unauthorized" } }
+  /api/admin/meta/{entity}:
+    get:
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: entity
+          required: true
+          schema: { type: string }
+      responses: { "200": { "description": "OK" } }
