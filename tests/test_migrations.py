@@ -96,6 +96,8 @@ class MigrationTests(unittest.TestCase):
             "admin_user_topics",
             "topic_status_transitions",
             "notifications",
+            "invoices",
+            "security_audit_log",
             "alembic_version",
         }
         tables = set(self.inspector.get_table_names())
@@ -104,7 +106,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0011_dashboard_financial_fields")
+        self.assertEqual(version, "0014_security_audit_log")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -125,6 +127,8 @@ class MigrationTests(unittest.TestCase):
             "admin_user_topics",
             "topic_status_transitions",
             "notifications",
+            "invoices",
+            "security_audit_log",
         }
         for table in tables:
             columns = {column["name"] for column in self.inspector.get_columns(table)}
@@ -171,3 +175,22 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("invoice_amount", columns)
         self.assertIn("paid_at", columns)
         self.assertIn("paid_by_admin_id", columns)
+
+    def test_invoices_contains_core_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("invoices")}
+        self.assertIn("request_id", columns)
+        self.assertIn("invoice_number", columns)
+        self.assertIn("status", columns)
+        self.assertIn("amount", columns)
+        self.assertIn("currency", columns)
+        self.assertIn("payer_display_name", columns)
+        self.assertIn("payer_details_encrypted", columns)
+        self.assertIn("issued_by_admin_user_id", columns)
+        self.assertIn("issued_by_role", columns)
+        self.assertIn("issued_at", columns)
+        self.assertIn("paid_at", columns)
+
+    def test_statuses_contains_billing_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("statuses")}
+        self.assertIn("kind", columns)
+        self.assertIn("invoice_template", columns)

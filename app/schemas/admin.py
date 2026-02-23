@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 class AdminLogin(BaseModel):
@@ -32,6 +32,22 @@ class StatusUpsert(BaseModel):
     enabled: bool = True
     sort_order: int = 0
     is_terminal: bool = False
+    kind: str = "DEFAULT"
+    invoice_template: Optional[str] = None
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        normalized = str(value or "DEFAULT").strip().upper()
+        if normalized not in {"DEFAULT", "INVOICE", "PAID"}:
+            raise ValueError('kind должен быть одним из: DEFAULT, INVOICE, PAID')
+        return normalized
+
+    @field_validator("invoice_template")
+    @classmethod
+    def normalize_template(cls, value: Optional[str]) -> Optional[str]:
+        text = str(value or "").strip()
+        return text or None
 
 
 class FormFieldUpsert(BaseModel):

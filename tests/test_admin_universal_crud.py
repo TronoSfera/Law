@@ -166,6 +166,41 @@ class AdminUniversalCrudTests(unittest.TestCase):
             actions = [row.action for row in db.query(AuditLog).filter(AuditLog.entity == "quotes", AuditLog.entity_id == quote_id).all()]
         self.assertEqual(set(actions), {"CREATE", "UPDATE", "DELETE"})
 
+    def test_admin_table_catalog_lists_db_tables_for_dynamic_references(self):
+        admin_headers = self._auth_headers("ADMIN")
+        response = self.client.get("/api/admin/crud/meta/tables", headers=admin_headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        tables = payload.get("tables") or []
+        self.assertTrue(tables)
+
+        by_table = {row["table"]: row for row in tables}
+        self.assertIn("requests", by_table)
+        self.assertIn("invoices", by_table)
+        self.assertIn("quotes", by_table)
+        self.assertIn("statuses", by_table)
+
+        self.assertEqual(by_table["requests"]["section"], "main")
+        self.assertEqual(by_table["invoices"]["section"], "main")
+        self.assertEqual(by_table["quotes"]["section"], "dictionary")
+        self.assertTrue(by_table["quotes"]["default_sort"])
+        self.assertEqual(by_table["quotes"]["label"], "Цитаты")
+        self.assertEqual(by_table["request_data_requirements"]["label"], "Требования данных заявки")
+        quotes_columns = {col["name"]: col for col in (by_table["quotes"].get("columns") or [])}
+        self.assertEqual(quotes_columns["author"]["label"], "Автор")
+        self.assertEqual(quotes_columns["sort_order"]["label"], "Порядок")
+        self.assertTrue(all(str(col.get("label") or "").strip() for col in (by_table["quotes"].get("columns") or [])))
+        for table_name, table_meta in by_table.items():
+            expected_section = "main" if table_name in {"requests", "invoices"} else "dictionary"
+            self.assertEqual(table_meta.get("section"), expected_section)
+
+        admin_users_cols = {col["name"] for col in (by_table["admin_users"].get("columns") or [])}
+        self.assertNotIn("password_hash", admin_users_cols)
+
+        lawyer_headers = self._auth_headers("LAWYER")
+        forbidden = self.client.get("/api/admin/crud/meta/tables", headers=lawyer_headers)
+        self.assertEqual(forbidden.status_code, 403)
+
     def test_lawyer_permissions_and_request_crud(self):
         lawyer_headers = self._auth_headers("LAWYER")
 

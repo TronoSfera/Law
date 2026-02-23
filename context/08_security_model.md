@@ -3,7 +3,7 @@
 ## Public
 - OTP verification required for request creation and request access
 - JWT in httpOnly cookie (7 days)
-- Rate limiting
+- Rate limiting by IP + phone + track number (OTP send/verify)
 - Protection from brute force
 
 ## Admin
@@ -14,8 +14,9 @@
 ## Data Protection
 - Messages and attachments from previous statuses are immutable after status change
 - All actions logged
+- HTTP hardening headers and request correlation (`X-Request-ID`) are added at middleware level
 
-## S3 & Personal Data (planned hardening)
+## S3 & Personal Data (baseline)
 - Files in S3 are treated as personal data (PII/ПДн)
 - Security baseline for implementation:
 - Access model:
@@ -37,3 +38,14 @@
 - Compliance posture:
 - map controls to РФ requirements for personal data protection and internal cyber policies
 - formalize security checklist for release gates (threat review + access review + logging verification)
+
+## Implemented Security Audit (`P26`)
+- Added dedicated table `security_audit_log` (migration `0014_security_audit_log`) with fields:
+- actor role/subject/ip, action, scope, object key, request/attachment IDs, allow/deny result, reason, details.
+- File operations now write security events:
+- `UPLOAD_INIT`, `UPLOAD_COMPLETE`, `DOWNLOAD_OBJECT` for admin and public upload/download flows.
+- Denied attempts are logged too (including RBAC denials and invalid object access).
+- RBAC hardening:
+- universal CRUD for `security_audit_log` is read-only for ADMIN (`query`, `read`), no update/delete to preserve immutability.
+- Suspicious activity signal:
+- repeated denied `DOWNLOAD_OBJECT` events per subject/IP in short window emit server warning log.

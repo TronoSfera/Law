@@ -18,6 +18,8 @@ from app.models.otp_session import OtpSession
 from app.models.quote import Quote
 from app.models.admin_user_topic import AdminUserTopic
 from app.models.notification import Notification
+from app.models.invoice import Invoice
+from app.models.security_audit_log import SecurityAuditLog
 
 config = context.config
 fileConfig(config.config_file_name)

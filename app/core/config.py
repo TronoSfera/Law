@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = "0"
     SMS_PROVIDER: str = "dummy"
     DATA_ENCRYPTION_SECRET: str = "change_me_data_encryption"
+    OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    OTP_SEND_RATE_LIMIT: int = 8
+    OTP_VERIFY_RATE_LIMIT: int = 20
 
     @property
     def cors_origins_list(self) -> List[str]:

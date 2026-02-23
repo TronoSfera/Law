@@ -29,6 +29,16 @@
     CLOSED: "Закрыта",
     REJECTED: "Отклонена",
   };
+  const INVOICE_STATUS_LABELS = {
+    WAITING_PAYMENT: "Ожидает оплату",
+    PAID: "Оплачен",
+    CANCELED: "Отменен",
+  };
+  const STATUS_KIND_LABELS = {
+    DEFAULT: "Обычный",
+    INVOICE: "Выставление счета",
+    PAID: "Оплачено",
+  };
 
   const REQUEST_UPDATE_EVENT_LABELS = {
     MESSAGE: "сообщение",
@@ -41,6 +51,11 @@
       table: "requests",
       endpoint: "/api/admin/crud/requests/query",
       sort: [{ field: "created_at", dir: "desc" }],
+    },
+    invoices: {
+      table: "invoices",
+      endpoint: "/api/admin/invoices/query",
+      sort: [{ field: "issued_at", dir: "desc" }],
     },
     quotes: {
       table: "quotes",
@@ -99,6 +114,31 @@
       },
     ])
   );
+  TABLE_MUTATION_CONFIG.invoices = {
+    create: "/api/admin/invoices",
+    update: (id) => "/api/admin/invoices/" + id,
+    delete: (id) => "/api/admin/invoices/" + id,
+  };
+  const TABLE_KEY_ALIASES = {
+    form_fields: "formFields",
+    topic_required_fields: "topicRequiredFields",
+    topic_data_templates: "topicDataTemplates",
+    topic_status_transitions: "statusTransitions",
+    admin_users: "users",
+    admin_user_topics: "userTopics",
+  };
+  const TABLE_UNALIASES = Object.fromEntries(Object.entries(TABLE_KEY_ALIASES).map(([table, alias]) => [alias, table]));
+  const KNOWN_CONFIG_TABLE_KEYS = new Set([
+    "quotes",
+    "topics",
+    "statuses",
+    "formFields",
+    "topicRequiredFields",
+    "topicDataTemplates",
+    "statusTransitions",
+    "users",
+    "userTopics",
+  ]);
 
   function createTableState() {
     return {
@@ -109,6 +149,29 @@
       showAll: false,
       rows: [],
     };
+  }
+
+  function humanizeKey(value) {
+    const text = String(value || "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) return "-";
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function metaKindToFilterType(kind) {
+    if (kind === "boolean") return "boolean";
+    if (kind === "number") return "number";
+    if (kind === "date" || kind === "datetime") return "date";
+    return "text";
+  }
+
+  function metaKindToRecordType(kind) {
+    if (kind === "boolean") return "boolean";
+    if (kind === "number") return "number";
+    if (kind === "json") return "json";
+    return "text";
   }
 
   function decodeJwtPayload(token) {
@@ -137,6 +200,14 @@
 
   function statusLabel(code) {
     return STATUS_LABELS[code] || code || "-";
+  }
+
+  function invoiceStatusLabel(code) {
+    return INVOICE_STATUS_LABELS[code] || code || "-";
+  }
+
+  function statusKindLabel(code) {
+    return STATUS_KIND_LABELS[code] || code || "-";
   }
 
   function boolLabel(value) {
@@ -821,6 +892,7 @@
 
     const [tables, setTables] = useState({
       requests: createTableState(),
+      invoices: createTableState(),
       quotes: createTableState(),
       topics: createTableState(),
       statuses: createTableState(),
@@ -831,6 +903,7 @@
       users: createTableState(),
       userTopics: createTableState(),
     });
+    const [tableCatalog, setTableCatalog] = useState([]);
 
     const [dictionaries, setDictionaries] = useState({
       topics: [],
@@ -851,7 +924,7 @@
       form: {},
     });
 
-    const [configActiveKey, setConfigActiveKey] = useState("quotes");
+    const [configActiveKey, setConfigActiveKey] = useState("");
     const [referencesExpanded, setReferencesExpanded] = useState(true);
 
     const [metaEntity, setMetaEntity] = useState("quotes");
@@ -924,6 +997,14 @@
         .map((item) => ({ value: item.code, label: (item.name || statusLabel(item.code)) + " (" + item.code + ")" }));
     }, [dictionaries.statuses]);
 
+    const getInvoiceStatusOptions = useCallback(() => {
+      return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name + " (" + code + ")" }));
+    }, []);
+
+    const getStatusKindOptions = useCallback(() => {
+      return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name + " (" + code + ")" }));
+    }, []);
+
     const getTopicOptions = useCallback(() => {
       return (dictionaries.topics || [])
         .filter((item) => item && item.code)
@@ -953,6 +1034,51 @@
       return Object.entries(ROLE_LABELS).map(([code, label]) => ({ value: code, label: label + " (" + code + ")" }));
     }, []);
 
+    const tableCatalogMap = useMemo(() => {
+      const map = {};
+      (tableCatalog || []).forEach((item) => {
+        if (!item || !item.key) return;
+        map[item.key] = item;
+      });
+      return map;
+    }, [tableCatalog]);
+
+    const dictionaryTableItems = useMemo(() => {
+      return (tableCatalog || [])
+        .filter((item) => item && item.section === "dictionary" && Array.isArray(item.actions) && item.actions.includes("query"))
+        .sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
+    }, [tableCatalog]);
+
+    const resolveTableConfig = useCallback(
+      (tableKey) => {
+        if (TABLE_SERVER_CONFIG[tableKey]) return TABLE_SERVER_CONFIG[tableKey];
+        const meta = tableCatalogMap[tableKey];
+        if (!meta || !meta.table) return null;
+        const tableName = String(meta.table || tableKey);
+        return {
+          table: tableName,
+          endpoint: String(meta.query_endpoint || ("/api/admin/crud/" + tableName + "/query")),
+          sort: Array.isArray(meta.default_sort) && meta.default_sort.length ? meta.default_sort : [{ field: "created_at", dir: "desc" }],
+        };
+      },
+      [tableCatalogMap]
+    );
+
+    const resolveMutationConfig = useCallback(
+      (tableKey) => {
+        if (TABLE_MUTATION_CONFIG[tableKey]) return TABLE_MUTATION_CONFIG[tableKey];
+        const meta = tableCatalogMap[tableKey];
+        if (!meta || !meta.table) return null;
+        const tableName = String(meta.table || tableKey);
+        return {
+          create: String(meta.create_endpoint || ("/api/admin/crud/" + tableName)),
+          update: (id) => String(meta.update_endpoint_template || ("/api/admin/crud/" + tableName + "/{id}")).replace("{id}", String(id)),
+          delete: (id) => String(meta.delete_endpoint_template || ("/api/admin/crud/" + tableName + "/{id}")).replace("{id}", String(id)),
+        };
+      },
+      [tableCatalogMap]
+    );
+
     const getFilterFields = useCallback(
       (tableKey) => {
         if (tableKey === "requests") {
@@ -965,6 +1091,20 @@
             { field: "invoice_amount", label: "Сумма счета", type: "number" },
             { field: "effective_rate", label: "Ставка", type: "number" },
             { field: "paid_at", label: "Оплачено", type: "date" },
+            { field: "created_at", label: "Дата создания", type: "date" },
+          ];
+        }
+        if (tableKey === "invoices") {
+          return [
+            { field: "invoice_number", label: "Номер счета", type: "text" },
+            { field: "status", label: "Статус", type: "enum", options: getInvoiceStatusOptions },
+            { field: "amount", label: "Сумма", type: "number" },
+            { field: "currency", label: "Валюта", type: "text" },
+            { field: "payer_display_name", label: "Плательщик", type: "text" },
+            { field: "request_id", label: "ID заявки", type: "text" },
+            { field: "issued_by_admin_user_id", label: "ID сотрудника", type: "text" },
+            { field: "issued_at", label: "Дата формирования", type: "date" },
+            { field: "paid_at", label: "Дата оплаты", type: "date" },
             { field: "created_at", label: "Дата создания", type: "date" },
           ];
         }
@@ -990,6 +1130,7 @@
           return [
             { field: "code", label: "Код", type: "text" },
             { field: "name", label: "Название", type: "text" },
+            { field: "kind", label: "Тип", type: "enum", options: getStatusKindOptions },
             { field: "enabled", label: "Активен", type: "boolean" },
             { field: "sort_order", label: "Порядок", type: "number" },
             { field: "is_terminal", label: "Терминальный", type: "boolean" },
@@ -1056,13 +1197,37 @@
             { field: "created_at", label: "Дата создания", type: "date" },
           ];
         }
-        return [];
+        const meta = tableCatalogMap[tableKey];
+        if (!meta || !Array.isArray(meta.columns)) return [];
+        return (meta.columns || [])
+          .filter((column) => column && column.name && column.filterable !== false)
+          .map((column) => {
+            const name = String(column.name);
+            const label = String(column.label || humanizeKey(name));
+            if (name === "topic_code") return { field: name, label, type: "reference", options: getTopicOptions };
+            if (name === "status_code" || name === "from_status" || name === "to_status") {
+              return { field: name, label, type: "reference", options: getStatusOptions };
+            }
+            if (name === "field_key") return { field: name, label, type: "reference", options: getFormFieldKeyOptions };
+            return { field: name, label, type: metaKindToFilterType(column.kind) };
+          });
       },
-      [getFormFieldKeyOptions, getFormFieldTypeOptions, getLawyerOptions, getRoleOptions, getStatusOptions, getTopicOptions]
+      [
+        tableCatalogMap,
+        getFormFieldKeyOptions,
+        getFormFieldTypeOptions,
+        getInvoiceStatusOptions,
+        getLawyerOptions,
+        getRoleOptions,
+        getStatusKindOptions,
+        getStatusOptions,
+        getTopicOptions,
+      ]
     );
 
     const getTableLabel = useCallback((tableKey) => {
       if (tableKey === "requests") return "Заявки";
+      if (tableKey === "invoices") return "Счета";
       if (tableKey === "quotes") return "Цитаты";
       if (tableKey === "topics") return "Темы";
       if (tableKey === "statuses") return "Статусы";
@@ -1072,8 +1237,11 @@
       if (tableKey === "statusTransitions") return "Переходы статусов";
       if (tableKey === "users") return "Пользователи";
       if (tableKey === "userTopics") return "Дополнительные темы юристов";
-      return "Таблица";
-    }, []);
+      const meta = tableCatalogMap[tableKey];
+      if (meta && meta.label) return String(meta.label);
+      const raw = TABLE_UNALIASES[tableKey] || tableKey;
+      return humanizeKey(raw);
+    }, [tableCatalogMap]);
 
     const getRecordFields = useCallback(
       (tableKey) => {
@@ -1092,6 +1260,17 @@
             { key: "paid_at", label: "Дата оплаты (ISO)", type: "text", optional: true, placeholder: "2026-02-23T12:00:00+03:00" },
             { key: "paid_by_admin_id", label: "Оплату подтвердил (ID)", type: "text", optional: true },
             { key: "total_attachments_bytes", label: "Размер вложений (байт)", type: "number", optional: true, defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "invoices") {
+          return [
+            { key: "request_track_number", label: "Номер заявки", type: "text", required: true, createOnly: true },
+            { key: "invoice_number", label: "Номер счета", type: "text", optional: true, placeholder: "Оставьте пустым для автогенерации" },
+            { key: "status", label: "Статус", type: "enum", required: true, options: getInvoiceStatusOptions, defaultValue: "WAITING_PAYMENT" },
+            { key: "amount", label: "Сумма", type: "number", required: true },
+            { key: "currency", label: "Валюта", type: "text", optional: true, defaultValue: "RUB" },
+            { key: "payer_display_name", label: "Плательщик (ФИО / компания)", type: "text", required: true },
+            { key: "payer_details", label: "Реквизиты (JSON, шифруется)", type: "json", optional: true, omitIfEmpty: true, placeholder: "{\"inn\":\"...\"}" },
           ];
         }
         if (tableKey === "quotes") {
@@ -1115,6 +1294,8 @@
           return [
             { key: "code", label: "Код", type: "text", required: true },
             { key: "name", label: "Название", type: "text", required: true },
+            { key: "kind", label: "Тип", type: "enum", required: true, options: getStatusKindOptions, defaultValue: "DEFAULT" },
+            { key: "invoice_template", label: "Шаблон счета", type: "textarea", optional: true, placeholder: "Доступные поля: {track_number}, {client_name}, {topic_code}, {amount}" },
             { key: "enabled", label: "Активен", type: "boolean", defaultValue: "true" },
             { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
             { key: "is_terminal", label: "Терминальный", type: "boolean", defaultValue: "false" },
@@ -1188,9 +1369,33 @@
             { key: "topic_code", label: "Дополнительная тема", type: "reference", required: true, options: getTopicOptions },
           ];
         }
-        return [];
+        const meta = tableCatalogMap[tableKey];
+        if (!meta || !Array.isArray(meta.columns)) return [];
+        return (meta.columns || [])
+          .filter((column) => column && column.name && column.editable)
+          .map((column) => {
+            const key = String(column.name || "");
+            const requiredOnCreate = Boolean(column.required_on_create);
+            return {
+              key,
+              label: String(column.label || humanizeKey(key)),
+              type: metaKindToRecordType(column.kind),
+              requiredOnCreate,
+              optional: !requiredOnCreate,
+            };
+          });
       },
-      [getFormFieldKeyOptions, getFormFieldTypeOptions, getLawyerOptions, getRoleOptions, getStatusOptions, getTopicOptions]
+      [
+        tableCatalogMap,
+        getFormFieldKeyOptions,
+        getFormFieldTypeOptions,
+        getInvoiceStatusOptions,
+        getLawyerOptions,
+        getRoleOptions,
+        getStatusKindOptions,
+        getStatusOptions,
+        getTopicOptions,
+      ]
     );
 
     const getFieldDef = useCallback(
@@ -1228,7 +1433,7 @@
     const loadTable = useCallback(
       async (tableKey, options, tokenOverride) => {
         const opts = options || {};
-        const config = TABLE_SERVER_CONFIG[tableKey];
+        const config = resolveTableConfig(tableKey);
         if (!config) return false;
 
         const current = tablesRef.current[tableKey] || createTableState();
@@ -1318,7 +1523,7 @@
             });
           }
 
-          if (tableKey === "formFields") {
+          if (tableKey === "formFields" || tableKey === "form_fields") {
             setDictionaries((prev) => {
               const set = new Set(DEFAULT_FORM_FIELD_TYPES);
               (next.rows || []).forEach((row) => {
@@ -1336,7 +1541,7 @@
             });
           }
 
-          if (tableKey === "users") {
+          if (tableKey === "users" || tableKey === "admin_users") {
             setDictionaries((prev) => {
               const map = new Map((prev.users || []).map((user) => [user.id, user]));
               (next.rows || []).forEach((row) => {
@@ -1359,12 +1564,16 @@
           return false;
         }
       },
-      [api, setStatus, setTableState]
+      [api, resolveTableConfig, setStatus, setTableState]
     );
 
     const loadCurrentConfigTable = useCallback(
       async (resetOffset, tokenOverride, keyOverride) => {
         const currentKey = keyOverride || configActiveKey;
+        if (!currentKey) {
+          setStatus("config", "Выберите справочник", "");
+          return false;
+        }
         setStatus("config", "Загрузка...", "");
         const ok = await loadTable(currentKey, { resetOffset: Boolean(resetOffset) }, tokenOverride);
         if (ok) {
@@ -1438,6 +1647,7 @@
         if (!(tokenOverride !== undefined ? tokenOverride : token)) return;
         if (section === "dashboard") return loadDashboard(tokenOverride);
         if (section === "requests") return loadTable("requests", {}, tokenOverride);
+        if (section === "invoices") return loadTable("invoices", {}, tokenOverride);
         if (section === "quotes" && canAccessSection(role, "quotes")) return loadTable("quotes", {}, tokenOverride);
         if (section === "config" && canAccessSection(role, "config")) return loadCurrentConfigTable(false, tokenOverride);
         if (section === "meta") return loadMeta(tokenOverride);
@@ -1451,18 +1661,28 @@
           ...prev,
           statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
         }));
+        setTableCatalog([]);
 
         if (roleOverride !== "ADMIN") return;
 
         try {
           const body = buildUniversalQuery([], [{ field: "sort_order", dir: "asc" }], 500, 0);
           const usersBody = buildUniversalQuery([], [{ field: "created_at", dir: "desc" }], 500, 0);
-          const [topicsData, statusesData, fieldsData, usersData] = await Promise.all([
+          const [catalogData, topicsData, statusesData, fieldsData, usersData] = await Promise.all([
+            api("/api/admin/crud/meta/tables", {}, tokenOverride),
             api("/api/admin/crud/topics/query", { method: "POST", body }, tokenOverride),
             api("/api/admin/crud/statuses/query", { method: "POST", body }, tokenOverride),
             api("/api/admin/crud/form_fields/query", { method: "POST", body }, tokenOverride),
             api("/api/admin/crud/admin_users/query", { method: "POST", body: usersBody }, tokenOverride),
           ]);
+          const catalogRows = (catalogData.tables || [])
+            .filter((row) => row && row.table)
+            .map((row) => {
+              const tableName = String(row.table || "");
+              const key = TABLE_KEY_ALIASES[tableName] || String(row.key || tableName);
+              return { ...row, key, table: tableName };
+            });
+          setTableCatalog(catalogRows);
 
           const statusesMap = new Map(Object.entries(STATUS_LABELS).map(([code, name]) => [code, { code, name }]));
           (statusesData.rows || []).forEach((row) => {
@@ -1630,6 +1850,7 @@
           if (field.type === "json") {
             const text = String(raw || "").trim();
             if (!text) {
+              if (field.omitIfEmpty) return;
               if (field.optional) payload[field.key] = null;
               else payload[field.key] = {};
               return;
@@ -1656,6 +1877,7 @@
         });
 
         if (tableKey === "requests" && !payload.extra_fields) payload.extra_fields = {};
+        if (tableKey === "invoices" && mode === "edit") delete payload.request_track_number;
         return payload;
       },
       [getRecordFields]
@@ -1666,7 +1888,7 @@
         event.preventDefault();
         const tableKey = recordModal.tableKey;
         if (!tableKey) return;
-        const endpoints = TABLE_MUTATION_CONFIG[tableKey];
+        const endpoints = resolveMutationConfig(tableKey);
         if (!endpoints) return;
         try {
           setStatus("recordForm", "Сохранение...", "");
@@ -1683,12 +1905,12 @@
           setStatus("recordForm", "Ошибка: " + error.message, "error");
         }
       },
-      [api, buildRecordPayload, closeRecordModal, loadTable, recordModal, setStatus]
+      [api, buildRecordPayload, closeRecordModal, loadTable, recordModal, resolveMutationConfig, setStatus]
     );
 
     const deleteRecord = useCallback(
       async (tableKey, id) => {
-        const endpoints = TABLE_MUTATION_CONFIG[tableKey];
+        const endpoints = resolveMutationConfig(tableKey);
         if (!endpoints) return;
         if (!confirm("Удалить запись?")) return;
         try {
@@ -1699,7 +1921,7 @@
           setStatus(tableKey, "Ошибка удаления: " + error.message, "error");
         }
       },
-      [api, loadTable, setStatus]
+      [api, loadTable, resolveMutationConfig, setStatus]
     );
 
     const claimRequest = useCallback(
@@ -1715,6 +1937,57 @@
         }
       },
       [api, loadTable, setStatus]
+    );
+
+    const openInvoiceRequest = useCallback(
+      async (row) => {
+        if (!row || !row.request_id) return;
+        try {
+          setActiveSection("requests");
+          await loadTable("requests", {});
+          await openRequestDetails(row.request_id);
+        } catch (_) {
+          // Ignore navigation errors and keep current state.
+        }
+      },
+      [loadTable, openRequestDetails]
+    );
+
+    const downloadInvoicePdf = useCallback(
+      async (row) => {
+        if (!row || !row.id || !token) return;
+        try {
+          setStatus("invoices", "Формируем PDF...", "");
+          const response = await fetch("/api/admin/invoices/" + row.id + "/pdf", {
+            headers: { Authorization: "Bearer " + token },
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            let payload = {};
+            try {
+              payload = text ? JSON.parse(text) : {};
+            } catch (_) {
+              payload = { raw: text };
+            }
+            const message = payload.detail || payload.error || payload.raw || ("HTTP " + response.status);
+            throw new Error(translateApiError(String(message)));
+          }
+          const blob = await response.blob();
+          const fileName = (row.invoice_number || "invoice") + ".pdf";
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+          setStatus("invoices", "PDF скачан", "ok");
+        } catch (error) {
+          setStatus("invoices", "Ошибка скачивания: " + error.message, "error");
+        }
+      },
+      [setStatus, token]
     );
 
     const openReassignModal = useCallback(
@@ -2025,10 +2298,12 @@
       setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
       setDashboardData({ scope: "", cards: [], byStatus: {}, lawyerLoads: [], myUnreadByEvent: {} });
       setMetaJson("");
-      setConfigActiveKey("quotes");
+      setConfigActiveKey("");
       setReferencesExpanded(true);
+      setTableCatalog([]);
       setTables({
         requests: createTableState(),
+        invoices: createTableState(),
         quotes: createTableState(),
         topics: createTableState(),
         statuses: createTableState(),
@@ -2110,6 +2385,15 @@
       };
     }, [bootstrapReferenceData, refreshSection, role, token]);
 
+    useEffect(() => {
+      if (!dictionaryTableItems.length) {
+        if (configActiveKey) setConfigActiveKey("");
+        return;
+      }
+      const hasCurrent = dictionaryTableItems.some((item) => item.key === configActiveKey);
+      if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
+    }, [configActiveKey, dictionaryTableItems]);
+
     const anyOverlayOpen = requestModal.open || recordModal.open || filterModal.open || reassignModal.open;
     useEffect(() => {
       document.body.classList.toggle("modal-open", anyOverlayOpen);
@@ -2132,6 +2416,7 @@
       return [
         { key: "dashboard", label: "Обзор" },
         { key: "requests", label: "Заявки" },
+        { key: "invoices", label: "Счета" },
         { key: "meta", label: "Метаданные" },
       ];
     }, []);
@@ -2145,9 +2430,38 @@
 
     const recordModalFields = useMemo(() => {
       const all = getRecordFields(recordModal.tableKey);
-      if (recordModal.mode !== "create") return all;
+      if (recordModal.mode !== "create") return all.filter((field) => !field.createOnly);
       return all.filter((field) => !field.autoCreate);
     }, [getRecordFields, recordModal.mode, recordModal.tableKey]);
+
+    const activeConfigTableState = useMemo(() => {
+      return tables[configActiveKey] || createTableState();
+    }, [configActiveKey, tables]);
+
+    const activeConfigMeta = useMemo(() => tableCatalogMap[configActiveKey] || null, [configActiveKey, tableCatalogMap]);
+    const activeConfigActions = useMemo(() => {
+      return Array.isArray(activeConfigMeta?.actions) ? activeConfigMeta.actions : [];
+    }, [activeConfigMeta]);
+    const canCreateInConfig = activeConfigActions.includes("create");
+    const canUpdateInConfig = activeConfigActions.includes("update");
+    const canDeleteInConfig = activeConfigActions.includes("delete");
+
+    const genericConfigHeaders = useMemo(() => {
+      if (!activeConfigMeta || !Array.isArray(activeConfigMeta.columns)) return [];
+      const headers = (activeConfigMeta.columns || [])
+        .filter((column) => column && column.name)
+        .map((column) => {
+          const name = String(column.name);
+          return {
+            key: name,
+            label: String(column.label || humanizeKey(name)),
+            sortable: Boolean(column.sortable !== false),
+            field: name,
+          };
+        });
+      if (canUpdateInConfig || canDeleteInConfig) headers.push({ key: "actions", label: "Действия" });
+      return headers;
+    }, [activeConfigMeta, canDeleteInConfig, canUpdateInConfig]);
 
     return (
       <>
@@ -2182,69 +2496,16 @@
                   </button>
                   {referencesExpanded ? (
                     <div className="menu-tree">
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "quotes" ? "active" : ""}
-                        onClick={() => selectConfigNode("quotes")}
-                      >
-                        Цитаты
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "topics" ? "active" : ""}
-                        onClick={() => selectConfigNode("topics")}
-                      >
-                        Темы
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "statuses" ? "active" : ""}
-                        onClick={() => selectConfigNode("statuses")}
-                      >
-                        Статусы
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "formFields" ? "active" : ""}
-                        onClick={() => selectConfigNode("formFields")}
-                      >
-                        Поля формы
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "topicRequiredFields" ? "active" : ""}
-                        onClick={() => selectConfigNode("topicRequiredFields")}
-                      >
-                        Обязательные поля темы
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "topicDataTemplates" ? "active" : ""}
-                        onClick={() => selectConfigNode("topicDataTemplates")}
-                      >
-                        Шаблоны дозапроса
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "statusTransitions" ? "active" : ""}
-                        onClick={() => selectConfigNode("statusTransitions")}
-                      >
-                        Переходы статусов
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "users" ? "active" : ""}
-                        onClick={() => selectConfigNode("users")}
-                      >
-                        Пользователи
-                      </button>
-                      <button
-                        type="button"
-                        className={activeSection === "config" && configActiveKey === "userTopics" ? "active" : ""}
-                        onClick={() => selectConfigNode("userTopics")}
-                      >
-                        Темы юристов
-                      </button>
+                      {dictionaryTableItems.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className={activeSection === "config" && configActiveKey === item.key ? "active" : ""}
+                          onClick={() => selectConfigNode(item.key)}
+                        >
+                          {getTableLabel(item.key)}
+                        </button>
+                      ))}
                     </div>
                   ) : null}
                 </>
@@ -2422,6 +2683,81 @@
               <StatusLine status={getStatus("requests")} />
             </Section>
 
+            <Section active={activeSection === "invoices"} id="section-invoices">
+              <div className="section-head">
+                <div>
+                  <h2>Счета</h2>
+                  <p className="muted">Выставленные счета клиентам, статусы оплаты и выгрузка PDF.</p>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button className="btn secondary" type="button" onClick={() => loadTable("invoices", { resetOffset: true })}>
+                    Обновить
+                  </button>
+                  <button className="btn" type="button" onClick={() => openCreateRecordModal("invoices")}>
+                    Новый счет
+                  </button>
+                </div>
+              </div>
+              <FilterToolbar
+                filters={tables.invoices.filters}
+                onOpen={() => openFilterModal("invoices")}
+                onRemove={(index) => removeFilterChip("invoices", index)}
+                onEdit={(index) => openFilterEditModal("invoices", index)}
+                getChipLabel={(clause) => {
+                  const fieldDef = getFieldDef("invoices", clause.field);
+                  return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("invoices", clause);
+                }}
+              />
+              <DataTable
+                headers={[
+                  { key: "invoice_number", label: "Номер", sortable: true, field: "invoice_number" },
+                  { key: "status", label: "Статус", sortable: true, field: "status" },
+                  { key: "amount", label: "Сумма", sortable: true, field: "amount" },
+                  { key: "payer_display_name", label: "Плательщик", sortable: true, field: "payer_display_name" },
+                  { key: "request_track_number", label: "Заявка" },
+                  { key: "issued_by_name", label: "Выставил", sortable: true, field: "issued_by_admin_user_id" },
+                  { key: "issued_at", label: "Сформирован", sortable: true, field: "issued_at" },
+                  { key: "paid_at", label: "Оплачен", sortable: true, field: "paid_at" },
+                  { key: "actions", label: "Действия" },
+                ]}
+                rows={tables.invoices.rows}
+                emptyColspan={9}
+                onSort={(field) => toggleTableSort("invoices", field)}
+                sortClause={(tables.invoices.sort && tables.invoices.sort[0]) || TABLE_SERVER_CONFIG.invoices.sort[0]}
+                renderRow={(row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <code>{row.invoice_number || "-"}</code>
+                    </td>
+                    <td>{row.status_label || invoiceStatusLabel(row.status)}</td>
+                    <td>{row.amount == null ? "-" : String(row.amount) + " " + String(row.currency || "RUB")}</td>
+                    <td>{row.payer_display_name || "-"}</td>
+                    <td>{row.request_track_number || row.request_id || "-"}</td>
+                    <td>{row.issued_by_name || "-"}</td>
+                    <td>{fmtDate(row.issued_at)}</td>
+                    <td>{fmtDate(row.paid_at)}</td>
+                    <td>
+                      <div className="table-actions">
+                        <IconButton icon="👁" tooltip="Открыть заявку" onClick={() => openInvoiceRequest(row)} />
+                        <IconButton icon="⬇" tooltip="Скачать PDF" onClick={() => downloadInvoicePdf(row)} />
+                        <IconButton icon="✎" tooltip="Редактировать счет" onClick={() => openEditRecordModal("invoices", row)} />
+                        {role === "ADMIN" ? (
+                          <IconButton icon="🗑" tooltip="Удалить счет" onClick={() => deleteRecord("invoices", row.id)} tone="danger" />
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              />
+              <TablePager
+                tableState={tables.invoices}
+                onPrev={() => loadPrevPage("invoices")}
+                onNext={() => loadNextPage("invoices")}
+                onLoadAll={() => loadAllRows("invoices")}
+              />
+              <StatusLine status={getStatus("invoices")} />
+            </Section>
+
             <Section active={activeSection === "quotes"} id="section-quotes">
               <div className="section-head">
                 <div>
@@ -2501,13 +2837,15 @@
                 <div className="config-panel">
                   <div className="block">
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                      <h3 style={{ margin: 0 }}>{getTableLabel(configActiveKey)}</h3>
-                      <button className="btn" type="button" onClick={() => openCreateRecordModal(configActiveKey)}>
-                        Добавить
-                      </button>
+                      <h3 style={{ margin: 0 }}>{configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран"}</h3>
+                      {canCreateInConfig && configActiveKey ? (
+                        <button className="btn" type="button" onClick={() => openCreateRecordModal(configActiveKey)}>
+                          Добавить
+                        </button>
+                      ) : null}
                     </div>
                     <FilterToolbar
-                      filters={tables[configActiveKey].filters}
+                      filters={activeConfigTableState.filters}
                       onOpen={() => openFilterModal(configActiveKey)}
                       onRemove={(index) => removeFilterChip(configActiveKey, index)}
                       onEdit={(index) => openFilterEditModal(configActiveKey, index)}
@@ -2591,13 +2929,15 @@
                         headers={[
                           { key: "code", label: "Код", sortable: true, field: "code" },
                           { key: "name", label: "Название", sortable: true, field: "name" },
+                          { key: "kind", label: "Тип", sortable: true, field: "kind" },
                           { key: "enabled", label: "Активен", sortable: true, field: "enabled" },
                           { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
                           { key: "is_terminal", label: "Терминальный", sortable: true, field: "is_terminal" },
+                          { key: "invoice_template", label: "Шаблон счета" },
                           { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.statuses.rows}
-                        emptyColspan={6}
+                        emptyColspan={8}
                         onSort={(field) => toggleTableSort("statuses", field)}
                         sortClause={(tables.statuses.sort && tables.statuses.sort[0]) || TABLE_SERVER_CONFIG.statuses.sort[0]}
                         renderRow={(row) => (
@@ -2606,9 +2946,11 @@
                               <code>{row.code || "-"}</code>
                             </td>
                             <td>{row.name || "-"}</td>
+                            <td>{statusKindLabel(row.kind)}</td>
                             <td>{boolLabel(row.enabled)}</td>
                             <td>{String(row.sort_order ?? 0)}</td>
                             <td>{boolLabel(row.is_terminal)}</td>
+                            <td>{row.invoice_template || "-"}</td>
                             <td>
                               <div className="table-actions">
                                 <IconButton icon="✎" tooltip="Редактировать статус" onClick={() => openEditRecordModal("statuses", row)} />
@@ -2866,8 +3208,44 @@
                         }}
                       />
                     ) : null}
+                    {configActiveKey && !KNOWN_CONFIG_TABLE_KEYS.has(configActiveKey) ? (
+                      <DataTable
+                        headers={genericConfigHeaders}
+                        rows={activeConfigTableState.rows}
+                        emptyColspan={Math.max(1, genericConfigHeaders.length)}
+                        onSort={(field) => toggleTableSort(configActiveKey, field)}
+                        sortClause={
+                          (activeConfigTableState.sort && activeConfigTableState.sort[0]) ||
+                          ((resolveTableConfig(configActiveKey)?.sort || [])[0])
+                        }
+                        renderRow={(row) => (
+                          <tr key={row.id || JSON.stringify(row)}>
+                            {(activeConfigMeta?.columns || []).map((column) => {
+                              const key = String(column.name || "");
+                              const value = row[key];
+                              if (column.kind === "boolean") return <td key={key}>{boolLabel(Boolean(value))}</td>;
+                              if (column.kind === "date" || column.kind === "datetime") return <td key={key}>{fmtDate(value)}</td>;
+                              if (column.kind === "json") return <td key={key}>{value == null ? "-" : JSON.stringify(value)}</td>;
+                              return <td key={key}>{value == null || value === "" ? "-" : String(value)}</td>;
+                            })}
+                            {canUpdateInConfig || canDeleteInConfig ? (
+                              <td>
+                                <div className="table-actions">
+                                  {canUpdateInConfig ? (
+                                    <IconButton icon="✎" tooltip="Редактировать запись" onClick={() => openEditRecordModal(configActiveKey, row)} />
+                                  ) : null}
+                                  {canDeleteInConfig ? (
+                                    <IconButton icon="🗑" tooltip="Удалить запись" onClick={() => deleteRecord(configActiveKey, row.id)} tone="danger" />
+                                  ) : null}
+                                </div>
+                              </td>
+                            ) : null}
+                          </tr>
+                        )}
+                      />
+                    ) : null}
                     <TablePager
-                      tableState={tables[configActiveKey]}
+                      tableState={activeConfigTableState}
                       onPrev={() => loadPrevPage(configActiveKey)}
                       onNext={() => loadNextPage(configActiveKey)}
                       onLoadAll={() => loadAllRows(configActiveKey)}

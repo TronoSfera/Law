@@ -41,14 +41,17 @@ def auto_assign_unclaimed():
         lawyer_load: dict[str, int] = {str(lawyer_id): int(count) for lawyer_id, count in active_load_rows if lawyer_id}
 
         active_lawyers = (
-            db.query(AdminUser.id, AdminUser.primary_topic_code)
+            db.query(AdminUser.id, AdminUser.primary_topic_code, AdminUser.default_rate)
             .filter(AdminUser.role == "LAWYER", AdminUser.is_active.is_(True))
             .all()
         )
-        active_lawyer_ids = {str(lawyer_id) for lawyer_id, _ in active_lawyers if lawyer_id}
+        active_lawyer_ids = {str(lawyer_id) for lawyer_id, _, _ in active_lawyers if lawyer_id}
+        lawyer_default_rate: dict[str, float | None] = {
+            str(lawyer_id): default_rate for lawyer_id, _, default_rate in active_lawyers if lawyer_id
+        }
 
         primary_by_topic: dict[str, list[str]] = {}
-        for lawyer_id, primary_topic_code in active_lawyers:
+        for lawyer_id, primary_topic_code, _ in active_lawyers:
             topic_code = str(primary_topic_code or "").strip()
             if not topic_code:
                 continue
@@ -96,6 +99,8 @@ def auto_assign_unclaimed():
                 continue
             selected = min(candidates, key=lambda lawyer_id: (lawyer_load.get(lawyer_id, 0), lawyer_id))
             req.assigned_lawyer_id = selected
+            if req.effective_rate is None:
+                req.effective_rate = lawyer_default_rate.get(selected)
             req.updated_at = now
             req.responsible = "Администратор системы"
             lawyer_load[selected] = lawyer_load.get(selected, 0) + 1

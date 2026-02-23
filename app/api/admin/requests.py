@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import update
+from sqlalchemy import case, update
 
 from app.db.session import get_db
 from app.core.deps import require_role
@@ -30,9 +30,11 @@ from app.services.request_read_markers import EVENT_STATUS, clear_unread_for_law
 from app.services.request_status import actor_admin_uuid, apply_status_change_effects
 from app.services.status_flow import transition_allowed_for_topic
 from app.services.request_templates import validate_required_topic_fields_or_400
+from app.services.billing_flow import apply_billing_transition_effects
 from app.services.universal_query import apply_universal_query
 
 router = APIRouter()
+REQUEST_FINANCIAL_FIELDS = {"effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"}
 
 
 def _request_uuid_or_400(request_id: str) -> UUID:
@@ -40,6 +42,17 @@ def _request_uuid_or_400(request_id: str) -> UUID:
         return UUID(str(request_id))
     except ValueError:
         raise HTTPException(status_code=400, detail="Некорректный идентификатор заявки")
+
+
+def _active_lawyer_or_400(db: Session, lawyer_id: str) -> AdminUser:
+    try:
+        lawyer_uuid = UUID(str(lawyer_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Некорректный идентификатор юриста")
+    lawyer = db.get(AdminUser, lawyer_uuid)
+    if not lawyer or str(lawyer.role or "").upper() != "LAWYER" or not bool(lawyer.is_active):
+        raise HTTPException(status_code=400, detail="Можно назначить только активного юриста")
+    return lawyer
 
 
 def _ensure_lawyer_can_manage_request_or_403(admin: dict, req: Request) -> None:
@@ -99,11 +112,23 @@ def query_requests(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depe
 
 @router.post("", status_code=201)
 def create_request(payload: RequestAdminCreate, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER"))):
-    if str(admin.get("role") or "").upper() == "LAWYER" and str(payload.assigned_lawyer_id or "").strip():
+    actor_role = str(admin.get("role") or "").upper()
+    if actor_role == "LAWYER" and str(payload.assigned_lawyer_id or "").strip():
         raise HTTPException(status_code=403, detail="Юрист не может назначать заявку при создании")
+    if actor_role == "LAWYER":
+        forbidden_fields = sorted(REQUEST_FINANCIAL_FIELDS.intersection(set(payload.model_fields_set)))
+        if forbidden_fields:
+            raise HTTPException(status_code=403, detail="Юрист не может изменять финансовые поля заявки")
     validate_required_topic_fields_or_400(db, payload.topic_code, payload.extra_fields)
     track = payload.track_number or f"TRK-{uuid4().hex[:10].upper()}"
     responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    assigned_lawyer_id = str(payload.assigned_lawyer_id or "").strip() or None
+    effective_rate = payload.effective_rate
+    if assigned_lawyer_id:
+        assigned_lawyer = _active_lawyer_or_400(db, assigned_lawyer_id)
+        assigned_lawyer_id = str(assigned_lawyer.id)
+        if effective_rate is None:
+            effective_rate = assigned_lawyer.default_rate
     row = Request(
         track_number=track,
         client_name=payload.client_name,
@@ -112,8 +137,8 @@ def create_request(payload: RequestAdminCreate, db: Session = Depends(get_db), a
         status_code=payload.status_code,
         description=payload.description,
         extra_fields=payload.extra_fields,
-        assigned_lawyer_id=payload.assigned_lawyer_id,
-        effective_rate=payload.effective_rate,
+        assigned_lawyer_id=assigned_lawyer_id,
+        effective_rate=effective_rate,
         invoice_amount=payload.invoice_amount,
         paid_at=payload.paid_at,
         paid_by_admin_id=payload.paid_by_admin_id,
@@ -142,26 +167,49 @@ def update_request(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     changes = payload.model_dump(exclude_unset=True)
-    if str(admin.get("role") or "").upper() == "LAWYER" and "assigned_lawyer_id" in changes:
-        raise HTTPException(status_code=403, detail='Назначение доступно только через действие "Взять в работу"')
+    actor_role = str(admin.get("role") or "").upper()
+    if actor_role == "LAWYER":
+        if "assigned_lawyer_id" in changes:
+            raise HTTPException(status_code=403, detail='Назначение доступно только через действие "Взять в работу"')
+        forbidden_fields = sorted(REQUEST_FINANCIAL_FIELDS.intersection(set(changes.keys())))
+        if forbidden_fields:
+            raise HTTPException(status_code=403, detail="Юрист не может изменять финансовые поля заявки")
+    if actor_role == "ADMIN" and "assigned_lawyer_id" in changes:
+        assigned_raw = changes.get("assigned_lawyer_id")
+        if assigned_raw is None or not str(assigned_raw).strip():
+            changes["assigned_lawyer_id"] = None
+        else:
+            assigned_lawyer = _active_lawyer_or_400(db, str(assigned_raw))
+            changes["assigned_lawyer_id"] = str(assigned_lawyer.id)
+            if row.effective_rate is None and "effective_rate" not in changes:
+                changes["effective_rate"] = assigned_lawyer.default_rate
     old_status = str(row.status_code or "")
     responsible = str(admin.get("email") or "").strip() or "Администратор системы"
     for key, value in changes.items():
         setattr(row, key, value)
     if "status_code" in changes and str(changes.get("status_code") or "") != old_status:
+        next_status = str(changes.get("status_code") or "")
         if not transition_allowed_for_topic(
             db,
             str(row.topic_code or "").strip() or None,
             old_status,
-            str(changes.get("status_code") or ""),
+            next_status,
         ):
             raise HTTPException(status_code=400, detail="Переход статуса не разрешен для выбранной темы")
+        billing_note = apply_billing_transition_effects(
+            db,
+            req=row,
+            from_status=old_status,
+            to_status=next_status,
+            admin=admin,
+            responsible=responsible,
+        )
         mark_unread_for_client(row, EVENT_STATUS)
         apply_status_change_effects(
             db,
             row,
             from_status=old_status,
-            to_status=str(changes.get("status_code") or ""),
+            to_status=next_status,
             admin=admin,
             responsible=responsible,
         )
@@ -171,7 +219,7 @@ def update_request(
             event_type=NOTIFICATION_EVENT_STATUS,
             actor_role=str(admin.get("role") or "").upper() or "ADMIN",
             actor_admin_user_id=admin.get("sub"),
-            body=f"{old_status} -> {str(changes.get('status_code') or '').strip()}",
+            body=(f"{old_status} -> {next_status}" + (f"\n{billing_note}" if billing_note else "")),
             responsible=responsible,
         )
     try:
@@ -263,6 +311,7 @@ def claim_request(request_id: str, db: Session = Depends(get_db), admin=Depends(
         .where(Request.id == request_uuid, Request.assigned_lawyer_id.is_(None))
         .values(
             assigned_lawyer_id=str(lawyer_uuid),
+            effective_rate=case((Request.effective_rate.is_(None), lawyer.default_rate), else_=Request.effective_rate),
             updated_at=now,
             responsible=responsible,
         )
@@ -346,6 +395,7 @@ def reassign_request(
         .where(Request.id == request_uuid, Request.assigned_lawyer_id == old_assigned)
         .values(
             assigned_lawyer_id=str(lawyer_uuid),
+            effective_rate=case((Request.effective_rate.is_(None), target_lawyer.default_rate), else_=Request.effective_rate),
             updated_at=now,
             responsible=responsible,
         )

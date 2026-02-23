@@ -28,6 +28,16 @@
       CLOSED: "\u0417\u0430\u043A\u0440\u044B\u0442\u0430",
       REJECTED: "\u041E\u0442\u043A\u043B\u043E\u043D\u0435\u043D\u0430"
     };
+    const INVOICE_STATUS_LABELS = {
+      WAITING_PAYMENT: "\u041E\u0436\u0438\u0434\u0430\u0435\u0442 \u043E\u043F\u043B\u0430\u0442\u0443",
+      PAID: "\u041E\u043F\u043B\u0430\u0447\u0435\u043D",
+      CANCELED: "\u041E\u0442\u043C\u0435\u043D\u0435\u043D"
+    };
+    const STATUS_KIND_LABELS = {
+      DEFAULT: "\u041E\u0431\u044B\u0447\u043D\u044B\u0439",
+      INVOICE: "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u0441\u0447\u0435\u0442\u0430",
+      PAID: "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E"
+    };
     const REQUEST_UPDATE_EVENT_LABELS = {
       MESSAGE: "\u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435",
       ATTACHMENT: "\u0444\u0430\u0439\u043B",
@@ -38,6 +48,11 @@
         table: "requests",
         endpoint: "/api/admin/crud/requests/query",
         sort: [{ field: "created_at", dir: "desc" }]
+      },
+      invoices: {
+        table: "invoices",
+        endpoint: "/api/admin/invoices/query",
+        sort: [{ field: "issued_at", dir: "desc" }]
       },
       quotes: {
         table: "quotes",
@@ -95,6 +110,31 @@
         }
       ])
     );
+    TABLE_MUTATION_CONFIG.invoices = {
+      create: "/api/admin/invoices",
+      update: (id) => "/api/admin/invoices/" + id,
+      delete: (id) => "/api/admin/invoices/" + id
+    };
+    const TABLE_KEY_ALIASES = {
+      form_fields: "formFields",
+      topic_required_fields: "topicRequiredFields",
+      topic_data_templates: "topicDataTemplates",
+      topic_status_transitions: "statusTransitions",
+      admin_users: "users",
+      admin_user_topics: "userTopics"
+    };
+    const TABLE_UNALIASES = Object.fromEntries(Object.entries(TABLE_KEY_ALIASES).map(([table, alias]) => [alias, table]));
+    const KNOWN_CONFIG_TABLE_KEYS = /* @__PURE__ */ new Set([
+      "quotes",
+      "topics",
+      "statuses",
+      "formFields",
+      "topicRequiredFields",
+      "topicDataTemplates",
+      "statusTransitions",
+      "users",
+      "userTopics"
+    ]);
     function createTableState() {
       return {
         filters: [],
@@ -104,6 +144,23 @@
         showAll: false,
         rows: []
       };
+    }
+    function humanizeKey(value) {
+      const text = String(value || "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+      if (!text) return "-";
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+    function metaKindToFilterType(kind) {
+      if (kind === "boolean") return "boolean";
+      if (kind === "number") return "number";
+      if (kind === "date" || kind === "datetime") return "date";
+      return "text";
+    }
+    function metaKindToRecordType(kind) {
+      if (kind === "boolean") return "boolean";
+      if (kind === "number") return "number";
+      if (kind === "json") return "json";
+      return "text";
     }
     function decodeJwtPayload(token) {
       try {
@@ -125,6 +182,12 @@
     }
     function statusLabel(code) {
       return STATUS_LABELS[code] || code || "-";
+    }
+    function invoiceStatusLabel(code) {
+      return INVOICE_STATUS_LABELS[code] || code || "-";
+    }
+    function statusKindLabel(code) {
+      return STATUS_KIND_LABELS[code] || code || "-";
     }
     function boolLabel(value) {
       return value ? "\u0414\u0430" : "\u041D\u0435\u0442";
@@ -206,6 +269,10 @@
         \u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435: row.description || null,
         "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043F\u043E\u043B\u044F": row.extra_fields || {},
         "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0439 \u044E\u0440\u0438\u0441\u0442 (ID)": row.assigned_lawyer_id || null,
+        "\u0421\u0442\u0430\u0432\u043A\u0430 (\u0444\u0438\u043A\u0441.)": row.effective_rate ?? null,
+        "\u0421\u0443\u043C\u043C\u0430 \u0441\u0447\u0435\u0442\u0430": row.invoice_amount ?? null,
+        "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E": row.paid_at ? fmtDate(row.paid_at) : null,
+        "\u041E\u043F\u043B\u0430\u0442\u0443 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u043B (ID)": row.paid_by_admin_id || null,
         "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C": boolLabel(Boolean(row.client_has_unread_updates)),
         "\u0422\u0438\u043F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u0434\u043B\u044F \u043A\u043B\u0438\u0435\u043D\u0442\u0430": row.client_unread_event_type ? REQUEST_UPDATE_EVENT_LABELS[row.client_unread_event_type] || row.client_unread_event_type : null,
         "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u044E\u0440\u0438\u0441\u0442\u043E\u043C": boolLabel(Boolean(row.lawyer_has_unread_updates)),
@@ -467,9 +534,16 @@
       const [role, setRole] = useState("");
       const [email, setEmail] = useState("");
       const [activeSection, setActiveSection] = useState("dashboard");
-      const [dashboardData, setDashboardData] = useState({ cards: [], byStatus: {}, lawyerLoads: [] });
+      const [dashboardData, setDashboardData] = useState({
+        scope: "",
+        cards: [],
+        byStatus: {},
+        lawyerLoads: [],
+        myUnreadByEvent: {}
+      });
       const [tables, setTables] = useState({
         requests: createTableState(),
+        invoices: createTableState(),
         quotes: createTableState(),
         topics: createTableState(),
         statuses: createTableState(),
@@ -480,6 +554,7 @@
         users: createTableState(),
         userTopics: createTableState()
       });
+      const [tableCatalog, setTableCatalog] = useState([]);
       const [dictionaries, setDictionaries] = useState({
         topics: [],
         statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
@@ -496,7 +571,7 @@
         rowId: null,
         form: {}
       });
-      const [configActiveKey, setConfigActiveKey] = useState("quotes");
+      const [configActiveKey, setConfigActiveKey] = useState("");
       const [referencesExpanded, setReferencesExpanded] = useState(true);
       const [metaEntity, setMetaEntity] = useState("quotes");
       const [metaJson, setMetaJson] = useState("");
@@ -554,6 +629,12 @@
       const getStatusOptions = useCallback(() => {
         return (dictionaries.statuses || []).filter((item) => item && item.code).map((item) => ({ value: item.code, label: (item.name || statusLabel(item.code)) + " (" + item.code + ")" }));
       }, [dictionaries.statuses]);
+      const getInvoiceStatusOptions = useCallback(() => {
+        return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name + " (" + code + ")" }));
+      }, []);
+      const getStatusKindOptions = useCallback(() => {
+        return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name + " (" + code + ")" }));
+      }, []);
       const getTopicOptions = useCallback(() => {
         return (dictionaries.topics || []).filter((item) => item && item.code).map((item) => ({ value: item.code, label: (item.name || item.code) + " (" + item.code + ")" }));
       }, [dictionaries.topics]);
@@ -572,6 +653,45 @@
       const getRoleOptions = useCallback(() => {
         return Object.entries(ROLE_LABELS).map(([code, label]) => ({ value: code, label: label + " (" + code + ")" }));
       }, []);
+      const tableCatalogMap = useMemo(() => {
+        const map = {};
+        (tableCatalog || []).forEach((item) => {
+          if (!item || !item.key) return;
+          map[item.key] = item;
+        });
+        return map;
+      }, [tableCatalog]);
+      const dictionaryTableItems = useMemo(() => {
+        return (tableCatalog || []).filter((item) => item && item.section === "dictionary" && Array.isArray(item.actions) && item.actions.includes("query")).sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
+      }, [tableCatalog]);
+      const resolveTableConfig = useCallback(
+        (tableKey) => {
+          if (TABLE_SERVER_CONFIG[tableKey]) return TABLE_SERVER_CONFIG[tableKey];
+          const meta = tableCatalogMap[tableKey];
+          if (!meta || !meta.table) return null;
+          const tableName = String(meta.table || tableKey);
+          return {
+            table: tableName,
+            endpoint: String(meta.query_endpoint || "/api/admin/crud/" + tableName + "/query"),
+            sort: Array.isArray(meta.default_sort) && meta.default_sort.length ? meta.default_sort : [{ field: "created_at", dir: "desc" }]
+          };
+        },
+        [tableCatalogMap]
+      );
+      const resolveMutationConfig = useCallback(
+        (tableKey) => {
+          if (TABLE_MUTATION_CONFIG[tableKey]) return TABLE_MUTATION_CONFIG[tableKey];
+          const meta = tableCatalogMap[tableKey];
+          if (!meta || !meta.table) return null;
+          const tableName = String(meta.table || tableKey);
+          return {
+            create: String(meta.create_endpoint || "/api/admin/crud/" + tableName),
+            update: (id) => String(meta.update_endpoint_template || "/api/admin/crud/" + tableName + "/{id}").replace("{id}", String(id)),
+            delete: (id) => String(meta.delete_endpoint_template || "/api/admin/crud/" + tableName + "/{id}").replace("{id}", String(id))
+          };
+        },
+        [tableCatalogMap]
+      );
       const getFilterFields = useCallback(
         (tableKey) => {
           if (tableKey === "requests") {
@@ -581,6 +701,23 @@
               { field: "client_phone", label: "\u0422\u0435\u043B\u0435\u0444\u043E\u043D", type: "text" },
               { field: "status_code", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "reference", options: getStatusOptions },
               { field: "topic_code", label: "\u0422\u0435\u043C\u0430", type: "reference", options: getTopicOptions },
+              { field: "invoice_amount", label: "\u0421\u0443\u043C\u043C\u0430 \u0441\u0447\u0435\u0442\u0430", type: "number" },
+              { field: "effective_rate", label: "\u0421\u0442\u0430\u0432\u043A\u0430", type: "number" },
+              { field: "paid_at", label: "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E", type: "date" },
+              { field: "created_at", label: "\u0414\u0430\u0442\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F", type: "date" }
+            ];
+          }
+          if (tableKey === "invoices") {
+            return [
+              { field: "invoice_number", label: "\u041D\u043E\u043C\u0435\u0440 \u0441\u0447\u0435\u0442\u0430", type: "text" },
+              { field: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "enum", options: getInvoiceStatusOptions },
+              { field: "amount", label: "\u0421\u0443\u043C\u043C\u0430", type: "number" },
+              { field: "currency", label: "\u0412\u0430\u043B\u044E\u0442\u0430", type: "text" },
+              { field: "payer_display_name", label: "\u041F\u043B\u0430\u0442\u0435\u043B\u044C\u0449\u0438\u043A", type: "text" },
+              { field: "request_id", label: "ID \u0437\u0430\u044F\u0432\u043A\u0438", type: "text" },
+              { field: "issued_by_admin_user_id", label: "ID \u0441\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A\u0430", type: "text" },
+              { field: "issued_at", label: "\u0414\u0430\u0442\u0430 \u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F", type: "date" },
+              { field: "paid_at", label: "\u0414\u0430\u0442\u0430 \u043E\u043F\u043B\u0430\u0442\u044B", type: "date" },
               { field: "created_at", label: "\u0414\u0430\u0442\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F", type: "date" }
             ];
           }
@@ -606,6 +743,7 @@
             return [
               { field: "code", label: "\u041A\u043E\u0434", type: "text" },
               { field: "name", label: "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435", type: "text" },
+              { field: "kind", label: "\u0422\u0438\u043F", type: "enum", options: getStatusKindOptions },
               { field: "enabled", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", type: "boolean" },
               { field: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", type: "number" },
               { field: "is_terminal", label: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439", type: "boolean" }
@@ -646,6 +784,7 @@
               { field: "topic_code", label: "\u0422\u0435\u043C\u0430", type: "reference", options: getTopicOptions },
               { field: "from_status", label: "\u0418\u0437 \u0441\u0442\u0430\u0442\u0443\u0441\u0430", type: "reference", options: getStatusOptions },
               { field: "to_status", label: "\u0412 \u0441\u0442\u0430\u0442\u0443\u0441", type: "reference", options: getStatusOptions },
+              { field: "sla_hours", label: "SLA (\u0447\u0430\u0441\u044B)", type: "number" },
               { field: "enabled", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", type: "boolean" },
               { field: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", type: "number" }
             ];
@@ -656,6 +795,8 @@
               { field: "email", label: "Email", type: "text" },
               { field: "role", label: "\u0420\u043E\u043B\u044C", type: "enum", options: getRoleOptions },
               { field: "primary_topic_code", label: "\u041F\u0440\u043E\u0444\u0438\u043B\u044C (\u0442\u0435\u043C\u0430)", type: "reference", options: getTopicOptions },
+              { field: "default_rate", label: "\u0421\u0442\u0430\u0432\u043A\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E", type: "number" },
+              { field: "salary_percent", label: "\u041F\u0440\u043E\u0446\u0435\u043D\u0442 \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u044B", type: "number" },
               { field: "is_active", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", type: "boolean" },
               { field: "responsible", label: "\u041E\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043D\u043D\u044B\u0439", type: "text" },
               { field: "created_at", label: "\u0414\u0430\u0442\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F", type: "date" }
@@ -669,12 +810,34 @@
               { field: "created_at", label: "\u0414\u0430\u0442\u0430 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F", type: "date" }
             ];
           }
-          return [];
+          const meta = tableCatalogMap[tableKey];
+          if (!meta || !Array.isArray(meta.columns)) return [];
+          return (meta.columns || []).filter((column) => column && column.name && column.filterable !== false).map((column) => {
+            const name = String(column.name);
+            const label = String(column.label || humanizeKey(name));
+            if (name === "topic_code") return { field: name, label, type: "reference", options: getTopicOptions };
+            if (name === "status_code" || name === "from_status" || name === "to_status") {
+              return { field: name, label, type: "reference", options: getStatusOptions };
+            }
+            if (name === "field_key") return { field: name, label, type: "reference", options: getFormFieldKeyOptions };
+            return { field: name, label, type: metaKindToFilterType(column.kind) };
+          });
         },
-        [getFormFieldKeyOptions, getFormFieldTypeOptions, getLawyerOptions, getRoleOptions, getStatusOptions, getTopicOptions]
+        [
+          tableCatalogMap,
+          getFormFieldKeyOptions,
+          getFormFieldTypeOptions,
+          getInvoiceStatusOptions,
+          getLawyerOptions,
+          getRoleOptions,
+          getStatusKindOptions,
+          getStatusOptions,
+          getTopicOptions
+        ]
       );
       const getTableLabel = useCallback((tableKey) => {
         if (tableKey === "requests") return "\u0417\u0430\u044F\u0432\u043A\u0438";
+        if (tableKey === "invoices") return "\u0421\u0447\u0435\u0442\u0430";
         if (tableKey === "quotes") return "\u0426\u0438\u0442\u0430\u0442\u044B";
         if (tableKey === "topics") return "\u0422\u0435\u043C\u044B";
         if (tableKey === "statuses") return "\u0421\u0442\u0430\u0442\u0443\u0441\u044B";
@@ -684,8 +847,11 @@
         if (tableKey === "statusTransitions") return "\u041F\u0435\u0440\u0435\u0445\u043E\u0434\u044B \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432";
         if (tableKey === "users") return "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0438";
         if (tableKey === "userTopics") return "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0442\u0435\u043C\u044B \u044E\u0440\u0438\u0441\u0442\u043E\u0432";
-        return "\u0422\u0430\u0431\u043B\u0438\u0446\u0430";
-      }, []);
+        const meta = tableCatalogMap[tableKey];
+        if (meta && meta.label) return String(meta.label);
+        const raw = TABLE_UNALIASES[tableKey] || tableKey;
+        return humanizeKey(raw);
+      }, [tableCatalogMap]);
       const getRecordFields = useCallback(
         (tableKey) => {
           if (tableKey === "requests") {
@@ -698,7 +864,22 @@
               { key: "description", label: "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435", type: "textarea", optional: true },
               { key: "extra_fields", label: "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043F\u043E\u043B\u044F (JSON)", type: "json", optional: true, defaultValue: "{}" },
               { key: "assigned_lawyer_id", label: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0439 \u044E\u0440\u0438\u0441\u0442 (ID)", type: "text", optional: true },
+              { key: "effective_rate", label: "\u0421\u0442\u0430\u0432\u043A\u0430 (\u0444\u0438\u043A\u0441.)", type: "number", optional: true },
+              { key: "invoice_amount", label: "\u0421\u0443\u043C\u043C\u0430 \u0441\u0447\u0435\u0442\u0430", type: "number", optional: true },
+              { key: "paid_at", label: "\u0414\u0430\u0442\u0430 \u043E\u043F\u043B\u0430\u0442\u044B (ISO)", type: "text", optional: true, placeholder: "2026-02-23T12:00:00+03:00" },
+              { key: "paid_by_admin_id", label: "\u041E\u043F\u043B\u0430\u0442\u0443 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u043B (ID)", type: "text", optional: true },
               { key: "total_attachments_bytes", label: "\u0420\u0430\u0437\u043C\u0435\u0440 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u0439 (\u0431\u0430\u0439\u0442)", type: "number", optional: true, defaultValue: "0" }
+            ];
+          }
+          if (tableKey === "invoices") {
+            return [
+              { key: "request_track_number", label: "\u041D\u043E\u043C\u0435\u0440 \u0437\u0430\u044F\u0432\u043A\u0438", type: "text", required: true, createOnly: true },
+              { key: "invoice_number", label: "\u041D\u043E\u043C\u0435\u0440 \u0441\u0447\u0435\u0442\u0430", type: "text", optional: true, placeholder: "\u041E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C \u0434\u043B\u044F \u0430\u0432\u0442\u043E\u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438" },
+              { key: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "enum", required: true, options: getInvoiceStatusOptions, defaultValue: "WAITING_PAYMENT" },
+              { key: "amount", label: "\u0421\u0443\u043C\u043C\u0430", type: "number", required: true },
+              { key: "currency", label: "\u0412\u0430\u043B\u044E\u0442\u0430", type: "text", optional: true, defaultValue: "RUB" },
+              { key: "payer_display_name", label: "\u041F\u043B\u0430\u0442\u0435\u043B\u044C\u0449\u0438\u043A (\u0424\u0418\u041E / \u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F)", type: "text", required: true },
+              { key: "payer_details", label: "\u0420\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B (JSON, \u0448\u0438\u0444\u0440\u0443\u0435\u0442\u0441\u044F)", type: "json", optional: true, omitIfEmpty: true, placeholder: '{"inn":"..."}' }
             ];
           }
           if (tableKey === "quotes") {
@@ -722,6 +903,8 @@
             return [
               { key: "code", label: "\u041A\u043E\u0434", type: "text", required: true },
               { key: "name", label: "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435", type: "text", required: true },
+              { key: "kind", label: "\u0422\u0438\u043F", type: "enum", required: true, options: getStatusKindOptions, defaultValue: "DEFAULT" },
+              { key: "invoice_template", label: "\u0428\u0430\u0431\u043B\u043E\u043D \u0441\u0447\u0435\u0442\u0430", type: "textarea", optional: true, placeholder: "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0435 \u043F\u043E\u043B\u044F: {track_number}, {client_name}, {topic_code}, {amount}" },
               { key: "enabled", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", type: "boolean", defaultValue: "true" },
               { key: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", type: "number", defaultValue: "0" },
               { key: "is_terminal", label: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439", type: "boolean", defaultValue: "false" }
@@ -763,6 +946,7 @@
               { key: "topic_code", label: "\u0422\u0435\u043C\u0430", type: "reference", required: true, options: getTopicOptions },
               { key: "from_status", label: "\u0418\u0437 \u0441\u0442\u0430\u0442\u0443\u0441\u0430", type: "reference", required: true, options: getStatusOptions },
               { key: "to_status", label: "\u0412 \u0441\u0442\u0430\u0442\u0443\u0441", type: "reference", required: true, options: getStatusOptions },
+              { key: "sla_hours", label: "SLA (\u0447\u0430\u0441\u044B)", type: "number", optional: true },
               { key: "enabled", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", type: "boolean", defaultValue: "true" },
               { key: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", type: "number", defaultValue: "0" }
             ];
@@ -782,6 +966,8 @@
                 accept: "image/*"
               },
               { key: "primary_topic_code", label: "\u041F\u0440\u043E\u0444\u0438\u043B\u044C (\u0442\u0435\u043C\u0430)", type: "reference", optional: true, options: getTopicOptions },
+              { key: "default_rate", label: "\u0421\u0442\u0430\u0432\u043A\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E", type: "number", optional: true },
+              { key: "salary_percent", label: "\u041F\u0440\u043E\u0446\u0435\u043D\u0442 \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u044B", type: "number", optional: true },
               { key: "is_active", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", type: "boolean", defaultValue: "true" },
               { key: "password", label: "\u041F\u0430\u0440\u043E\u043B\u044C", type: "password", requiredOnCreate: true, optional: true, omitIfEmpty: true, placeholder: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043F\u0430\u0440\u043E\u043B\u044C" }
             ];
@@ -792,9 +978,31 @@
               { key: "topic_code", label: "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u0430\u044F \u0442\u0435\u043C\u0430", type: "reference", required: true, options: getTopicOptions }
             ];
           }
-          return [];
+          const meta = tableCatalogMap[tableKey];
+          if (!meta || !Array.isArray(meta.columns)) return [];
+          return (meta.columns || []).filter((column) => column && column.name && column.editable).map((column) => {
+            const key = String(column.name || "");
+            const requiredOnCreate = Boolean(column.required_on_create);
+            return {
+              key,
+              label: String(column.label || humanizeKey(key)),
+              type: metaKindToRecordType(column.kind),
+              requiredOnCreate,
+              optional: !requiredOnCreate
+            };
+          });
         },
-        [getFormFieldKeyOptions, getFormFieldTypeOptions, getLawyerOptions, getRoleOptions, getStatusOptions, getTopicOptions]
+        [
+          tableCatalogMap,
+          getFormFieldKeyOptions,
+          getFormFieldTypeOptions,
+          getInvoiceStatusOptions,
+          getLawyerOptions,
+          getRoleOptions,
+          getStatusKindOptions,
+          getStatusOptions,
+          getTopicOptions
+        ]
       );
       const getFieldDef = useCallback(
         (tableKey, fieldName) => {
@@ -827,7 +1035,7 @@
       const loadTable = useCallback(
         async (tableKey, options, tokenOverride) => {
           const opts = options || {};
-          const config = TABLE_SERVER_CONFIG[tableKey];
+          const config = resolveTableConfig(tableKey);
           if (!config) return false;
           const current = tablesRef.current[tableKey] || createTableState();
           const next = {
@@ -905,7 +1113,7 @@
                 return { ...prev, statuses: sortByName(Array.from(map.values())) };
               });
             }
-            if (tableKey === "formFields") {
+            if (tableKey === "formFields" || tableKey === "form_fields") {
               setDictionaries((prev) => {
                 const set = new Set(DEFAULT_FORM_FIELD_TYPES);
                 (next.rows || []).forEach((row) => {
@@ -919,7 +1127,7 @@
                 };
               });
             }
-            if (tableKey === "users") {
+            if (tableKey === "users" || tableKey === "admin_users") {
               setDictionaries((prev) => {
                 const map = new Map((prev.users || []).map((user) => [user.id, user]));
                 (next.rows || []).forEach((row) => {
@@ -941,11 +1149,15 @@
             return false;
           }
         },
-        [api, setStatus, setTableState]
+        [api, resolveTableConfig, setStatus, setTableState]
       );
       const loadCurrentConfigTable = useCallback(
         async (resetOffset, tokenOverride, keyOverride) => {
           const currentKey = keyOverride || configActiveKey;
+          if (!currentKey) {
+            setStatus("config", "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A", "");
+            return false;
+          }
           setStatus("config", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...", "");
           const ok = await loadTable(currentKey, { resetOffset: Boolean(resetOffset) }, tokenOverride);
           if (ok) {
@@ -961,23 +1173,38 @@
           setStatus("dashboard", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...", "");
           try {
             const data = await api("/api/admin/metrics/overview", {}, tokenOverride);
-            const cards = [
+            const scope = String(data.scope || role || "");
+            const cards = scope === "LAWYER" ? [
+              { label: "\u041C\u043E\u0438 \u0437\u0430\u044F\u0432\u043A\u0438", value: data.assigned_total ?? 0 },
+              { label: "\u041C\u043E\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0435", value: data.active_assigned_total ?? 0 },
+              { label: "\u041D\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: data.unassigned_total ?? 0 },
+              { label: "\u041C\u043E\u0438 \u043D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0435", value: data.my_unread_updates ?? 0 },
+              { label: "\u041F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E SLA", value: data.sla_overdue ?? 0 }
+            ] : [
               { label: "\u041D\u043E\u0432\u044B\u0435", value: data.new ?? 0 },
+              { label: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: data.assigned_total ?? 0 },
+              { label: "\u041D\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: data.unassigned_total ?? 0 },
               { label: "\u041F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E SLA", value: data.sla_overdue ?? 0 },
-              { label: "\u0421\u0440\u0435\u0434\u043D\u0438\u0439 FRT (\u043C\u0438\u043D)", value: data.frt_avg_minutes ?? "-" },
-              { label: "\u0413\u0440\u0443\u043F\u043F \u043F\u043E \u0441\u0442\u0430\u0442\u0443\u0441\u0430\u043C", value: Object.keys(data.by_status || {}).length }
+              { label: "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u044E\u0440\u0438\u0441\u0442\u0430\u043C\u0438", value: data.unread_for_lawyers ?? 0 },
+              { label: "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u0430\u043C\u0438", value: data.unread_for_clients ?? 0 }
             ];
             const localized = {};
             Object.entries(data.by_status || {}).forEach(([code, count]) => {
               localized[statusLabel(code)] = count;
             });
-            setDashboardData({ cards, byStatus: localized, lawyerLoads: data.lawyer_loads || [] });
+            setDashboardData({
+              scope,
+              cards,
+              byStatus: localized,
+              lawyerLoads: data.lawyer_loads || [],
+              myUnreadByEvent: data.my_unread_by_event || {}
+            });
             setStatus("dashboard", "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B", "ok");
           } catch (error) {
             setStatus("dashboard", "\u041E\u0448\u0438\u0431\u043A\u0430: " + error.message, "error");
           }
         },
-        [api, setStatus]
+        [api, role, setStatus]
       );
       const loadMeta = useCallback(
         async (tokenOverride) => {
@@ -998,6 +1225,7 @@
           if (!(tokenOverride !== void 0 ? tokenOverride : token)) return;
           if (section === "dashboard") return loadDashboard(tokenOverride);
           if (section === "requests") return loadTable("requests", {}, tokenOverride);
+          if (section === "invoices") return loadTable("invoices", {}, tokenOverride);
           if (section === "quotes" && canAccessSection(role, "quotes")) return loadTable("quotes", {}, tokenOverride);
           if (section === "config" && canAccessSection(role, "config")) return loadCurrentConfigTable(false, tokenOverride);
           if (section === "meta") return loadMeta(tokenOverride);
@@ -1010,16 +1238,24 @@
             ...prev,
             statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name }))
           }));
+          setTableCatalog([]);
           if (roleOverride !== "ADMIN") return;
           try {
             const body = buildUniversalQuery([], [{ field: "sort_order", dir: "asc" }], 500, 0);
             const usersBody = buildUniversalQuery([], [{ field: "created_at", dir: "desc" }], 500, 0);
-            const [topicsData, statusesData, fieldsData, usersData] = await Promise.all([
+            const [catalogData, topicsData, statusesData, fieldsData, usersData] = await Promise.all([
+              api("/api/admin/crud/meta/tables", {}, tokenOverride),
               api("/api/admin/crud/topics/query", { method: "POST", body }, tokenOverride),
               api("/api/admin/crud/statuses/query", { method: "POST", body }, tokenOverride),
               api("/api/admin/crud/form_fields/query", { method: "POST", body }, tokenOverride),
               api("/api/admin/crud/admin_users/query", { method: "POST", body: usersBody }, tokenOverride)
             ]);
+            const catalogRows = (catalogData.tables || []).filter((row) => row && row.table).map((row) => {
+              const tableName = String(row.table || "");
+              const key = TABLE_KEY_ALIASES[tableName] || String(row.key || tableName);
+              return { ...row, key, table: tableName };
+            });
+            setTableCatalog(catalogRows);
             const statusesMap = new Map(Object.entries(STATUS_LABELS).map(([code, name]) => [code, { code, name }]));
             (statusesData.rows || []).forEach((row) => {
               if (!row.code) return;
@@ -1172,6 +1408,7 @@
             if (field.type === "json") {
               const text = String(raw || "").trim();
               if (!text) {
+                if (field.omitIfEmpty) return;
                 if (field.optional) payload[field.key] = null;
                 else payload[field.key] = {};
                 return;
@@ -1196,6 +1433,7 @@
             payload[field.key] = value;
           });
           if (tableKey === "requests" && !payload.extra_fields) payload.extra_fields = {};
+          if (tableKey === "invoices" && mode === "edit") delete payload.request_track_number;
           return payload;
         },
         [getRecordFields]
@@ -1205,7 +1443,7 @@
           event.preventDefault();
           const tableKey = recordModal.tableKey;
           if (!tableKey) return;
-          const endpoints = TABLE_MUTATION_CONFIG[tableKey];
+          const endpoints = resolveMutationConfig(tableKey);
           if (!endpoints) return;
           try {
             setStatus("recordForm", "\u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435...", "");
@@ -1222,11 +1460,11 @@
             setStatus("recordForm", "\u041E\u0448\u0438\u0431\u043A\u0430: " + error.message, "error");
           }
         },
-        [api, buildRecordPayload, closeRecordModal, loadTable, recordModal, setStatus]
+        [api, buildRecordPayload, closeRecordModal, loadTable, recordModal, resolveMutationConfig, setStatus]
       );
       const deleteRecord = useCallback(
         async (tableKey, id) => {
-          const endpoints = TABLE_MUTATION_CONFIG[tableKey];
+          const endpoints = resolveMutationConfig(tableKey);
           if (!endpoints) return;
           if (!confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u0438\u0441\u044C?")) return;
           try {
@@ -1237,7 +1475,7 @@
             setStatus(tableKey, "\u041E\u0448\u0438\u0431\u043A\u0430 \u0443\u0434\u0430\u043B\u0435\u043D\u0438\u044F: " + error.message, "error");
           }
         },
-        [api, loadTable, setStatus]
+        [api, loadTable, resolveMutationConfig, setStatus]
       );
       const claimRequest = useCallback(
         async (requestId) => {
@@ -1252,6 +1490,54 @@
           }
         },
         [api, loadTable, setStatus]
+      );
+      const openInvoiceRequest = useCallback(
+        async (row) => {
+          if (!row || !row.request_id) return;
+          try {
+            setActiveSection("requests");
+            await loadTable("requests", {});
+            await openRequestDetails(row.request_id);
+          } catch (_) {
+          }
+        },
+        [loadTable, openRequestDetails]
+      );
+      const downloadInvoicePdf = useCallback(
+        async (row) => {
+          if (!row || !row.id || !token) return;
+          try {
+            setStatus("invoices", "\u0424\u043E\u0440\u043C\u0438\u0440\u0443\u0435\u043C PDF...", "");
+            const response = await fetch("/api/admin/invoices/" + row.id + "/pdf", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            if (!response.ok) {
+              const text = await response.text();
+              let payload = {};
+              try {
+                payload = text ? JSON.parse(text) : {};
+              } catch (_) {
+                payload = { raw: text };
+              }
+              const message = payload.detail || payload.error || payload.raw || "HTTP " + response.status;
+              throw new Error(translateApiError(String(message)));
+            }
+            const blob = await response.blob();
+            const fileName = (row.invoice_number || "invoice") + ".pdf";
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            setStatus("invoices", "PDF \u0441\u043A\u0430\u0447\u0430\u043D", "ok");
+          } catch (error) {
+            setStatus("invoices", "\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F: " + error.message, "error");
+          }
+        },
+        [setStatus, token]
       );
       const openReassignModal = useCallback(
         (row) => {
@@ -1532,12 +1818,14 @@
         setRequestModal({ open: false, jsonText: "" });
         setFilterModal({ open: false, tableKey: null, field: "", op: "=", rawValue: "", editIndex: null });
         setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
-        setDashboardData({ cards: [], byStatus: {}, lawyerLoads: [] });
+        setDashboardData({ scope: "", cards: [], byStatus: {}, lawyerLoads: [], myUnreadByEvent: {} });
         setMetaJson("");
-        setConfigActiveKey("quotes");
+        setConfigActiveKey("");
         setReferencesExpanded(true);
+        setTableCatalog([]);
         setTables({
           requests: createTableState(),
+          invoices: createTableState(),
           quotes: createTableState(),
           topics: createTableState(),
           statuses: createTableState(),
@@ -1611,6 +1899,14 @@
           cancelled = true;
         };
       }, [bootstrapReferenceData, refreshSection, role, token]);
+      useEffect(() => {
+        if (!dictionaryTableItems.length) {
+          if (configActiveKey) setConfigActiveKey("");
+          return;
+        }
+        const hasCurrent = dictionaryTableItems.some((item) => item.key === configActiveKey);
+        if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
+      }, [configActiveKey, dictionaryTableItems]);
       const anyOverlayOpen = requestModal.open || recordModal.open || filterModal.open || reassignModal.open;
       useEffect(() => {
         document.body.classList.toggle("modal-open", anyOverlayOpen);
@@ -1631,6 +1927,7 @@
         return [
           { key: "dashboard", label: "\u041E\u0431\u0437\u043E\u0440" },
           { key: "requests", label: "\u0417\u0430\u044F\u0432\u043A\u0438" },
+          { key: "invoices", label: "\u0421\u0447\u0435\u0442\u0430" },
           { key: "meta", label: "\u041C\u0435\u0442\u0430\u0434\u0430\u043D\u043D\u044B\u0435" }
         ];
       }, []);
@@ -1641,9 +1938,33 @@
       const filterTableLabel = useMemo(() => getTableLabel(filterModal.tableKey), [filterModal.tableKey, getTableLabel]);
       const recordModalFields = useMemo(() => {
         const all = getRecordFields(recordModal.tableKey);
-        if (recordModal.mode !== "create") return all;
+        if (recordModal.mode !== "create") return all.filter((field) => !field.createOnly);
         return all.filter((field) => !field.autoCreate);
       }, [getRecordFields, recordModal.mode, recordModal.tableKey]);
+      const activeConfigTableState = useMemo(() => {
+        return tables[configActiveKey] || createTableState();
+      }, [configActiveKey, tables]);
+      const activeConfigMeta = useMemo(() => tableCatalogMap[configActiveKey] || null, [configActiveKey, tableCatalogMap]);
+      const activeConfigActions = useMemo(() => {
+        return Array.isArray(activeConfigMeta?.actions) ? activeConfigMeta.actions : [];
+      }, [activeConfigMeta]);
+      const canCreateInConfig = activeConfigActions.includes("create");
+      const canUpdateInConfig = activeConfigActions.includes("update");
+      const canDeleteInConfig = activeConfigActions.includes("delete");
+      const genericConfigHeaders = useMemo(() => {
+        if (!activeConfigMeta || !Array.isArray(activeConfigMeta.columns)) return [];
+        const headers = (activeConfigMeta.columns || []).filter((column) => column && column.name).map((column) => {
+          const name = String(column.name);
+          return {
+            key: name,
+            label: String(column.label || humanizeKey(name)),
+            sortable: Boolean(column.sortable !== false),
+            field: name
+          };
+        });
+        if (canUpdateInConfig || canDeleteInConfig) headers.push({ key: "actions", label: "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F" });
+        return headers;
+      }, [activeConfigMeta, canDeleteInConfig, canUpdateInConfig]);
       return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "layout" }, /* @__PURE__ */ React.createElement("aside", { className: "sidebar" }, /* @__PURE__ */ React.createElement("div", { className: "logo" }, /* @__PURE__ */ React.createElement("a", { href: "/" }, "\u041F\u0440\u0430\u0432\u043E\u0432\u043E\u0439 \u0442\u0440\u0435\u043A\u0435\u0440")), /* @__PURE__ */ React.createElement("nav", { className: "menu" }, menuItems.map((item) => /* @__PURE__ */ React.createElement(
         "button",
         {
@@ -1665,79 +1986,16 @@
           }
         },
         "\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0438 " + (referencesExpanded ? "\u25BE" : "\u25B8")
-      ), referencesExpanded ? /* @__PURE__ */ React.createElement("div", { className: "menu-tree" }, /* @__PURE__ */ React.createElement(
+      ), referencesExpanded ? /* @__PURE__ */ React.createElement("div", { className: "menu-tree" }, dictionaryTableItems.map((item) => /* @__PURE__ */ React.createElement(
         "button",
         {
+          key: item.key,
           type: "button",
-          className: activeSection === "config" && configActiveKey === "quotes" ? "active" : "",
-          onClick: () => selectConfigNode("quotes")
+          className: activeSection === "config" && configActiveKey === item.key ? "active" : "",
+          onClick: () => selectConfigNode(item.key)
         },
-        "\u0426\u0438\u0442\u0430\u0442\u044B"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "topics" ? "active" : "",
-          onClick: () => selectConfigNode("topics")
-        },
-        "\u0422\u0435\u043C\u044B"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "statuses" ? "active" : "",
-          onClick: () => selectConfigNode("statuses")
-        },
-        "\u0421\u0442\u0430\u0442\u0443\u0441\u044B"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "formFields" ? "active" : "",
-          onClick: () => selectConfigNode("formFields")
-        },
-        "\u041F\u043E\u043B\u044F \u0444\u043E\u0440\u043C\u044B"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "topicRequiredFields" ? "active" : "",
-          onClick: () => selectConfigNode("topicRequiredFields")
-        },
-        "\u041E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043F\u043E\u043B\u044F \u0442\u0435\u043C\u044B"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "topicDataTemplates" ? "active" : "",
-          onClick: () => selectConfigNode("topicDataTemplates")
-        },
-        "\u0428\u0430\u0431\u043B\u043E\u043D\u044B \u0434\u043E\u0437\u0430\u043F\u0440\u043E\u0441\u0430"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "statusTransitions" ? "active" : "",
-          onClick: () => selectConfigNode("statusTransitions")
-        },
-        "\u041F\u0435\u0440\u0435\u0445\u043E\u0434\u044B \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "users" ? "active" : "",
-          onClick: () => selectConfigNode("users")
-        },
-        "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0438"
-      ), /* @__PURE__ */ React.createElement(
-        "button",
-        {
-          type: "button",
-          className: activeSection === "config" && configActiveKey === "userTopics" ? "active" : "",
-          onClick: () => selectConfigNode("userTopics")
-        },
-        "\u0422\u0435\u043C\u044B \u044E\u0440\u0438\u0441\u0442\u043E\u0432"
-      )) : null) : null), /* @__PURE__ */ React.createElement("div", { className: "auth-box" }, token && role ? /* @__PURE__ */ React.createElement(React.Fragment, null, "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C: ", /* @__PURE__ */ React.createElement("b", null, email), /* @__PURE__ */ React.createElement("br", null), "\u0420\u043E\u043B\u044C: ", /* @__PURE__ */ React.createElement("b", null, roleLabel(role))) : "\u041D\u0435 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u043D"), /* @__PURE__ */ React.createElement("div", { style: { marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: refreshAll }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn danger", type: "button", onClick: logout }, "\u0412\u044B\u0439\u0442\u0438"))), /* @__PURE__ */ React.createElement("main", { className: "main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", null, "\u041F\u0430\u043D\u0435\u043B\u044C \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "UniversalQuery, RBAC \u0438 \u0430\u0443\u0434\u0438\u0442 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439 \u043F\u043E \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u043C \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044F\u043C \u0441\u0438\u0441\u0442\u0435\u043C\u044B.")), /* @__PURE__ */ React.createElement("span", { className: "badge" }, "\u0440\u043E\u043B\u044C: ", roleLabel(role))), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "dashboard", id: "section-dashboard" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u041E\u0431\u0437\u043E\u0440 \u043C\u0435\u0442\u0440\u0438\u043A"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0421\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0437\u0430\u044F\u0432\u043E\u043A \u0438 SLA-\u043C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433."))), /* @__PURE__ */ React.createElement("div", { className: "cards" }, dashboardData.cards.map((card) => /* @__PURE__ */ React.createElement("div", { className: "card", key: card.label }, /* @__PURE__ */ React.createElement("p", null, card.label), /* @__PURE__ */ React.createElement("b", null, card.value)))), /* @__PURE__ */ React.createElement("div", { className: "json" }, JSON.stringify(dashboardData.byStatus || {}, null, 2)), /* @__PURE__ */ React.createElement("div", { style: { marginTop: "0.85rem" } }, /* @__PURE__ */ React.createElement("h3", { style: { margin: "0 0 0.55rem" } }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u044E\u0440\u0438\u0441\u0442\u043E\u0432"), /* @__PURE__ */ React.createElement(
+        getTableLabel(item.key)
+      ))) : null) : null), /* @__PURE__ */ React.createElement("div", { className: "auth-box" }, token && role ? /* @__PURE__ */ React.createElement(React.Fragment, null, "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C: ", /* @__PURE__ */ React.createElement("b", null, email), /* @__PURE__ */ React.createElement("br", null), "\u0420\u043E\u043B\u044C: ", /* @__PURE__ */ React.createElement("b", null, roleLabel(role))) : "\u041D\u0435 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u043D"), /* @__PURE__ */ React.createElement("div", { style: { marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: refreshAll }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn danger", type: "button", onClick: logout }, "\u0412\u044B\u0439\u0442\u0438"))), /* @__PURE__ */ React.createElement("main", { className: "main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", null, "\u041F\u0430\u043D\u0435\u043B\u044C \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "UniversalQuery, RBAC \u0438 \u0430\u0443\u0434\u0438\u0442 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439 \u043F\u043E \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u043C \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044F\u043C \u0441\u0438\u0441\u0442\u0435\u043C\u044B.")), /* @__PURE__ */ React.createElement("span", { className: "badge" }, "\u0440\u043E\u043B\u044C: ", roleLabel(role))), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "dashboard", id: "section-dashboard" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u041E\u0431\u0437\u043E\u0440 \u043C\u0435\u0442\u0440\u0438\u043A"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0421\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0437\u0430\u044F\u0432\u043E\u043A \u0438 SLA-\u043C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433."))), /* @__PURE__ */ React.createElement("div", { className: "cards" }, dashboardData.cards.map((card) => /* @__PURE__ */ React.createElement("div", { className: "card", key: card.label }, /* @__PURE__ */ React.createElement("p", null, card.label), /* @__PURE__ */ React.createElement("b", null, card.value)))), /* @__PURE__ */ React.createElement("div", { className: "json" }, JSON.stringify(dashboardData.byStatus || {}, null, 2)), dashboardData.scope === "LAWYER" ? /* @__PURE__ */ React.createElement("div", { className: "json", style: { marginTop: "0.5rem" } }, JSON.stringify(dashboardData.myUnreadByEvent || {}, null, 2)) : null, /* @__PURE__ */ React.createElement("div", { style: { marginTop: "0.85rem" } }, /* @__PURE__ */ React.createElement("h3", { style: { margin: "0 0 0.55rem" } }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u044E\u0440\u0438\u0441\u0442\u043E\u0432"), /* @__PURE__ */ React.createElement(
         DataTable,
         {
           headers: [
@@ -1745,11 +2003,14 @@
             { key: "email", label: "Email" },
             { key: "primary_topic_code", label: "\u041E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u0442\u0435\u043C\u0430" },
             { key: "active_load", label: "\u0410\u043A\u0442\u0438\u0432\u043D\u044B\u0435 \u0437\u0430\u044F\u0432\u043A\u0438" },
-            { key: "total_assigned", label: "\u0412\u0441\u0435\u0433\u043E \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E" }
+            { key: "total_assigned", label: "\u0412\u0441\u0435\u0433\u043E \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E" },
+            { key: "active_amount", label: "\u0421\u0443\u043C\u043C\u0430 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445" },
+            { key: "monthly_paid_gross", label: "\u0412\u0430\u043B \u043E\u043F\u043B\u0430\u0442 \u0437\u0430 \u043C\u0435\u0441\u044F\u0446" },
+            { key: "monthly_salary", label: "\u0417\u0430\u0440\u043F\u043B\u0430\u0442\u0430 \u0437\u0430 \u043C\u0435\u0441\u044F\u0446" }
           ],
           rows: dashboardData.lawyerLoads || [],
-          emptyColspan: 5,
-          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.lawyer_id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "user-identity" }, /* @__PURE__ */ React.createElement(UserAvatar, { name: row.name, email: row.email, avatarUrl: row.avatar_url, accessToken: token, size: 32 }), /* @__PURE__ */ React.createElement("div", { className: "user-identity-text" }, /* @__PURE__ */ React.createElement("b", null, row.name || "-")))), /* @__PURE__ */ React.createElement("td", null, row.email || "-"), /* @__PURE__ */ React.createElement("td", null, row.primary_topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, String(row.active_load ?? 0)), /* @__PURE__ */ React.createElement("td", null, String(row.total_assigned ?? 0)))
+          emptyColspan: 8,
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.lawyer_id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "user-identity" }, /* @__PURE__ */ React.createElement(UserAvatar, { name: row.name, email: row.email, avatarUrl: row.avatar_url, accessToken: token, size: 32 }), /* @__PURE__ */ React.createElement("div", { className: "user-identity-text" }, /* @__PURE__ */ React.createElement("b", null, row.name || "-")))), /* @__PURE__ */ React.createElement("td", null, row.email || "-"), /* @__PURE__ */ React.createElement("td", null, row.primary_topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, String(row.active_load ?? 0)), /* @__PURE__ */ React.createElement("td", null, String(row.total_assigned ?? 0)), /* @__PURE__ */ React.createElement("td", null, String(row.active_amount ?? 0)), /* @__PURE__ */ React.createElement("td", null, String(row.monthly_paid_gross ?? 0)), /* @__PURE__ */ React.createElement("td", null, String(row.monthly_salary ?? 0)))
         }
       )), /* @__PURE__ */ React.createElement(StatusLine, { status: getStatus("dashboard") })), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "requests", id: "section-requests" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0417\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0421\u0435\u0440\u0432\u0435\u0440\u043D\u0430\u044F \u0444\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F \u0438 \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0438\u0445 \u0437\u0430\u044F\u0432\u043E\u043A.")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.5rem" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: () => loadTable("requests", { resetOffset: true }) }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: () => openCreateRecordModal("requests") }, "\u041D\u043E\u0432\u0430\u044F \u0437\u0430\u044F\u0432\u043A\u0430"))), /* @__PURE__ */ React.createElement(
         FilterToolbar,
@@ -1773,15 +2034,17 @@
             { key: "status_code", label: "\u0421\u0442\u0430\u0442\u0443\u0441", sortable: true, field: "status_code" },
             { key: "topic_code", label: "\u0422\u0435\u043C\u0430", sortable: true, field: "topic_code" },
             { key: "assigned_lawyer_id", label: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D", sortable: true, field: "assigned_lawyer_id" },
+            { key: "invoice_amount", label: "\u0421\u0447\u0435\u0442", sortable: true, field: "invoice_amount" },
+            { key: "paid_at", label: "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E", sortable: true, field: "paid_at" },
             { key: "updates", label: "\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F" },
             { key: "created_at", label: "\u0421\u043E\u0437\u0434\u0430\u043D\u0430", sortable: true, field: "created_at" },
             { key: "actions", label: "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F" }
           ],
           rows: tables.requests.rows,
-          emptyColspan: 9,
+          emptyColspan: 11,
           onSort: (field) => toggleTableSort("requests", field),
           sortClause: tables.requests.sort && tables.requests.sort[0] || TABLE_SERVER_CONFIG.requests.sort[0],
-          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("code", null, row.track_number || "-")), /* @__PURE__ */ React.createElement("td", null, row.client_name || "-"), /* @__PURE__ */ React.createElement("td", null, row.client_phone || "-"), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.status_code)), /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, row.assigned_lawyer_id || "-"), /* @__PURE__ */ React.createElement("td", null, renderRequestUpdatesCell(row, role)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, role === "LAWYER" && !row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F4E5}", tooltip: "\u0412\u0437\u044F\u0442\u044C \u0432 \u0440\u0430\u0431\u043E\u0442\u0443", onClick: () => claimRequest(row.id) }) : null, role === "ADMIN" && row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u21C4", tooltip: "\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C", onClick: () => openReassignModal(row) }) : null, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F441}", tooltip: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => openRequestDetails(row.id) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => openEditRecordModal("requests", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => deleteRecord("requests", row.id), tone: "danger" }))))
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("code", null, row.track_number || "-")), /* @__PURE__ */ React.createElement("td", null, row.client_name || "-"), /* @__PURE__ */ React.createElement("td", null, row.client_phone || "-"), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.status_code)), /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, row.assigned_lawyer_id || "-"), /* @__PURE__ */ React.createElement("td", null, row.invoice_amount == null ? "-" : String(row.invoice_amount)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.paid_at)), /* @__PURE__ */ React.createElement("td", null, renderRequestUpdatesCell(row, role)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, role === "LAWYER" && !row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F4E5}", tooltip: "\u0412\u0437\u044F\u0442\u044C \u0432 \u0440\u0430\u0431\u043E\u0442\u0443", onClick: () => claimRequest(row.id) }) : null, role === "ADMIN" && row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u21C4", tooltip: "\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C", onClick: () => openReassignModal(row) }) : null, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F441}", tooltip: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => openRequestDetails(row.id) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => openEditRecordModal("requests", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => deleteRecord("requests", row.id), tone: "danger" }))))
         }
       ), /* @__PURE__ */ React.createElement(
         TablePager,
@@ -1791,7 +2054,47 @@
           onNext: () => loadNextPage("requests"),
           onLoadAll: () => loadAllRows("requests")
         }
-      ), /* @__PURE__ */ React.createElement(StatusLine, { status: getStatus("requests") })), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "quotes", id: "section-quotes" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0426\u0438\u0442\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u043E\u0439 \u043B\u0435\u043D\u0442\u043E\u0439 \u0446\u0438\u0442\u0430\u0442 \u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u043C\u0438 \u0444\u0438\u043B\u044C\u0442\u0440\u0430\u043C\u0438.")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.5rem" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: () => loadTable("quotes", { resetOffset: true }) }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: () => openCreateRecordModal("quotes") }, "\u041D\u043E\u0432\u0430\u044F \u0446\u0438\u0442\u0430\u0442\u0430"))), /* @__PURE__ */ React.createElement(
+      ), /* @__PURE__ */ React.createElement(StatusLine, { status: getStatus("requests") })), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "invoices", id: "section-invoices" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0421\u0447\u0435\u0442\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0435 \u0441\u0447\u0435\u0442\u0430 \u043A\u043B\u0438\u0435\u043D\u0442\u0430\u043C, \u0441\u0442\u0430\u0442\u0443\u0441\u044B \u043E\u043F\u043B\u0430\u0442\u044B \u0438 \u0432\u044B\u0433\u0440\u0443\u0437\u043A\u0430 PDF.")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.5rem" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: () => loadTable("invoices", { resetOffset: true }) }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: () => openCreateRecordModal("invoices") }, "\u041D\u043E\u0432\u044B\u0439 \u0441\u0447\u0435\u0442"))), /* @__PURE__ */ React.createElement(
+        FilterToolbar,
+        {
+          filters: tables.invoices.filters,
+          onOpen: () => openFilterModal("invoices"),
+          onRemove: (index) => removeFilterChip("invoices", index),
+          onEdit: (index) => openFilterEditModal("invoices", index),
+          getChipLabel: (clause) => {
+            const fieldDef = getFieldDef("invoices", clause.field);
+            return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("invoices", clause);
+          }
+        }
+      ), /* @__PURE__ */ React.createElement(
+        DataTable,
+        {
+          headers: [
+            { key: "invoice_number", label: "\u041D\u043E\u043C\u0435\u0440", sortable: true, field: "invoice_number" },
+            { key: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", sortable: true, field: "status" },
+            { key: "amount", label: "\u0421\u0443\u043C\u043C\u0430", sortable: true, field: "amount" },
+            { key: "payer_display_name", label: "\u041F\u043B\u0430\u0442\u0435\u043B\u044C\u0449\u0438\u043A", sortable: true, field: "payer_display_name" },
+            { key: "request_track_number", label: "\u0417\u0430\u044F\u0432\u043A\u0430" },
+            { key: "issued_by_name", label: "\u0412\u044B\u0441\u0442\u0430\u0432\u0438\u043B", sortable: true, field: "issued_by_admin_user_id" },
+            { key: "issued_at", label: "\u0421\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u043D", sortable: true, field: "issued_at" },
+            { key: "paid_at", label: "\u041E\u043F\u043B\u0430\u0447\u0435\u043D", sortable: true, field: "paid_at" },
+            { key: "actions", label: "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F" }
+          ],
+          rows: tables.invoices.rows,
+          emptyColspan: 9,
+          onSort: (field) => toggleTableSort("invoices", field),
+          sortClause: tables.invoices.sort && tables.invoices.sort[0] || TABLE_SERVER_CONFIG.invoices.sort[0],
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("code", null, row.invoice_number || "-")), /* @__PURE__ */ React.createElement("td", null, row.status_label || invoiceStatusLabel(row.status)), /* @__PURE__ */ React.createElement("td", null, row.amount == null ? "-" : String(row.amount) + " " + String(row.currency || "RUB")), /* @__PURE__ */ React.createElement("td", null, row.payer_display_name || "-"), /* @__PURE__ */ React.createElement("td", null, row.request_track_number || row.request_id || "-"), /* @__PURE__ */ React.createElement("td", null, row.issued_by_name || "-"), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.issued_at)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.paid_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F441}", tooltip: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => openInvoiceRequest(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u2B07", tooltip: "\u0421\u043A\u0430\u0447\u0430\u0442\u044C PDF", onClick: () => downloadInvoicePdf(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0447\u0435\u0442", onClick: () => openEditRecordModal("invoices", row) }), role === "ADMIN" ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0447\u0435\u0442", onClick: () => deleteRecord("invoices", row.id), tone: "danger" }) : null)))
+        }
+      ), /* @__PURE__ */ React.createElement(
+        TablePager,
+        {
+          tableState: tables.invoices,
+          onPrev: () => loadPrevPage("invoices"),
+          onNext: () => loadNextPage("invoices"),
+          onLoadAll: () => loadAllRows("invoices")
+        }
+      ), /* @__PURE__ */ React.createElement(StatusLine, { status: getStatus("invoices") })), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "quotes", id: "section-quotes" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0426\u0438\u0442\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u043E\u0439 \u043B\u0435\u043D\u0442\u043E\u0439 \u0446\u0438\u0442\u0430\u0442 \u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u043C\u0438 \u0444\u0438\u043B\u044C\u0442\u0440\u0430\u043C\u0438.")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.5rem" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: () => loadTable("quotes", { resetOffset: true }) }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: () => openCreateRecordModal("quotes") }, "\u041D\u043E\u0432\u0430\u044F \u0446\u0438\u0442\u0430\u0442\u0430"))), /* @__PURE__ */ React.createElement(
         FilterToolbar,
         {
           filters: tables.quotes.filters,
@@ -1829,10 +2132,10 @@
           onNext: () => loadNextPage("quotes"),
           onLoadAll: () => loadAllRows("quotes")
         }
-      ), /* @__PURE__ */ React.createElement(StatusLine, { status: getStatus("quotes") })), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "config", id: "section-config" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A \u0432 \u0434\u0435\u0440\u0435\u0432\u0435 \u0441\u043B\u0435\u0432\u0430.")), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: () => loadCurrentConfigTable(true) }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C")), /* @__PURE__ */ React.createElement("div", { className: "config-layout" }, /* @__PURE__ */ React.createElement("div", { className: "config-panel" }, /* @__PURE__ */ React.createElement("div", { className: "block" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } }, /* @__PURE__ */ React.createElement("h3", { style: { margin: 0 } }, getTableLabel(configActiveKey)), /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: () => openCreateRecordModal(configActiveKey) }, "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C")), /* @__PURE__ */ React.createElement(
+      ), /* @__PURE__ */ React.createElement(StatusLine, { status: getStatus("quotes") })), /* @__PURE__ */ React.createElement(Section, { active: activeSection === "config", id: "section-config" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A \u0432 \u0434\u0435\u0440\u0435\u0432\u0435 \u0441\u043B\u0435\u0432\u0430.")), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: () => loadCurrentConfigTable(true) }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C")), /* @__PURE__ */ React.createElement("div", { className: "config-layout" }, /* @__PURE__ */ React.createElement("div", { className: "config-panel" }, /* @__PURE__ */ React.createElement("div", { className: "block" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } }, /* @__PURE__ */ React.createElement("h3", { style: { margin: 0 } }, configActiveKey ? getTableLabel(configActiveKey) : "\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D"), canCreateInConfig && configActiveKey ? /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: () => openCreateRecordModal(configActiveKey) }, "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C") : null), /* @__PURE__ */ React.createElement(
         FilterToolbar,
         {
-          filters: tables[configActiveKey].filters,
+          filters: activeConfigTableState.filters,
           onOpen: () => openFilterModal(configActiveKey),
           onRemove: (index) => removeFilterChip(configActiveKey, index),
           onEdit: (index) => openFilterEditModal(configActiveKey, index),
@@ -1881,16 +2184,18 @@
           headers: [
             { key: "code", label: "\u041A\u043E\u0434", sortable: true, field: "code" },
             { key: "name", label: "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435", sortable: true, field: "name" },
+            { key: "kind", label: "\u0422\u0438\u043F", sortable: true, field: "kind" },
             { key: "enabled", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", sortable: true, field: "enabled" },
             { key: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", sortable: true, field: "sort_order" },
             { key: "is_terminal", label: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439", sortable: true, field: "is_terminal" },
+            { key: "invoice_template", label: "\u0428\u0430\u0431\u043B\u043E\u043D \u0441\u0447\u0435\u0442\u0430" },
             { key: "actions", label: "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F" }
           ],
           rows: tables.statuses.rows,
-          emptyColspan: 6,
+          emptyColspan: 8,
           onSort: (field) => toggleTableSort("statuses", field),
           sortClause: tables.statuses.sort && tables.statuses.sort[0] || TABLE_SERVER_CONFIG.statuses.sort[0],
-          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("code", null, row.code || "-")), /* @__PURE__ */ React.createElement("td", null, row.name || "-"), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.enabled)), /* @__PURE__ */ React.createElement("td", null, String(row.sort_order ?? 0)), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.is_terminal)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441", onClick: () => openEditRecordModal("statuses", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441", onClick: () => deleteRecord("statuses", row.id), tone: "danger" }))))
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("code", null, row.code || "-")), /* @__PURE__ */ React.createElement("td", null, row.name || "-"), /* @__PURE__ */ React.createElement("td", null, statusKindLabel(row.kind)), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.enabled)), /* @__PURE__ */ React.createElement("td", null, String(row.sort_order ?? 0)), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.is_terminal)), /* @__PURE__ */ React.createElement("td", null, row.invoice_template || "-"), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441", onClick: () => openEditRecordModal("statuses", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441", onClick: () => deleteRecord("statuses", row.id), tone: "danger" }))))
         }
       ) : null, configActiveKey === "formFields" ? /* @__PURE__ */ React.createElement(
         DataTable,
@@ -1970,15 +2275,16 @@
             { key: "topic_code", label: "\u0422\u0435\u043C\u0430", sortable: true, field: "topic_code" },
             { key: "from_status", label: "\u0418\u0437 \u0441\u0442\u0430\u0442\u0443\u0441\u0430", sortable: true, field: "from_status" },
             { key: "to_status", label: "\u0412 \u0441\u0442\u0430\u0442\u0443\u0441", sortable: true, field: "to_status" },
+            { key: "sla_hours", label: "SLA (\u0447\u0430\u0441\u044B)", sortable: true, field: "sla_hours" },
             { key: "enabled", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", sortable: true, field: "enabled" },
             { key: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", sortable: true, field: "sort_order" },
             { key: "actions", label: "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F" }
           ],
           rows: tables.statusTransitions.rows,
-          emptyColspan: 6,
+          emptyColspan: 7,
           onSort: (field) => toggleTableSort("statusTransitions", field),
           sortClause: tables.statusTransitions.sort && tables.statusTransitions.sort[0] || TABLE_SERVER_CONFIG.statusTransitions.sort[0],
-          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.from_status)), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.to_status)), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.enabled)), /* @__PURE__ */ React.createElement("td", null, String(row.sort_order ?? 0)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.from_status)), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.to_status)), /* @__PURE__ */ React.createElement("td", null, row.sla_hours == null ? "-" : String(row.sla_hours)), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.enabled)), /* @__PURE__ */ React.createElement("td", null, String(row.sort_order ?? 0)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(
             IconButton,
             {
               icon: "\u270E",
@@ -2003,16 +2309,18 @@
             { key: "email", label: "Email", sortable: true, field: "email" },
             { key: "role", label: "\u0420\u043E\u043B\u044C", sortable: true, field: "role" },
             { key: "primary_topic_code", label: "\u041F\u0440\u043E\u0444\u0438\u043B\u044C (\u0442\u0435\u043C\u0430)", sortable: true, field: "primary_topic_code" },
+            { key: "default_rate", label: "\u0421\u0442\u0430\u0432\u043A\u0430", sortable: true, field: "default_rate" },
+            { key: "salary_percent", label: "\u041F\u0440\u043E\u0446\u0435\u043D\u0442", sortable: true, field: "salary_percent" },
             { key: "is_active", label: "\u0410\u043A\u0442\u0438\u0432\u0435\u043D", sortable: true, field: "is_active" },
             { key: "responsible", label: "\u041E\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043D\u043D\u044B\u0439", sortable: true, field: "responsible" },
             { key: "created_at", label: "\u0421\u043E\u0437\u0434\u0430\u043D", sortable: true, field: "created_at" },
             { key: "actions", label: "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F" }
           ],
           rows: tables.users.rows,
-          emptyColspan: 8,
+          emptyColspan: 10,
           onSort: (field) => toggleTableSort("users", field),
           sortClause: tables.users.sort && tables.users.sort[0] || TABLE_SERVER_CONFIG.users.sort[0],
-          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "user-identity" }, /* @__PURE__ */ React.createElement(UserAvatar, { name: row.name, email: row.email, avatarUrl: row.avatar_url, accessToken: token, size: 32 }), /* @__PURE__ */ React.createElement("div", { className: "user-identity-text" }, /* @__PURE__ */ React.createElement("b", null, row.name || "-")))), /* @__PURE__ */ React.createElement("td", null, row.email || "-"), /* @__PURE__ */ React.createElement("td", null, roleLabel(row.role)), /* @__PURE__ */ React.createElement("td", null, row.primary_topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.is_active)), /* @__PURE__ */ React.createElement("td", null, row.responsible || "-"), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F", onClick: () => openEditRecordModal("users", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F", onClick: () => deleteRecord("users", row.id), tone: "danger" }))))
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "user-identity" }, /* @__PURE__ */ React.createElement(UserAvatar, { name: row.name, email: row.email, avatarUrl: row.avatar_url, accessToken: token, size: 32 }), /* @__PURE__ */ React.createElement("div", { className: "user-identity-text" }, /* @__PURE__ */ React.createElement("b", null, row.name || "-")))), /* @__PURE__ */ React.createElement("td", null, row.email || "-"), /* @__PURE__ */ React.createElement("td", null, roleLabel(row.role)), /* @__PURE__ */ React.createElement("td", null, row.primary_topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, row.default_rate == null ? "-" : String(row.default_rate)), /* @__PURE__ */ React.createElement("td", null, row.salary_percent == null ? "-" : String(row.salary_percent)), /* @__PURE__ */ React.createElement("td", null, boolLabel(row.is_active)), /* @__PURE__ */ React.createElement("td", null, row.responsible || "-"), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F", onClick: () => openEditRecordModal("users", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F", onClick: () => deleteRecord("users", row.id), tone: "danger" }))))
         }
       ) : null, configActiveKey === "userTopics" ? /* @__PURE__ */ React.createElement(
         DataTable,
@@ -2034,10 +2342,27 @@
             return /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, lawyerLabel), /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, row.responsible || "-"), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0432\u044F\u0437\u044C", onClick: () => openEditRecordModal("userTopics", row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0432\u044F\u0437\u044C", onClick: () => deleteRecord("userTopics", row.id), tone: "danger" }))));
           }
         }
+      ) : null, configActiveKey && !KNOWN_CONFIG_TABLE_KEYS.has(configActiveKey) ? /* @__PURE__ */ React.createElement(
+        DataTable,
+        {
+          headers: genericConfigHeaders,
+          rows: activeConfigTableState.rows,
+          emptyColspan: Math.max(1, genericConfigHeaders.length),
+          onSort: (field) => toggleTableSort(configActiveKey, field),
+          sortClause: activeConfigTableState.sort && activeConfigTableState.sort[0] || (resolveTableConfig(configActiveKey)?.sort || [])[0],
+          renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id || JSON.stringify(row) }, (activeConfigMeta?.columns || []).map((column) => {
+            const key = String(column.name || "");
+            const value = row[key];
+            if (column.kind === "boolean") return /* @__PURE__ */ React.createElement("td", { key }, boolLabel(Boolean(value)));
+            if (column.kind === "date" || column.kind === "datetime") return /* @__PURE__ */ React.createElement("td", { key }, fmtDate(value));
+            if (column.kind === "json") return /* @__PURE__ */ React.createElement("td", { key }, value == null ? "-" : JSON.stringify(value));
+            return /* @__PURE__ */ React.createElement("td", { key }, value == null || value === "" ? "-" : String(value));
+          }), canUpdateInConfig || canDeleteInConfig ? /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, canUpdateInConfig ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0438\u0441\u044C", onClick: () => openEditRecordModal(configActiveKey, row) }) : null, canDeleteInConfig ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u0438\u0441\u044C", onClick: () => deleteRecord(configActiveKey, row.id), tone: "danger" }) : null)) : null)
+        }
       ) : null, /* @__PURE__ */ React.createElement(
         TablePager,
         {
-          tableState: tables[configActiveKey],
+          tableState: activeConfigTableState,
           onPrev: () => loadPrevPage(configActiveKey),
           onNext: () => loadNextPage(configActiveKey),
           onLoadAll: () => loadAllRows(configActiveKey)

@@ -25,6 +25,8 @@ def _status_row(row: Status):
         "enabled": row.enabled,
         "sort_order": row.sort_order,
         "is_terminal": row.is_terminal,
+        "kind": row.kind,
+        "invoice_template": row.invoice_template,
     }
 
 

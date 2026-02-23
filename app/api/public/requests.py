@@ -5,16 +5,21 @@ from uuid import UUID
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_public_session
 from app.core.security import create_jwt
 from app.db.session import get_db
+from app.models.admin_user import AdminUser
 from app.models.attachment import Attachment
+from app.models.invoice import Invoice
 from app.models.message import Message
 from app.models.request import Request
 from app.models.status_history import StatusHistory
+from app.services.invoice_crypto import decrypt_requisites
+from app.services.invoice_pdf import build_invoice_pdf_bytes
 from app.services.notifications import (
     EVENT_MESSAGE as NOTIFICATION_EVENT_MESSAGE,
     get_client_notification,
@@ -39,6 +44,11 @@ router = APIRouter()
 
 OTP_CREATE_PURPOSE = "CREATE_REQUEST"
 OTP_VIEW_PURPOSE = "VIEW_REQUEST"
+INVOICE_STATUS_LABELS = {
+    "WAITING_PAYMENT": "Ожидает оплату",
+    "PAID": "Оплачен",
+    "CANCELED": "Отменен",
+}
 
 
 def _normalize_phone(raw: str | None) -> str:
@@ -90,6 +100,22 @@ def _request_for_track_or_404(db: Session, session: dict, track_number: str) -> 
 
 def _to_iso(value) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _public_invoice_payload(row: Invoice, track_number: str) -> dict:
+    status_code = str(row.status or "").upper()
+    return {
+        "id": str(row.id),
+        "invoice_number": row.invoice_number,
+        "status": row.status,
+        "status_label": INVOICE_STATUS_LABELS.get(status_code, row.status),
+        "amount": float(row.amount) if row.amount is not None else 0.0,
+        "currency": row.currency,
+        "payer_display_name": row.payer_display_name,
+        "issued_at": _to_iso(row.issued_at),
+        "paid_at": _to_iso(row.paid_at),
+        "download_url": f"/api/public/requests/{track_number}/invoices/{row.id}/pdf",
+    }
 
 
 @router.post("", response_model=PublicRequestCreated, status_code=201)
@@ -256,6 +282,58 @@ def list_attachments_by_track(
         )
         for row in rows
     ]
+
+
+@router.get("/{track_number}/invoices")
+def list_invoices_by_track(
+    track_number: str,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, session, track_number)
+    rows = (
+        db.query(Invoice)
+        .filter(Invoice.request_id == req.id)
+        .order_by(Invoice.issued_at.desc(), Invoice.created_at.desc(), Invoice.id.desc())
+        .all()
+    )
+    return [_public_invoice_payload(row, req.track_number) for row in rows]
+
+
+@router.get("/{track_number}/invoices/{invoice_id}/pdf")
+def download_invoice_pdf_by_track(
+    track_number: str,
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, session, track_number)
+    try:
+        invoice_uuid = UUID(str(invoice_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Некорректный invoice_id")
+
+    invoice = db.get(Invoice, invoice_uuid)
+    if invoice is None or str(invoice.request_id) != str(req.id):
+        raise HTTPException(status_code=404, detail="Счет не найден")
+
+    issuer = db.get(AdminUser, invoice.issued_by_admin_user_id) if invoice.issued_by_admin_user_id else None
+    requisites = decrypt_requisites(invoice.payer_details_encrypted)
+    pdf_bytes = build_invoice_pdf_bytes(
+        invoice_number=invoice.invoice_number,
+        amount=float(invoice.amount) if invoice.amount is not None else 0.0,
+        currency=invoice.currency,
+        status=INVOICE_STATUS_LABELS.get(str(invoice.status or "").upper(), invoice.status or "-"),
+        issued_at=invoice.issued_at,
+        paid_at=invoice.paid_at,
+        payer_display_name=invoice.payer_display_name,
+        request_track_number=req.track_number,
+        issued_by_name=(issuer.name if issuer else invoice.issued_by_role),
+        requisites=requisites,
+    )
+    file_name = f"{invoice.invoice_number}.pdf"
+    headers = {"Content-Disposition": f'attachment; filename="{file_name}"'}
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers=headers)
 
 
 @router.get("/{track_number}/history", response_model=list[PublicStatusHistoryRead])

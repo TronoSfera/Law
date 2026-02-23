@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import secrets
+import hashlib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_jwt, hash_password, verify_password
 from app.db.session import get_db
 from app.models.otp_session import OtpSession
-from app.models.request import Request
+from app.models.request import Request as RequestModel
 from app.schemas.public import OtpSend, OtpVerify
+from app.services.rate_limit import get_rate_limiter
 
 router = APIRouter()
 
@@ -55,6 +57,45 @@ def _generate_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def _client_ip(request: Request) -> str:
+    xff = str(request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    client = request.client
+    return str(client.host if client else "unknown")
+
+
+def _hash_key_part(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return "-"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def _rate_limit_or_429(action: str, *, purpose: str, client_ip: str, phone: str | None, track_number: str | None) -> None:
+    limiter = get_rate_limiter()
+    window = int(max(settings.OTP_RATE_LIMIT_WINDOW_SECONDS, 1))
+    limit = int(max(settings.OTP_SEND_RATE_LIMIT if action == "send" else settings.OTP_VERIFY_RATE_LIMIT, 1))
+    purpose_norm = str(purpose or "").strip().upper()
+    keys = [
+        f"otp:{action}:ip:{_hash_key_part(client_ip)}:purpose:{purpose_norm}",
+    ]
+    if phone:
+        keys.append(f"otp:{action}:phone:{_hash_key_part(phone)}:purpose:{purpose_norm}")
+    if track_number:
+        keys.append(f"otp:{action}:track:{_hash_key_part(track_number)}:purpose:{purpose_norm}")
+
+    for key in keys:
+        result = limiter.hit(key, limit=limit, window_seconds=window)
+        if not result.allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Слишком много OTP-запросов. Повторите через {max(result.retry_after_seconds, 1)} сек.",
+            )
+
+
 def _set_public_cookie(response: Response, *, subject: str, purpose: str) -> None:
     token = create_jwt(
         {"sub": subject, "purpose": purpose},
@@ -82,7 +123,7 @@ def _mock_sms_send(phone: str, code: str, purpose: str, track_number: str | None
 
 
 @router.post("/send")
-def send_otp(payload: OtpSend, db: Session = Depends(get_db)):
+def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
     purpose = _normalize_purpose(payload.purpose)
     if purpose not in ALLOWED_PURPOSES:
         raise HTTPException(status_code=400, detail="Некорректная цель OTP")
@@ -97,12 +138,20 @@ def send_otp(payload: OtpSend, db: Session = Depends(get_db)):
         track_number = _normalize_track(payload.track_number)
         if not track_number:
             raise HTTPException(status_code=400, detail='Поле "track_number" обязательно для VIEW_REQUEST')
-        request = db.query(Request).filter(Request.track_number == track_number).first()
-        if request is None:
+        request_row = db.query(RequestModel).filter(RequestModel.track_number == track_number).first()
+        if request_row is None:
             raise HTTPException(status_code=404, detail="Заявка не найдена")
-        phone = _normalize_phone(request.client_phone)
+        phone = _normalize_phone(request_row.client_phone)
         if not phone:
             raise HTTPException(status_code=400, detail="У заявки отсутствует номер телефона")
+
+    _rate_limit_or_429(
+        "send",
+        purpose=purpose,
+        client_ip=_client_ip(request),
+        phone=phone or None,
+        track_number=track_number,
+    )
 
     code = _generate_code()
     now = _now_utc()
@@ -139,7 +188,7 @@ def send_otp(payload: OtpSend, db: Session = Depends(get_db)):
 
 
 @router.post("/verify")
-def verify_otp(payload: OtpVerify, response: Response, db: Session = Depends(get_db)):
+def verify_otp(payload: OtpVerify, request: Request, response: Response, db: Session = Depends(get_db)):
     purpose = _normalize_purpose(payload.purpose)
     if purpose not in ALLOWED_PURPOSES:
         raise HTTPException(status_code=400, detail="Некорректная цель OTP")
@@ -154,6 +203,14 @@ def verify_otp(payload: OtpVerify, response: Response, db: Session = Depends(get
         track_number = _normalize_track(payload.track_number)
         if not track_number:
             raise HTTPException(status_code=400, detail='Поле "track_number" обязательно для VIEW_REQUEST')
+
+    _rate_limit_or_429(
+        "verify",
+        purpose=purpose,
+        client_ip=_client_ip(request),
+        phone=phone,
+        track_number=track_number,
+    )
 
     query = db.query(OtpSession).filter(
         OtpSession.purpose == purpose,

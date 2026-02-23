@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.sqltypes import Boolean, Date, DateTime, Float, Integer, JSON, Numeric
 
 import app.models as models_pkg
 from app.core.deps import get_current_admin
@@ -47,6 +48,7 @@ from app.services.request_read_markers import (
 from app.services.request_status import apply_status_change_effects
 from app.services.status_flow import transition_allowed_for_topic
 from app.services.request_templates import validate_required_topic_fields_or_400
+from app.services.billing_flow import apply_billing_transition_effects, normalize_status_kind_or_400
 from app.services.universal_query import apply_universal_query
 
 router = APIRouter()
@@ -62,6 +64,7 @@ SYSTEM_FIELDS = {
     "lawyer_has_unread_updates",
     "lawyer_unread_event_type",
 }
+REQUEST_FINANCIAL_FIELDS = {"effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"}
 ALLOWED_ADMIN_ROLES = {"ADMIN", "LAWYER"}
 
 # Per-table RBAC: table -> role -> actions.
@@ -76,6 +79,7 @@ TABLE_ROLE_ACTIONS: dict[str, dict[str, set[str]]] = {
     "statuses": {"ADMIN": set(CRUD_ACTIONS)},
     "form_fields": {"ADMIN": set(CRUD_ACTIONS)},
     "audit_log": {"ADMIN": {"query", "read"}},
+    "security_audit_log": {"ADMIN": {"query", "read"}},
     "otp_sessions": {"ADMIN": {"query", "read"}},
     "admin_users": {"ADMIN": set(CRUD_ACTIONS)},
     "admin_user_topics": {"ADMIN": set(CRUD_ACTIONS)},
@@ -166,6 +170,259 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 def _columns_map(model: type) -> dict[str, Any]:
     mapper = sa_inspect(model)
     return {column.key: column for column in mapper.columns}
+
+
+def _column_kind(column: Any) -> str:
+    col_type = column.type
+    if isinstance(col_type, Boolean):
+        return "boolean"
+    if isinstance(col_type, (Integer, Numeric, Float)):
+        return "number"
+    if isinstance(col_type, DateTime):
+        return "datetime"
+    if isinstance(col_type, Date):
+        return "date"
+    if isinstance(col_type, JSON):
+        return "json"
+    try:
+        python_type = col_type.python_type
+    except Exception:
+        python_type = None
+    if python_type is uuid.UUID:
+        return "uuid"
+    return "text"
+
+
+def _table_label(table_name: str) -> str:
+    normalized = _normalize_table_name(table_name)
+    if not normalized:
+        return "Таблица"
+
+    explicit_labels = {
+        "requests": "Заявки",
+        "invoices": "Счета",
+        "quotes": "Цитаты",
+        "topics": "Темы",
+        "statuses": "Статусы",
+        "form_fields": "Поля формы",
+        "topic_required_fields": "Обязательные поля темы",
+        "topic_data_templates": "Шаблоны данных темы",
+        "topic_status_transitions": "Переходы статусов темы",
+        "admin_users": "Пользователи",
+        "admin_user_topics": "Дополнительные темы юристов",
+        "attachments": "Вложения",
+        "messages": "Сообщения",
+        "audit_log": "Журнал аудита",
+        "security_audit_log": "Журнал безопасности файлов",
+        "status_history": "История статусов",
+        "request_data_requirements": "Требования данных заявки",
+        "otp_sessions": "OTP-сессии",
+        "notifications": "Уведомления",
+    }
+    if normalized in explicit_labels:
+        return explicit_labels[normalized]
+
+    return _humanize_identifier_ru(normalized)
+
+
+def _humanize_identifier_ru(identifier: str) -> str:
+    normalized = _normalize_table_name(identifier)
+    if not normalized:
+        return "Таблица"
+
+    token_labels = {
+        "request": "заявка",
+        "requests": "заявки",
+        "invoice": "счет",
+        "invoices": "счета",
+        "topic": "тема",
+        "topics": "темы",
+        "status": "статус",
+        "statuses": "статусы",
+        "transition": "переход",
+        "transitions": "переходы",
+        "required": "обязательные",
+        "form": "формы",
+        "field": "поле",
+        "fields": "поля",
+        "template": "шаблон",
+        "templates": "шаблоны",
+        "data": "данных",
+        "requirement": "требование",
+        "requirements": "требования",
+        "admin": "админ",
+        "user": "пользователь",
+        "users": "пользователи",
+        "quote": "цитата",
+        "quotes": "цитаты",
+        "message": "сообщение",
+        "messages": "сообщения",
+        "attachment": "вложение",
+        "attachments": "вложения",
+        "notification": "уведомление",
+        "notifications": "уведомления",
+        "audit": "аудита",
+        "security": "безопасности",
+        "log": "журнал",
+        "history": "история",
+        "otp": "OTP",
+        "session": "сессия",
+        "sessions": "сессии",
+        "id": "ID",
+    }
+    words = [token_labels.get(token, token) for token in normalized.split("_") if token]
+    if not words:
+        return "Таблица"
+    phrase = " ".join(words).strip()
+    return phrase[:1].upper() + phrase[1:] if phrase else "Таблица"
+
+
+def _column_label(table_name: str, column_name: str) -> str:
+    normalized_table = _normalize_table_name(table_name)
+    normalized_column = _normalize_table_name(column_name)
+    if not normalized_column:
+        return "Поле"
+
+    table_overrides = {
+        ("invoices", "request_id"): "ID заявки",
+        ("invoices", "issued_by_admin_user_id"): "ID сотрудника",
+        ("request_data_requirements", "request_id"): "ID заявки",
+    }
+    if (normalized_table, normalized_column) in table_overrides:
+        return table_overrides[(normalized_table, normalized_column)]
+
+    explicit = {
+        "id": "ID",
+        "code": "Код",
+        "key": "Ключ",
+        "name": "Название",
+        "label": "Метка",
+        "text": "Текст",
+        "description": "Описание",
+        "author": "Автор",
+        "source": "Источник",
+        "email": "Email",
+        "role": "Роль",
+        "kind": "Тип",
+        "status": "Статус",
+        "status_code": "Статус",
+        "topic_code": "Тема",
+        "from_status": "Из статуса",
+        "to_status": "В статус",
+        "track_number": "Номер заявки",
+        "invoice_number": "Номер счета",
+        "invoice_template": "Шаблон счета",
+        "amount": "Сумма",
+        "currency": "Валюта",
+        "client_name": "Клиент",
+        "client_phone": "Телефон",
+        "payer_display_name": "Плательщик",
+        "payer_details_encrypted": "Реквизиты (шифр.)",
+        "issued_at": "Дата формирования",
+        "paid_at": "Дата оплаты",
+        "created_at": "Дата создания",
+        "updated_at": "Дата обновления",
+        "responsible": "Ответственный",
+        "sort_order": "Порядок",
+        "is_active": "Активен",
+        "enabled": "Активен",
+        "required": "Обязательное",
+        "nullable": "Может быть пустым",
+        "is_terminal": "Терминальный",
+        "request_id": "ID заявки",
+        "admin_user_id": "ID пользователя",
+        "assigned_lawyer_id": "Назначенный юрист",
+        "issued_by_admin_user_id": "ID сотрудника",
+        "primary_topic_code": "Профильная тема",
+        "default_rate": "Ставка по умолчанию",
+        "effective_rate": "Ставка (фикс.)",
+        "salary_percent": "Процент зарплаты",
+        "invoice_amount": "Сумма счета",
+        "paid_by_admin_id": "Оплату подтвердил",
+        "extra_fields": "Доп. поля",
+        "total_attachments_bytes": "Размер вложений (байт)",
+        "type": "Тип",
+        "options": "Опции",
+        "field_key": "Поле формы",
+        "sla_hours": "SLA (часы)",
+        "avatar_url": "Аватар",
+        "file_name": "Имя файла",
+        "mime_type": "MIME-тип",
+        "size_bytes": "Размер (байт)",
+        "s3_key": "Ключ S3",
+        "author_type": "Автор",
+        "is_fulfilled": "Выполнено",
+        "requested_by_admin_user_id": "Запросил сотрудник",
+        "fulfilled_at": "Дата выполнения",
+        "title": "Заголовок",
+        "body": "Текст",
+        "event_type": "Тип события",
+        "is_read": "Прочитано",
+        "read_at": "Дата прочтения",
+        "notified_at": "Дата уведомления",
+        "otp_code": "OTP-код",
+        "phone": "Телефон",
+        "verified_at": "Подтверждено",
+        "expires_at": "Истекает",
+        "jwt_token": "JWT-токен",
+        "action": "Действие",
+        "entity": "Сущность",
+        "entity_id": "ID сущности",
+        "actor_admin_id": "ID автора",
+        "actor_role": "Роль субъекта",
+        "actor_subject": "Субъект",
+        "actor_ip": "IP адрес",
+        "allowed": "Разрешено",
+        "reason": "Причина",
+        "diff": "Изменения",
+        "details": "Детали",
+    }
+    if normalized_column in explicit:
+        return explicit[normalized_column]
+
+    return _humanize_identifier_ru(normalized_column)
+
+
+def _default_sort_for_table(model: type) -> list[dict[str, str]]:
+    columns = _columns_map(model)
+    if "sort_order" in columns:
+        return [{"field": "sort_order", "dir": "asc"}]
+    if "created_at" in columns:
+        return [{"field": "created_at", "dir": "desc"}]
+    pk = sa_inspect(model).primary_key
+    if pk:
+        return [{"field": pk[0].key, "dir": "asc"}]
+    return []
+
+
+def _table_columns_meta(table_name: str, model: type) -> list[dict[str, Any]]:
+    mapper = sa_inspect(model)
+    hidden = _hidden_response_fields(table_name)
+    protected = _protected_input_fields(table_name)
+    primary_keys = {column.key for column in mapper.primary_key}
+    out: list[dict[str, Any]] = []
+    for column in mapper.columns:
+        name = column.key
+        if name in hidden:
+            continue
+        kind = _column_kind(column)
+        has_default = column.default is not None or column.server_default is not None or name in primary_keys
+        editable = name not in SYSTEM_FIELDS and name not in protected and name not in primary_keys
+        out.append(
+            {
+                "name": name,
+                "label": _column_label(table_name, name),
+                "kind": kind,
+                "nullable": bool(column.nullable),
+                "editable": bool(editable),
+                "sortable": True,
+                "filterable": kind != "json",
+                "required_on_create": not bool(column.nullable) and not bool(has_default) and bool(editable),
+                "has_default": bool(has_default),
+                "is_primary_key": name in primary_keys,
+            }
+        )
+    return out
 
 
 def _hidden_response_fields(table_name: str) -> set[str]:
@@ -268,6 +525,14 @@ def _prepare_create_payload(table_name: str, payload: dict[str, Any]) -> dict[st
 def _normalize_optional_string(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _active_lawyer_or_400(db: Session, lawyer_id: Any) -> AdminUser:
+    lawyer_uuid = _parse_uuid_or_400(lawyer_id, "assigned_lawyer_id")
+    lawyer = db.get(AdminUser, lawyer_uuid)
+    if lawyer is None or str(lawyer.role or "").upper() != "LAWYER" or not bool(lawyer.is_active):
+        raise HTTPException(status_code=400, detail="Можно назначить только активного юриста")
+    return lawyer
 
 
 def _apply_admin_user_fields_for_create(payload: dict[str, Any]) -> dict[str, Any]:
@@ -466,6 +731,16 @@ def _apply_topic_status_transitions_fields(db: Session, payload: dict[str, Any])
     return data
 
 
+def _apply_status_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    data = dict(payload)
+    if "kind" in data:
+        data["kind"] = normalize_status_kind_or_400(data.get("kind"))
+    if "invoice_template" in data:
+        text = str(data.get("invoice_template") or "").strip()
+        data["invoice_template"] = text or None
+    return data
+
+
 _RU_TO_LATIN = {
     "а": "a",
     "б": "b",
@@ -655,6 +930,36 @@ def _apply_create_side_effects(db: Session, *, table_name: str, row: Any, admin:
         )
 
 
+@router.get("/meta/tables")
+def list_tables_meta(admin: dict = Depends(get_current_admin)):
+    role = str(admin.get("role") or "").upper()
+    if role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    table_models = _table_model_map()
+    rows: list[dict[str, Any]] = []
+    for table_name in sorted(table_models.keys()):
+        model = table_models[table_name]
+        actions = sorted(_allowed_actions(role, table_name))
+        rows.append(
+            {
+                "key": table_name,
+                "table": table_name,
+                "label": _table_label(table_name),
+                "section": "main" if table_name in {"requests", "invoices"} else "dictionary",
+                "actions": actions,
+                "query_endpoint": f"/api/admin/crud/{table_name}/query",
+                "create_endpoint": f"/api/admin/crud/{table_name}",
+                "update_endpoint_template": f"/api/admin/crud/{table_name}" + "/{id}",
+                "delete_endpoint_template": f"/api/admin/crud/{table_name}" + "/{id}",
+                "default_sort": _default_sort_for_table(model),
+                "columns": _table_columns_meta(table_name, model),
+            }
+        )
+
+    return {"tables": rows}
+
+
 @router.post("/{table_name}/query")
 def query_table(
     table_name: str,
@@ -711,14 +1016,27 @@ def create_row(
 ):
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "create")
-    if normalized == "requests" and _is_lawyer(admin):
-        assigned_lawyer_id = payload.get("assigned_lawyer_id") if isinstance(payload, dict) else None
+    if normalized == "requests" and _is_lawyer(admin) and isinstance(payload, dict):
+        assigned_lawyer_id = payload.get("assigned_lawyer_id")
         if str(assigned_lawyer_id or "").strip():
             raise HTTPException(status_code=403, detail='Юрист не может назначать заявку при создании')
+        forbidden_fields = sorted(REQUEST_FINANCIAL_FIELDS.intersection(set(payload.keys())))
+        if forbidden_fields:
+            raise HTTPException(status_code=403, detail="Юрист не может изменять финансовые поля заявки")
 
     prepared = _prepare_create_payload(normalized, payload)
     if normalized == "requests":
         validate_required_topic_fields_or_400(db, prepared.get("topic_code"), prepared.get("extra_fields"))
+        if not _is_lawyer(admin):
+            assigned_raw = prepared.get("assigned_lawyer_id")
+            if assigned_raw is None or not str(assigned_raw).strip():
+                if "assigned_lawyer_id" in prepared:
+                    prepared["assigned_lawyer_id"] = None
+            else:
+                assigned_lawyer = _active_lawyer_or_400(db, assigned_raw)
+                prepared["assigned_lawyer_id"] = str(assigned_lawyer.id)
+                if prepared.get("effective_rate") is None:
+                    prepared["effective_rate"] = assigned_lawyer.default_rate
     prepared = _apply_auto_fields_for_create(db, model, normalized, prepared)
     clean_payload = _sanitize_payload(
         model,
@@ -737,6 +1055,8 @@ def create_row(
         clean_payload = _apply_request_data_requirements_fields(db, clean_payload)
     if normalized == "topic_status_transitions":
         clean_payload = _apply_topic_status_transitions_fields(db, clean_payload)
+    if normalized == "statuses":
+        clean_payload = _apply_status_fields(clean_payload)
     if "responsible" in _columns_map(model):
         clean_payload["responsible"] = _resolve_responsible(admin)
     row = model(**clean_payload)
@@ -766,8 +1086,12 @@ def update_row(
 ):
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "update")
-    if normalized == "requests" and _is_lawyer(admin) and isinstance(payload, dict) and "assigned_lawyer_id" in payload:
-        raise HTTPException(status_code=403, detail='Назначение доступно только через действие "Взять в работу"')
+    if normalized == "requests" and _is_lawyer(admin) and isinstance(payload, dict):
+        if "assigned_lawyer_id" in payload:
+            raise HTTPException(status_code=403, detail='Назначение доступно только через действие "Взять в работу"')
+        forbidden_fields = sorted(REQUEST_FINANCIAL_FIELDS.intersection(set(payload.keys())))
+        if forbidden_fields:
+            raise HTTPException(status_code=403, detail="Юрист не может изменять финансовые поля заявки")
     row = _load_row_or_404(db, model, row_id)
     if normalized in {"messages", "attachments"} and bool(getattr(row, "immutable", False)):
         raise HTTPException(status_code=400, detail="Запись зафиксирована и недоступна для редактирования")
@@ -791,6 +1115,17 @@ def update_row(
         clean_payload = _apply_request_data_requirements_fields(db, clean_payload)
     if normalized == "topic_status_transitions":
         clean_payload = _apply_topic_status_transitions_fields(db, clean_payload)
+    if normalized == "statuses":
+        clean_payload = _apply_status_fields(clean_payload)
+    if normalized == "requests" and not _is_lawyer(admin) and "assigned_lawyer_id" in clean_payload:
+        assigned_raw = clean_payload.get("assigned_lawyer_id")
+        if assigned_raw is None or not str(assigned_raw).strip():
+            clean_payload["assigned_lawyer_id"] = None
+        else:
+            assigned_lawyer = _active_lawyer_or_400(db, assigned_raw)
+            clean_payload["assigned_lawyer_id"] = str(assigned_lawyer.id)
+            if isinstance(row, Request) and row.effective_rate is None and "effective_rate" not in clean_payload:
+                clean_payload["effective_rate"] = assigned_lawyer.default_rate
     before = _row_to_dict(row)
     if normalized == "topic_status_transitions":
         next_from = str(clean_payload.get("from_status", before.get("from_status") or "")).strip()
@@ -807,6 +1142,14 @@ def update_row(
                 detail="Переход статуса не разрешен для выбранной темы",
             )
         if before_status != after_status and isinstance(row, Request):
+            billing_note = apply_billing_transition_effects(
+                db,
+                req=row,
+                from_status=before_status,
+                to_status=after_status,
+                admin=admin,
+                responsible=_resolve_responsible(admin),
+            )
             mark_unread_for_client(row, EVENT_STATUS)
             apply_status_change_effects(
                 db,
@@ -822,7 +1165,7 @@ def update_row(
                 event_type=NOTIFICATION_EVENT_STATUS,
                 actor_role=_actor_role(admin),
                 actor_admin_user_id=admin.get("sub"),
-                body=f"{before_status} -> {after_status}",
+                body=(f"{before_status} -> {after_status}" + (f"\n{billing_note}" if billing_note else "")),
                 responsible=_resolve_responsible(admin),
             )
     for key, value in clean_payload.items():

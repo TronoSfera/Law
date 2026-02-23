@@ -59,6 +59,21 @@
 - invoice is attached/sent to client through platform notification channel
 - billing status can be included in topic-specific flow as regular transition node
 
+### Implemented Billing Status Flow (`P25`)
+- `statuses.kind` supports:
+- `DEFAULT` (regular status)
+- `INVOICE` (billing step: выставление счета)
+- `PAID` (business payment fact status)
+- `statuses.invoice_template` stores admin-managed invoice template with placeholders (`{track_number}`, `{client_name}`, `{topic_code}`, `{amount}` and others).
+- On request status transition to `INVOICE` kind:
+- system auto-creates waiting invoice (`WAITING_PAYMENT`) from template
+- invoice is linked to request and available in ADMIN/LAWYER + public cabinet
+- On request status transition to `PAID` kind:
+- only ADMIN can perform this transition
+- latest waiting invoice is marked as paid
+- request payment fields are fixed (`invoice_amount`, `paid_at`, `paid_by_admin_id`)
+- Multiple billing cycles in the same request are supported (sequential invoice->paid events).
+
 ### Implemented SLA Transition Config (`P18`)
 - SLA configuration is stored in `topic_status_transitions.sla_hours`
 - `sla_hours` is optional but if set must be integer > 0
@@ -113,6 +128,12 @@
 - Payment event stores who changed status and when (for salary/month reports)
 - A request may contain more than one payment event (multiple invoice-payment cycles)
 
+### Implemented Rate Rules (`P24`)
+- On first assignment (`claim`, `reassign`, `auto-assign`, create/update request with assigned lawyer), `requests.effective_rate` is auto-filled from `admin_users.default_rate` if request rate is empty.
+- If request already has `effective_rate`, assignment/reassignment does not overwrite it.
+- LAWYER role cannot create/update request financial fields (`effective_rate`, `invoice_amount`, `paid_at`, `paid_by_admin_id`).
+- Public client API does not expose internal request financial fields.
+
 ### Implemented Baseline For Dashboard (`P21`)
 - Financial profile fields are persisted:
 - `admin_users.default_rate`
@@ -148,3 +169,10 @@
 - Salary calculation base:
 - paid event = ADMIN changes request status to "Оплачено"
 - salary = paid request amount * lawyer salary percent
+
+## Implemented File Security Audit (`P26`)
+- Added dedicated immutable security log table: `security_audit_log`.
+- File operations in admin/public upload APIs now produce security events:
+- `UPLOAD_INIT`, `UPLOAD_COMPLETE`, `DOWNLOAD_OBJECT`.
+- Both successful and denied attempts are logged (including RBAC denials on download).
+- `security_audit_log` is exposed in admin dictionaries as read-only (query/read only, no update/delete via universal CRUD).
