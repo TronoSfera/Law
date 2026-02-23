@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from functools import lru_cache
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import boto3
 from botocore.exceptions import ClientError
@@ -46,17 +46,32 @@ class S3Storage:
             kwargs: dict = {"Bucket": self.bucket}
             if settings.S3_REGION and settings.S3_REGION != "us-east-1":
                 kwargs["CreateBucketConfiguration"] = {"LocationConstraint": settings.S3_REGION}
-            self.client.create_bucket(**kwargs)
+            try:
+                self.client.create_bucket(**kwargs)
+            except ClientError as create_exc:
+                create_code = str(create_exc.response.get("Error", {}).get("Code", ""))
+                if create_code not in {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}:
+                    raise
         self._bucket_checked = True
+
+    @staticmethod
+    def _proxy_presigned_url(raw_url: str) -> str:
+        # Route pre-signed requests through frontend `/s3/*` proxy to avoid browser cross-origin issues.
+        parts = urlsplit(str(raw_url or ""))
+        if not parts.path:
+            return raw_url
+        query = ("?" + parts.query) if parts.query else ""
+        return "/s3" + parts.path + query
 
     def create_presigned_put_url(self, key: str, mime_type: str, expires_sec: int = 900) -> str:
         self.ensure_bucket()
-        return self.client.generate_presigned_url(
+        url = self.client.generate_presigned_url(
             "put_object",
             Params={"Bucket": self.bucket, "Key": key, "ContentType": mime_type},
             ExpiresIn=expires_sec,
             HttpMethod="PUT",
         )
+        return self._proxy_presigned_url(url)
 
     def head_object(self, key: str) -> dict:
         self.ensure_bucket()

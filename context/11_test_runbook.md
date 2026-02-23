@@ -22,9 +22,9 @@ docker compose exec -T backend python -m compileall app tests alembic
 docker compose build frontend
 docker compose run --rm --no-deps --entrypoint sh frontend -lc "apk add --no-cache nodejs npm >/dev/null && npx --yes esbuild /usr/share/nginx/html/admin.jsx --loader:.jsx=jsx --bundle --outfile=/tmp/admin.bundle.js"
 ```
-5. Браузерный E2E (Playwright) для публичного флоу:
+5. Браузерный E2E (Playwright) для ролевых UI-флоу (PUBLIC / LAWYER / ADMIN):
 ```bash
-docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft.com/playwright:v1.51.0-noble sh -lc "npm install && E2E_BASE_URL=http://frontend npx playwright test --config=playwright.config.js"
+docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft.com/playwright:v1.58.2-jammy sh -lc "npm install --silent && E2E_BASE_URL=http://frontend E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD='AdminPass-123!' E2E_LAWYER_EMAIL=ivan@mail.ru E2E_LAWYER_PASSWORD='LawyerPass-123!' npx playwright test --config=playwright.config.js"
 ```
 
 ## Матрица проверок по задачам
@@ -60,7 +60,7 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 
 ## Ролевое покрытие (PUBLIC / LAWYER / ADMIN)
 ### PUBLIC (клиент)
-- Лендинг и клиентский контур (ручной e2e через `http://localhost:8081`): открыть лендинг, создать заявку, открыть кабинет.
+- Лендинг и клиентский контур через UI e2e: `e2e/tests/public_client_flow.spec.js` (создание заявки, кабинет, чат, загрузка файла).
 - OTP create/view + 7-day cookie + rate-limit: `tests/test_public_requests.py`, `tests/test_otp_rate_limit.py`.
 - Просмотр статуса/истории/чата/файлов/таймлайна по `track_number`: `tests/test_public_cabinet.py`.
 - Переписка клиент -> юрист и маркеры непрочитанного: `tests/test_public_cabinet.py`, `tests/test_notifications.py`.
@@ -68,6 +68,7 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 - Публичные счета и PDF в кабинете: `tests/test_invoices.py`.
 
 ### LAWYER (юрист)
+- UI e2e: `e2e/tests/lawyer_role_flow.spec.js` (вход, claim неназначенной заявки, чтение обновлений, смена статуса).
 - Дашборд юриста (свои, неназначенные, непрочитанные): `tests/test_dashboard_finance.py`.
 - Видимость заявок: свои + неназначенные; запрет доступа к чужим: `tests/test_admin_universal_crud.py`.
 - Claim неназначенной заявки, запрет takeover, запрет назначения через CRUD: `tests/test_admin_universal_crud.py`.
@@ -77,6 +78,7 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 - Счета: видимость только своих, запрет ставить `PAID`: `tests/test_invoices.py`, `tests/test_billing_flow.py`.
 
 ### ADMIN (администратор)
+- UI e2e: `e2e/tests/admin_role_flow.spec.js` (вход, справочники, создание пользователя/темы, создание и оплата счета).
 - CRUD пользователей/юристов (пароли, роли, профильная тема, аватар): `tests/test_admin_universal_crud.py`, `tests/test_uploads_s3.py`.
 - Темы и флоу статусов (включая ветвление), SLA-переходы: `tests/test_admin_universal_crud.py`, `tests/test_worker_maintenance.py`.
 - Шаблоны обязательных/дозапрашиваемых данных: `tests/test_admin_universal_crud.py`, `tests/test_public_requests.py`.
@@ -94,4 +96,4 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 
 ## Последний регрессионный прогон
 - `python -m unittest discover -s tests -p 'test_*.py' -v` — `94 tests OK`.
-- `Playwright public flow` (`e2e/tests/public_client_flow.spec.js`) — `1 passed`.
+- `Playwright UI roles` (`e2e/tests/admin_role_flow.spec.js`, `e2e/tests/lawyer_role_flow.spec.js`, `e2e/tests/public_client_flow.spec.js`) — `3 passed`.

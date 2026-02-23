@@ -1661,7 +1661,6 @@
           ...prev,
           statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
         }));
-        setTableCatalog([]);
 
         if (roleOverride !== "ADMIN") return;
 
@@ -1831,7 +1830,10 @@
       (tableKey, form, mode) => {
         const fields = getRecordFields(tableKey);
         const payload = {};
+        const isLawyerRequestEdit = tableKey === "requests" && role === "LAWYER";
+        const lawyerRequestRestricted = new Set(["assigned_lawyer_id", "effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"]);
         fields.forEach((field) => {
+          if (isLawyerRequestEdit && lawyerRequestRestricted.has(field.key)) return;
           const raw = form[field.key];
           if (field.type === "boolean") {
             payload[field.key] = raw === "true";
@@ -1880,7 +1882,7 @@
         if (tableKey === "invoices" && mode === "edit") delete payload.request_track_number;
         return payload;
       },
-      [getRecordFields]
+      [getRecordFields, role]
     );
 
     const submitRecordModal = useCallback(
@@ -2378,12 +2380,12 @@
       let cancelled = false;
       (async () => {
         await bootstrapReferenceData(token, role);
-        if (!cancelled) await refreshSection(activeSection, token);
+        if (!cancelled) await loadDashboard(token);
       })();
       return () => {
         cancelled = true;
       };
-    }, [bootstrapReferenceData, refreshSection, role, token]);
+    }, [bootstrapReferenceData, loadDashboard, role, token]);
 
     useEffect(() => {
       if (!dictionaryTableItems.length) {
