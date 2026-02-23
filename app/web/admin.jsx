@@ -30,28 +30,75 @@
     REJECTED: "Отклонена",
   };
 
+  const REQUEST_UPDATE_EVENT_LABELS = {
+    MESSAGE: "сообщение",
+    ATTACHMENT: "файл",
+    STATUS: "статус",
+  };
+
   const TABLE_SERVER_CONFIG = {
     requests: {
-      endpoint: "/api/admin/requests/query",
+      table: "requests",
+      endpoint: "/api/admin/crud/requests/query",
       sort: [{ field: "created_at", dir: "desc" }],
     },
     quotes: {
-      endpoint: "/api/admin/quotes/query",
+      table: "quotes",
+      endpoint: "/api/admin/crud/quotes/query",
       sort: [{ field: "sort_order", dir: "asc" }],
     },
     topics: {
-      endpoint: "/api/admin/config/topics/query",
+      table: "topics",
+      endpoint: "/api/admin/crud/topics/query",
       sort: [{ field: "sort_order", dir: "asc" }],
     },
     statuses: {
-      endpoint: "/api/admin/config/statuses/query",
+      table: "statuses",
+      endpoint: "/api/admin/crud/statuses/query",
       sort: [{ field: "sort_order", dir: "asc" }],
     },
     formFields: {
-      endpoint: "/api/admin/config/form-fields/query",
+      table: "form_fields",
+      endpoint: "/api/admin/crud/form_fields/query",
       sort: [{ field: "sort_order", dir: "asc" }],
     },
+    topicRequiredFields: {
+      table: "topic_required_fields",
+      endpoint: "/api/admin/crud/topic_required_fields/query",
+      sort: [{ field: "sort_order", dir: "asc" }],
+    },
+    topicDataTemplates: {
+      table: "topic_data_templates",
+      endpoint: "/api/admin/crud/topic_data_templates/query",
+      sort: [{ field: "sort_order", dir: "asc" }],
+    },
+    statusTransitions: {
+      table: "topic_status_transitions",
+      endpoint: "/api/admin/crud/topic_status_transitions/query",
+      sort: [{ field: "sort_order", dir: "asc" }],
+    },
+    users: {
+      table: "admin_users",
+      endpoint: "/api/admin/crud/admin_users/query",
+      sort: [{ field: "created_at", dir: "desc" }],
+    },
+    userTopics: {
+      table: "admin_user_topics",
+      endpoint: "/api/admin/crud/admin_user_topics/query",
+      sort: [{ field: "created_at", dir: "desc" }],
+    },
   };
+
+  const TABLE_MUTATION_CONFIG = Object.fromEntries(
+    Object.entries(TABLE_SERVER_CONFIG).map(([tableKey, config]) => [
+      tableKey,
+      {
+        create: "/api/admin/crud/" + config.table,
+        update: (id) => "/api/admin/crud/" + config.table + "/" + id,
+        delete: (id) => "/api/admin/crud/" + config.table + "/" + id,
+      },
+    ])
+  );
 
   function createTableState() {
     return {
@@ -106,6 +153,36 @@
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("ru-RU");
   }
 
+  function userInitials(name, email) {
+    const source = String(name || "").trim();
+    if (source) {
+      const parts = source.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return source.slice(0, 2).toUpperCase();
+    }
+    const mail = String(email || "").trim();
+    return (mail.slice(0, 2) || "U").toUpperCase();
+  }
+
+  function avatarColor(seed) {
+    const palette = ["#6f8fa9", "#568f7d", "#a07a5c", "#7d6ea9", "#8f6f8f", "#7f8c5a"];
+    const text = String(seed || "");
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+    return palette[hash % palette.length];
+  }
+
+  function resolveAvatarSrc(avatarUrl, accessToken) {
+    const raw = String(avatarUrl || "").trim();
+    if (!raw) return "";
+    if (raw.startsWith("s3://")) {
+      const key = raw.slice("s3://".length);
+      if (!key || !accessToken) return "";
+      return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken);
+    }
+    return raw;
+  }
+
   function buildUniversalQuery(filters, sort, limit, offset) {
     return {
       filters: filters || [],
@@ -152,10 +229,56 @@
       Описание: row.description || null,
       "Дополнительные поля": row.extra_fields || {},
       "Назначенный юрист (ID)": row.assigned_lawyer_id || null,
+      "Ставка (фикс.)": row.effective_rate ?? null,
+      "Сумма счета": row.invoice_amount ?? null,
+      "Оплачено": row.paid_at ? fmtDate(row.paid_at) : null,
+      "Оплату подтвердил (ID)": row.paid_by_admin_id || null,
+      "Непрочитано клиентом": boolLabel(Boolean(row.client_has_unread_updates)),
+      "Тип обновления для клиента": row.client_unread_event_type ? (REQUEST_UPDATE_EVENT_LABELS[row.client_unread_event_type] || row.client_unread_event_type) : null,
+      "Непрочитано юристом": boolLabel(Boolean(row.lawyer_has_unread_updates)),
+      "Тип обновления для юриста": row.lawyer_unread_event_type ? (REQUEST_UPDATE_EVENT_LABELS[row.lawyer_unread_event_type] || row.lawyer_unread_event_type) : null,
       "Общий размер вложений (байт)": row.total_attachments_bytes ?? 0,
       Создано: fmtDate(row.created_at),
       Обновлено: fmtDate(row.updated_at),
     };
+  }
+
+  function renderRequestUpdatesCell(row, role) {
+    if (role === "LAWYER") {
+      const has = Boolean(row.lawyer_has_unread_updates);
+      const eventType = String(row.lawyer_unread_event_type || "").toUpperCase();
+      return has ? (
+        <span className="request-update-chip" title={"Есть непрочитанное обновление: " + (REQUEST_UPDATE_EVENT_LABELS[eventType] || eventType.toLowerCase())}>
+          <span className="request-update-dot" />
+          {REQUEST_UPDATE_EVENT_LABELS[eventType] || "обновление"}
+        </span>
+      ) : (
+        <span className="request-update-empty">нет</span>
+      );
+    }
+
+    const clientHas = Boolean(row.client_has_unread_updates);
+    const clientType = String(row.client_unread_event_type || "").toUpperCase();
+    const lawyerHas = Boolean(row.lawyer_has_unread_updates);
+    const lawyerType = String(row.lawyer_unread_event_type || "").toUpperCase();
+
+    if (!clientHas && !lawyerHas) return <span className="request-update-empty">нет</span>;
+    return (
+      <span className="request-updates-stack">
+        {clientHas ? (
+          <span className="request-update-chip" title={"Клиенту: " + (REQUEST_UPDATE_EVENT_LABELS[clientType] || clientType.toLowerCase())}>
+            <span className="request-update-dot" />
+            {"Клиент: " + (REQUEST_UPDATE_EVENT_LABELS[clientType] || "обновление")}
+          </span>
+        ) : null}
+        {lawyerHas ? (
+          <span className="request-update-chip" title={"Юристу: " + (REQUEST_UPDATE_EVENT_LABELS[lawyerType] || lawyerType.toLowerCase())}>
+            <span className="request-update-dot" />
+            {"Юрист: " + (REQUEST_UPDATE_EVENT_LABELS[lawyerType] || "обновление")}
+          </span>
+        ) : null}
+      </span>
+    );
   }
 
   function localizeMeta(data) {
@@ -327,6 +450,24 @@
     );
   }
 
+  function UserAvatar({ name, email, avatarUrl, accessToken, size = 32 }) {
+    const [broken, setBroken] = useState(false);
+    useEffect(() => setBroken(false), [avatarUrl]);
+    const initials = userInitials(name, email);
+    const bg = avatarColor(name || email || initials);
+    const src = resolveAvatarSrc(avatarUrl, accessToken);
+    const canShowImage = Boolean(src && !broken);
+    return (
+      <span className="avatar" style={{ width: size + "px", height: size + "px", backgroundColor: bg }}>
+        {canShowImage ? (
+          <img src={src} alt={name || email || "avatar"} onError={() => setBroken(true)} />
+        ) : (
+          <span>{initials}</span>
+        )}
+      </span>
+    );
+  }
+
   function LoginScreen({ onSubmit, status }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -479,16 +620,16 @@
     );
   }
 
-  function QuoteModal({ open, editing, form, status, onClose, onChange, onSubmit }) {
+  function ReassignModal({ open, status, options, value, onChange, onClose, onSubmit, trackNumber }) {
     if (!open) return null;
     return (
-      <Overlay open={open} id="quote-overlay" onClose={(event) => event.target.id === "quote-overlay" && onClose()}>
-        <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <Overlay open={open} id="reassign-overlay" onClose={(event) => event.target.id === "reassign-overlay" && onClose()}>
+        <div className="modal" style={{ width: "min(520px, 100%)" }} onClick={(event) => event.stopPropagation()}>
           <div className="modal-head">
             <div>
-              <h3>{editing ? "Редактирование цитаты" : "Новая цитата"}</h3>
+              <h3>Переназначение заявки</h3>
               <p className="muted" style={{ marginTop: "0.35rem" }}>
-                Создание и редактирование цитат.
+                {trackNumber ? "Заявка: " + trackNumber : "Выберите нового юриста"}
               </p>
             </div>
             <button className="close" type="button" onClick={onClose}>
@@ -497,41 +638,21 @@
           </div>
           <form className="stack" onSubmit={onSubmit}>
             <div className="field">
-              <label htmlFor="quote-author">Автор</label>
-              <input id="quote-author" required value={form.author} onChange={(event) => onChange("author", event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="quote-text">Текст</label>
-              <textarea id="quote-text" required value={form.text} onChange={(event) => onChange("text", event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="quote-source">Источник</label>
-              <input id="quote-source" value={form.source} onChange={(event) => onChange("source", event.target.value)} />
-            </div>
-            <div className="filters" style={{ gridTemplateColumns: "1fr 1fr", margin: 0 }}>
-              <div className="field">
-                <label htmlFor="quote-sort">Порядок</label>
-                <input
-                  id="quote-sort"
-                  type="number"
-                  value={form.sort_order}
-                  onChange={(event) => onChange("sort_order", event.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="quote-active">Активность</label>
-                <select
-                  id="quote-active"
-                  value={form.is_active ? "true" : "false"}
-                  onChange={(event) => onChange("is_active", event.target.value === "true")}
-                >
-                  <option value="true">Да</option>
-                  <option value="false">Нет</option>
-                </select>
-              </div>
+              <label htmlFor="reassign-lawyer">Новый юрист</label>
+              <select id="reassign-lawyer" value={value} onChange={onChange} disabled={!options.length}>
+                {!options.length ? (
+                  <option value="">Нет доступных юристов</option>
+                ) : (
+                  options.map((option) => (
+                    <option value={String(option.value)} key={String(option.value)}>
+                      {option.label}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-              <button className="btn" type="submit">
+              <button className="btn" type="submit" disabled={!value}>
                 Сохранить
               </button>
               <button className="btn secondary" type="button" onClick={onClose}>
@@ -567,13 +688,136 @@
     );
   }
 
+  function RecordModal({ open, title, fields, form, status, onClose, onChange, onSubmit, onUploadField }) {
+    if (!open) return null;
+
+    const renderField = (field) => {
+      const value = form[field.key] ?? "";
+      const options = typeof field.options === "function" ? field.options() : [];
+      const id = "record-field-" + field.key;
+
+      if (field.type === "textarea" || field.type === "json") {
+        return (
+          <textarea
+            id={id}
+            value={value}
+            onChange={(event) => onChange(field.key, event.target.value)}
+            placeholder={field.placeholder || ""}
+            required={Boolean(field.required)}
+          />
+        );
+      }
+      if (field.type === "boolean") {
+        return (
+          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)}>
+            <option value="true">Да</option>
+            <option value="false">Нет</option>
+          </select>
+        );
+      }
+      if (field.type === "reference" || field.type === "enum") {
+        return (
+          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)}>
+            {field.optional ? <option value="">-</option> : null}
+            {options.map((option) => (
+              <option value={String(option.value)} key={String(option.value)}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        );
+      }
+      if (field.uploadScope) {
+        return (
+          <div className="field-inline">
+            <input
+              id={id}
+              type="text"
+              value={value}
+              onChange={(event) => onChange(field.key, event.target.value)}
+              placeholder={field.placeholder || ""}
+              required={Boolean(field.required)}
+            />
+            <label className="btn secondary btn-sm" style={{ whiteSpace: "nowrap" }}>
+              Загрузить
+              <input
+                type="file"
+                accept={field.accept || "*/*"}
+                style={{ display: "none" }}
+                onChange={(event) => {
+                  const file = event.target.files && event.target.files[0];
+                  if (file && onUploadField) onUploadField(field, file);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        );
+      }
+      return (
+        <input
+          id={id}
+          type={field.type === "number" ? "number" : field.type === "password" ? "password" : "text"}
+          step={field.type === "number" ? "any" : undefined}
+          value={value}
+          onChange={(event) => onChange(field.key, event.target.value)}
+          placeholder={field.placeholder || ""}
+          required={Boolean(field.required)}
+        />
+      );
+    };
+
+    return (
+      <Overlay open={open} id="record-overlay" onClose={(event) => event.target.id === "record-overlay" && onClose()}>
+        <div className="modal" style={{ width: "min(760px, 100%)" }} onClick={(event) => event.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3>{title}</h3>
+              <p className="muted" style={{ marginTop: "0.35rem" }}>
+                Создание и редактирование записи.
+              </p>
+            </div>
+            <button className="close" type="button" onClick={onClose}>
+              ×
+            </button>
+          </div>
+          <form className="stack" onSubmit={onSubmit}>
+            <div className="filters" style={{ gridTemplateColumns: "repeat(2, minmax(0,1fr))" }}>
+              {fields.map((field) => (
+                <div className="field" key={field.key}>
+                  <label htmlFor={"record-field-" + field.key}>{field.label}</label>
+                  {renderField(field)}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+              <button className="btn" type="submit">
+                Сохранить
+              </button>
+              <button className="btn secondary" type="button" onClick={onClose}>
+                Отмена
+              </button>
+            </div>
+            <StatusLine status={status} />
+          </form>
+        </div>
+      </Overlay>
+    );
+  }
+
   function App() {
     const [token, setToken] = useState("");
     const [role, setRole] = useState("");
     const [email, setEmail] = useState("");
     const [activeSection, setActiveSection] = useState("dashboard");
 
-    const [dashboardData, setDashboardData] = useState({ cards: [], byStatus: {} });
+    const [dashboardData, setDashboardData] = useState({
+      scope: "",
+      cards: [],
+      byStatus: {},
+      lawyerLoads: [],
+      myUnreadByEvent: {},
+    });
 
     const [tables, setTables] = useState({
       requests: createTableState(),
@@ -581,28 +825,34 @@
       topics: createTableState(),
       statuses: createTableState(),
       formFields: createTableState(),
+      topicRequiredFields: createTableState(),
+      topicDataTemplates: createTableState(),
+      statusTransitions: createTableState(),
+      users: createTableState(),
+      userTopics: createTableState(),
     });
 
     const [dictionaries, setDictionaries] = useState({
       topics: [],
       statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
       formFieldTypes: [...DEFAULT_FORM_FIELD_TYPES],
+      formFieldKeys: [],
+      users: [],
     });
 
     const [statusMap, setStatusMap] = useState({});
 
     const [requestModal, setRequestModal] = useState({ open: false, jsonText: "" });
-    const [quoteModalOpen, setQuoteModalOpen] = useState(false);
-    const [editingQuoteId, setEditingQuoteId] = useState(null);
-    const [quoteForm, setQuoteForm] = useState({
-      author: "",
-      text: "",
-      source: "",
-      sort_order: 0,
-      is_active: true,
+    const [recordModal, setRecordModal] = useState({
+      open: false,
+      tableKey: null,
+      mode: "create",
+      rowId: null,
+      form: {},
     });
 
-    const [configActiveKey, setConfigActiveKey] = useState("topics");
+    const [configActiveKey, setConfigActiveKey] = useState("quotes");
+    const [referencesExpanded, setReferencesExpanded] = useState(true);
 
     const [metaEntity, setMetaEntity] = useState("quotes");
     const [metaJson, setMetaJson] = useState("");
@@ -614,6 +864,12 @@
       op: "=",
       rawValue: "",
       editIndex: null,
+    });
+    const [reassignModal, setReassignModal] = useState({
+      open: false,
+      requestId: null,
+      trackNumber: "",
+      lawyerId: "",
     });
 
     const tablesRef = useRef(tables);
@@ -674,9 +930,28 @@
         .map((item) => ({ value: item.code, label: (item.name || item.code) + " (" + item.code + ")" }));
     }, [dictionaries.topics]);
 
+    const getLawyerOptions = useCallback(() => {
+      return (dictionaries.users || [])
+        .filter((item) => item && item.id && String(item.role || "").toUpperCase() === "LAWYER")
+        .map((item) => ({
+          value: item.id,
+          label: (item.name || item.email || item.id) + (item.email ? " (" + item.email + ")" : ""),
+        }));
+    }, [dictionaries.users]);
+
     const getFormFieldTypeOptions = useCallback(() => {
       return (dictionaries.formFieldTypes || []).filter(Boolean).map((item) => ({ value: item, label: item }));
     }, [dictionaries.formFieldTypes]);
+
+    const getFormFieldKeyOptions = useCallback(() => {
+      return (dictionaries.formFieldKeys || [])
+        .filter((item) => item && item.key)
+        .map((item) => ({ value: item.key, label: (item.label || item.key) + " (" + item.key + ")" }));
+    }, [dictionaries.formFieldKeys]);
+
+    const getRoleOptions = useCallback(() => {
+      return Object.entries(ROLE_LABELS).map(([code, label]) => ({ value: code, label: label + " (" + code + ")" }));
+    }, []);
 
     const getFilterFields = useCallback(
       (tableKey) => {
@@ -687,6 +962,9 @@
             { field: "client_phone", label: "Телефон", type: "text" },
             { field: "status_code", label: "Статус", type: "reference", options: getStatusOptions },
             { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "invoice_amount", label: "Сумма счета", type: "number" },
+            { field: "effective_rate", label: "Ставка", type: "number" },
+            { field: "paid_at", label: "Оплачено", type: "date" },
             { field: "created_at", label: "Дата создания", type: "date" },
           ];
         }
@@ -727,9 +1005,192 @@
             { field: "sort_order", label: "Порядок", type: "number" },
           ];
         }
+        if (tableKey === "topicRequiredFields") {
+          return [
+            { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "field_key", label: "Поле формы", type: "reference", options: getFormFieldKeyOptions },
+            { field: "required", label: "Обязательное", type: "boolean" },
+            { field: "enabled", label: "Активно", type: "boolean" },
+            { field: "sort_order", label: "Порядок", type: "number" },
+          ];
+        }
+        if (tableKey === "topicDataTemplates") {
+          return [
+            { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "key", label: "Ключ", type: "text" },
+            { field: "label", label: "Метка", type: "text" },
+            { field: "required", label: "Обязательное", type: "boolean" },
+            { field: "enabled", label: "Активно", type: "boolean" },
+            { field: "sort_order", label: "Порядок", type: "number" },
+            { field: "created_at", label: "Дата создания", type: "date" },
+          ];
+        }
+        if (tableKey === "statusTransitions") {
+          return [
+            { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "from_status", label: "Из статуса", type: "reference", options: getStatusOptions },
+            { field: "to_status", label: "В статус", type: "reference", options: getStatusOptions },
+            { field: "sla_hours", label: "SLA (часы)", type: "number" },
+            { field: "enabled", label: "Активен", type: "boolean" },
+            { field: "sort_order", label: "Порядок", type: "number" },
+          ];
+        }
+        if (tableKey === "users") {
+          return [
+            { field: "name", label: "Имя", type: "text" },
+            { field: "email", label: "Email", type: "text" },
+            { field: "role", label: "Роль", type: "enum", options: getRoleOptions },
+            { field: "primary_topic_code", label: "Профиль (тема)", type: "reference", options: getTopicOptions },
+            { field: "default_rate", label: "Ставка по умолчанию", type: "number" },
+            { field: "salary_percent", label: "Процент зарплаты", type: "number" },
+            { field: "is_active", label: "Активен", type: "boolean" },
+            { field: "responsible", label: "Ответственный", type: "text" },
+            { field: "created_at", label: "Дата создания", type: "date" },
+          ];
+        }
+        if (tableKey === "userTopics") {
+          return [
+            { field: "admin_user_id", label: "Юрист", type: "reference", options: getLawyerOptions },
+            { field: "topic_code", label: "Доп. тема", type: "reference", options: getTopicOptions },
+            { field: "responsible", label: "Ответственный", type: "text" },
+            { field: "created_at", label: "Дата создания", type: "date" },
+          ];
+        }
         return [];
       },
-      [getFormFieldTypeOptions, getStatusOptions, getTopicOptions]
+      [getFormFieldKeyOptions, getFormFieldTypeOptions, getLawyerOptions, getRoleOptions, getStatusOptions, getTopicOptions]
+    );
+
+    const getTableLabel = useCallback((tableKey) => {
+      if (tableKey === "requests") return "Заявки";
+      if (tableKey === "quotes") return "Цитаты";
+      if (tableKey === "topics") return "Темы";
+      if (tableKey === "statuses") return "Статусы";
+      if (tableKey === "formFields") return "Поля формы";
+      if (tableKey === "topicRequiredFields") return "Обязательные поля по темам";
+      if (tableKey === "topicDataTemplates") return "Шаблоны дозапроса по темам";
+      if (tableKey === "statusTransitions") return "Переходы статусов";
+      if (tableKey === "users") return "Пользователи";
+      if (tableKey === "userTopics") return "Дополнительные темы юристов";
+      return "Таблица";
+    }, []);
+
+    const getRecordFields = useCallback(
+      (tableKey) => {
+        if (tableKey === "requests") {
+          return [
+            { key: "track_number", label: "Номер заявки", type: "text", optional: true, placeholder: "Оставьте пустым для автогенерации" },
+            { key: "client_name", label: "Клиент", type: "text", required: true },
+            { key: "client_phone", label: "Телефон", type: "text", required: true },
+            { key: "topic_code", label: "Тема", type: "reference", optional: true, options: getTopicOptions },
+            { key: "status_code", label: "Статус", type: "reference", required: true, options: getStatusOptions },
+            { key: "description", label: "Описание", type: "textarea", optional: true },
+            { key: "extra_fields", label: "Дополнительные поля (JSON)", type: "json", optional: true, defaultValue: "{}" },
+            { key: "assigned_lawyer_id", label: "Назначенный юрист (ID)", type: "text", optional: true },
+            { key: "effective_rate", label: "Ставка (фикс.)", type: "number", optional: true },
+            { key: "invoice_amount", label: "Сумма счета", type: "number", optional: true },
+            { key: "paid_at", label: "Дата оплаты (ISO)", type: "text", optional: true, placeholder: "2026-02-23T12:00:00+03:00" },
+            { key: "paid_by_admin_id", label: "Оплату подтвердил (ID)", type: "text", optional: true },
+            { key: "total_attachments_bytes", label: "Размер вложений (байт)", type: "number", optional: true, defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "quotes") {
+          return [
+            { key: "author", label: "Автор", type: "text", required: true },
+            { key: "text", label: "Текст", type: "textarea", required: true },
+            { key: "source", label: "Источник", type: "text", optional: true },
+            { key: "is_active", label: "Активна", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "topics") {
+          return [
+            { key: "code", label: "Код", type: "text", required: true, autoCreate: true },
+            { key: "name", label: "Название", type: "text", required: true },
+            { key: "enabled", label: "Активна", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "statuses") {
+          return [
+            { key: "code", label: "Код", type: "text", required: true },
+            { key: "name", label: "Название", type: "text", required: true },
+            { key: "enabled", label: "Активен", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+            { key: "is_terminal", label: "Терминальный", type: "boolean", defaultValue: "false" },
+          ];
+        }
+        if (tableKey === "formFields") {
+          return [
+            { key: "key", label: "Ключ", type: "text", required: true },
+            { key: "label", label: "Метка", type: "text", required: true },
+            { key: "type", label: "Тип", type: "enum", required: true, options: getFormFieldTypeOptions },
+            { key: "required", label: "Обязательное", type: "boolean", defaultValue: "false" },
+            { key: "enabled", label: "Активно", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+            { key: "options", label: "Опции (JSON)", type: "json", optional: true },
+          ];
+        }
+        if (tableKey === "topicRequiredFields") {
+          return [
+            { key: "topic_code", label: "Тема", type: "reference", required: true, options: getTopicOptions },
+            { key: "field_key", label: "Поле формы", type: "reference", required: true, options: getFormFieldKeyOptions },
+            { key: "required", label: "Обязательное", type: "boolean", defaultValue: "true" },
+            { key: "enabled", label: "Активно", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "topicDataTemplates") {
+          return [
+            { key: "topic_code", label: "Тема", type: "reference", required: true, options: getTopicOptions },
+            { key: "key", label: "Ключ", type: "text", required: true },
+            { key: "label", label: "Метка", type: "text", required: true },
+            { key: "description", label: "Описание", type: "textarea", optional: true },
+            { key: "required", label: "Обязательное", type: "boolean", defaultValue: "true" },
+            { key: "enabled", label: "Активно", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "statusTransitions") {
+          return [
+            { key: "topic_code", label: "Тема", type: "reference", required: true, options: getTopicOptions },
+            { key: "from_status", label: "Из статуса", type: "reference", required: true, options: getStatusOptions },
+            { key: "to_status", label: "В статус", type: "reference", required: true, options: getStatusOptions },
+            { key: "sla_hours", label: "SLA (часы)", type: "number", optional: true },
+            { key: "enabled", label: "Активен", type: "boolean", defaultValue: "true" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+          ];
+        }
+        if (tableKey === "users") {
+          return [
+            { key: "name", label: "Имя", type: "text", required: true },
+            { key: "email", label: "Email", type: "text", required: true },
+            { key: "role", label: "Роль", type: "enum", required: true, options: getRoleOptions, defaultValue: "LAWYER" },
+            {
+              key: "avatar_url",
+              label: "URL аватара",
+              type: "text",
+              optional: true,
+              placeholder: "https://... или s3://...",
+              uploadScope: "USER_AVATAR",
+              accept: "image/*",
+            },
+            { key: "primary_topic_code", label: "Профиль (тема)", type: "reference", optional: true, options: getTopicOptions },
+            { key: "default_rate", label: "Ставка по умолчанию", type: "number", optional: true },
+            { key: "salary_percent", label: "Процент зарплаты", type: "number", optional: true },
+            { key: "is_active", label: "Активен", type: "boolean", defaultValue: "true" },
+            { key: "password", label: "Пароль", type: "password", requiredOnCreate: true, optional: true, omitIfEmpty: true, placeholder: "Введите пароль" },
+          ];
+        }
+        if (tableKey === "userTopics") {
+          return [
+            { key: "admin_user_id", label: "Юрист", type: "reference", required: true, options: getLawyerOptions },
+            { key: "topic_code", label: "Дополнительная тема", type: "reference", required: true, options: getTopicOptions },
+          ];
+        }
+        return [];
+      },
+      [getFormFieldKeyOptions, getFormFieldTypeOptions, getLawyerOptions, getRoleOptions, getStatusOptions, getTopicOptions]
     );
 
     const getFieldDef = useCallback(
@@ -863,10 +1324,31 @@
               (next.rows || []).forEach((row) => {
                 if (row?.type) set.add(row.type);
               });
+              const fieldKeys = (next.rows || [])
+                .filter((row) => row && row.key)
+                .map((row) => ({ key: row.key, label: row.label || row.key }))
+                .sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
               return {
                 ...prev,
                 formFieldTypes: Array.from(set.values()).sort((a, b) => String(a).localeCompare(String(b), "ru")),
+                formFieldKeys: fieldKeys,
               };
+            });
+          }
+
+          if (tableKey === "users") {
+            setDictionaries((prev) => {
+              const map = new Map((prev.users || []).map((user) => [user.id, user]));
+              (next.rows || []).forEach((row) => {
+                map.set(row.id, {
+                  id: row.id,
+                  name: row.name || "",
+                  email: row.email || "",
+                  role: row.role || "",
+                  is_active: Boolean(row.is_active),
+                });
+              });
+              return { ...prev, users: Array.from(map.values()) };
             });
           }
 
@@ -899,23 +1381,41 @@
         setStatus("dashboard", "Загрузка...", "");
         try {
           const data = await api("/api/admin/metrics/overview", {}, tokenOverride);
-          const cards = [
-            { label: "Новые", value: data.new ?? 0 },
-            { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
-            { label: "Средний FRT (мин)", value: data.frt_avg_minutes ?? "-" },
-            { label: "Групп по статусам", value: Object.keys(data.by_status || {}).length },
-          ];
+          const scope = String(data.scope || role || "");
+          const cards =
+            scope === "LAWYER"
+              ? [
+                  { label: "Мои заявки", value: data.assigned_total ?? 0 },
+                  { label: "Мои активные", value: data.active_assigned_total ?? 0 },
+                  { label: "Неназначенные", value: data.unassigned_total ?? 0 },
+                  { label: "Мои непрочитанные", value: data.my_unread_updates ?? 0 },
+                  { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
+                ]
+              : [
+                  { label: "Новые", value: data.new ?? 0 },
+                  { label: "Назначенные", value: data.assigned_total ?? 0 },
+                  { label: "Неназначенные", value: data.unassigned_total ?? 0 },
+                  { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
+                  { label: "Непрочитано юристами", value: data.unread_for_lawyers ?? 0 },
+                  { label: "Непрочитано клиентами", value: data.unread_for_clients ?? 0 },
+                ];
           const localized = {};
           Object.entries(data.by_status || {}).forEach(([code, count]) => {
             localized[statusLabel(code)] = count;
           });
-          setDashboardData({ cards, byStatus: localized });
+          setDashboardData({
+            scope,
+            cards,
+            byStatus: localized,
+            lawyerLoads: data.lawyer_loads || [],
+            myUnreadByEvent: data.my_unread_by_event || {},
+          });
           setStatus("dashboard", "Данные обновлены", "ok");
         } catch (error) {
           setStatus("dashboard", "Ошибка: " + error.message, "error");
         }
       },
-      [api, setStatus]
+      [api, role, setStatus]
     );
 
     const loadMeta = useCallback(
@@ -956,10 +1456,12 @@
 
         try {
           const body = buildUniversalQuery([], [{ field: "sort_order", dir: "asc" }], 500, 0);
-          const [topicsData, statusesData, fieldsData] = await Promise.all([
-            api("/api/admin/config/topics/query", { method: "POST", body }, tokenOverride),
-            api("/api/admin/config/statuses/query", { method: "POST", body }, tokenOverride),
-            api("/api/admin/config/form-fields/query", { method: "POST", body }, tokenOverride),
+          const usersBody = buildUniversalQuery([], [{ field: "created_at", dir: "desc" }], 500, 0);
+          const [topicsData, statusesData, fieldsData, usersData] = await Promise.all([
+            api("/api/admin/crud/topics/query", { method: "POST", body }, tokenOverride),
+            api("/api/admin/crud/statuses/query", { method: "POST", body }, tokenOverride),
+            api("/api/admin/crud/form_fields/query", { method: "POST", body }, tokenOverride),
+            api("/api/admin/crud/admin_users/query", { method: "POST", body: usersBody }, tokenOverride),
           ]);
 
           const statusesMap = new Map(Object.entries(STATUS_LABELS).map(([code, name]) => [code, { code, name }]));
@@ -972,12 +1474,24 @@
           (fieldsData.rows || []).forEach((row) => {
             if (row?.type) typeSet.add(row.type);
           });
+          const fieldKeys = (fieldsData.rows || [])
+            .filter((row) => row && row.key)
+            .map((row) => ({ key: row.key, label: row.label || row.key }))
+            .sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
 
           setDictionaries((prev) => ({
             ...prev,
             topics: sortByName((topicsData.rows || []).map((row) => ({ code: row.code, name: row.name || row.code }))),
             statuses: sortByName(Array.from(statusesMap.values())),
             formFieldTypes: Array.from(typeSet.values()).sort((a, b) => String(a).localeCompare(String(b), "ru")),
+            formFieldKeys: fieldKeys,
+            users: (usersData.rows || []).map((row) => ({
+              id: row.id,
+              name: row.name || "",
+              email: row.email || "",
+              role: row.role || "",
+              is_active: Boolean(row.is_active),
+            })),
           }));
         } catch (_) {
           // Keep defaults when dictionary endpoints are unavailable.
@@ -990,7 +1504,7 @@
       async (requestId) => {
         setRequestModal({ open: true, jsonText: "Загрузка..." });
         try {
-          const row = await api("/api/admin/requests/" + requestId);
+          const row = await api("/api/admin/crud/requests/" + requestId);
           setRequestModal({ open: true, jsonText: JSON.stringify(localizeRequestDetails(row), null, 2) });
         } catch (error) {
           setRequestModal({ open: true, jsonText: "Ошибка: " + error.message });
@@ -999,72 +1513,263 @@
       [api]
     );
 
-    const openQuoteCreate = useCallback(() => {
-      setEditingQuoteId(null);
-      setQuoteForm({ author: "", text: "", source: "", sort_order: 0, is_active: true });
-      setStatus("quoteForm", "", "");
-      setQuoteModalOpen(true);
+    const openCreateRecordModal = useCallback(
+      (tableKey) => {
+        const fields = getRecordFields(tableKey);
+        const initial = {};
+        fields.forEach((field) => {
+          if (field.defaultValue !== undefined) initial[field.key] = String(field.defaultValue);
+          else if (field.type === "boolean") initial[field.key] = "false";
+          else if (field.type === "json") initial[field.key] = field.optional ? "" : "{}";
+          else if ((field.type === "reference" || field.type === "enum") && !field.optional) {
+            const options = typeof field.options === "function" ? field.options() : [];
+            initial[field.key] = options.length ? String(options[0].value) : "";
+          }
+          else initial[field.key] = "";
+        });
+        if (tableKey === "requests" && !initial.status_code) initial.status_code = "NEW";
+        setRecordModal({ open: true, tableKey, mode: "create", rowId: null, form: initial });
+        setStatus("recordForm", "", "");
+      },
+      [getRecordFields, setStatus]
+    );
+
+    const openEditRecordModal = useCallback(
+      (tableKey, row) => {
+        const fields = getRecordFields(tableKey);
+        const nextForm = {};
+        fields.forEach((field) => {
+          const value = row[field.key];
+          if (field.type === "boolean") nextForm[field.key] = value ? "true" : "false";
+          else if (field.type === "json") nextForm[field.key] = value == null ? "" : JSON.stringify(value, null, 2);
+          else nextForm[field.key] = value == null ? "" : String(value);
+        });
+        setRecordModal({ open: true, tableKey, mode: "edit", rowId: row.id, form: nextForm });
+        setStatus("recordForm", "", "");
+      },
+      [getRecordFields, setStatus]
+    );
+
+    const closeRecordModal = useCallback(() => {
+      setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
+      setStatus("recordForm", "", "");
     }, [setStatus]);
 
-    const openQuoteEdit = useCallback(
-      (row) => {
-        setEditingQuoteId(row.id);
-        setQuoteForm({
-          author: row.author || "",
-          text: row.text || "",
-          source: row.source || "",
-          sort_order: row.sort_order ?? 0,
-          is_active: Boolean(row.is_active),
-        });
-        setStatus("quoteForm", "", "");
-        setQuoteModalOpen(true);
-      },
-      [setStatus]
-    );
+    const updateRecordField = useCallback((field, value) => {
+      setRecordModal((prev) => ({ ...prev, form: { ...(prev.form || {}), [field]: value } }));
+    }, []);
 
-    const saveQuote = useCallback(
-      async (event) => {
-        event.preventDefault();
+    const uploadRecordFieldFile = useCallback(
+      async (field, file) => {
+        if (!recordModal.tableKey || !field || !file) return;
+        if (field.uploadScope !== "USER_AVATAR") return;
+        if (recordModal.tableKey !== "users") return;
+        if (recordModal.mode !== "edit" || !recordModal.rowId) {
+          setStatus("recordForm", "Сначала сохраните пользователя, затем загрузите аватар", "error");
+          return;
+        }
         try {
-          setStatus("quoteForm", "Сохранение...", "");
-          const payload = {
-            author: String(quoteForm.author || "").trim(),
-            text: String(quoteForm.text || "").trim(),
-            source: String(quoteForm.source || "").trim() || null,
-            sort_order: Number(quoteForm.sort_order || 0),
-            is_active: Boolean(quoteForm.is_active),
+          setStatus("recordForm", "Загрузка файла...", "");
+          const mimeType = String(file.type || "application/octet-stream");
+          const initPayload = {
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "USER_AVATAR",
+            user_id: recordModal.rowId,
           };
-
-          if (!payload.author || !payload.text) throw new Error("Заполните автора и текст цитаты");
-
-          if (editingQuoteId) {
-            await api("/api/admin/quotes/" + editingQuoteId, { method: "PATCH", body: payload });
-          } else {
-            await api("/api/admin/quotes", { method: "POST", body: payload });
+          const init = await api("/api/admin/uploads/init", { method: "POST", body: initPayload });
+          const putResp = await fetch(init.presigned_url, {
+            method: "PUT",
+            headers: { "Content-Type": mimeType },
+            body: file,
+          });
+          if (!putResp.ok) {
+            throw new Error("Не удалось загрузить файл в хранилище");
           }
-
-          setStatus("quoteForm", "Сохранено", "ok");
-          await loadTable("quotes", { resetOffset: true });
-          setTimeout(() => setQuoteModalOpen(false), 300);
+          const done = await api("/api/admin/uploads/complete", {
+            method: "POST",
+            body: {
+              key: init.key,
+              file_name: file.name,
+              mime_type: mimeType,
+              size_bytes: file.size,
+              scope: "USER_AVATAR",
+              user_id: recordModal.rowId,
+            },
+          });
+          updateRecordField("avatar_url", String(done.avatar_url || ""));
+          setStatus("recordForm", "Аватар загружен", "ok");
         } catch (error) {
-          setStatus("quoteForm", "Ошибка: " + error.message, "error");
+          setStatus("recordForm", "Ошибка загрузки: " + error.message, "error");
         }
       },
-      [api, editingQuoteId, loadTable, quoteForm, setStatus]
+      [api, recordModal, setStatus, updateRecordField]
     );
 
-    const removeQuote = useCallback(
-      async (id) => {
-        if (!confirm("Удалить цитату?")) return;
+    const buildRecordPayload = useCallback(
+      (tableKey, form, mode) => {
+        const fields = getRecordFields(tableKey);
+        const payload = {};
+        fields.forEach((field) => {
+          const raw = form[field.key];
+          if (field.type === "boolean") {
+            payload[field.key] = raw === "true";
+            return;
+          }
+          if (field.type === "number") {
+            if (raw === "" || raw == null) {
+              if (!field.optional) payload[field.key] = 0;
+              return;
+            }
+            const number = Number(raw);
+            if (Number.isNaN(number)) throw new Error("Некорректное число в поле \"" + field.label + "\"");
+            payload[field.key] = number;
+            return;
+          }
+          if (field.type === "json") {
+            const text = String(raw || "").trim();
+            if (!text) {
+              if (field.optional) payload[field.key] = null;
+              else payload[field.key] = {};
+              return;
+            }
+            try {
+              payload[field.key] = JSON.parse(text);
+            } catch (_) {
+              throw new Error("Поле \"" + field.label + "\" должно быть валидным JSON");
+            }
+            return;
+          }
+
+          const value = String(raw || "").trim();
+          if (!value) {
+            if (mode === "create" && field.autoCreate) return;
+            if (mode === "create" && field.requiredOnCreate) throw new Error("Заполните поле \"" + field.label + "\"");
+            if (field.required) throw new Error("Заполните поле \"" + field.label + "\"");
+            if (field.omitIfEmpty) return;
+            if (tableKey === "requests" && field.key === "track_number") return;
+            if (field.optional) payload[field.key] = null;
+            return;
+          }
+          payload[field.key] = value;
+        });
+
+        if (tableKey === "requests" && !payload.extra_fields) payload.extra_fields = {};
+        return payload;
+      },
+      [getRecordFields]
+    );
+
+    const submitRecordModal = useCallback(
+      async (event) => {
+        event.preventDefault();
+        const tableKey = recordModal.tableKey;
+        if (!tableKey) return;
+        const endpoints = TABLE_MUTATION_CONFIG[tableKey];
+        if (!endpoints) return;
         try {
-          await api("/api/admin/quotes/" + id, { method: "DELETE" });
-          setStatus("quotes", "Цитата удалена", "ok");
-          await loadTable("quotes", { resetOffset: true });
+          setStatus("recordForm", "Сохранение...", "");
+          const payload = buildRecordPayload(tableKey, recordModal.form || {}, recordModal.mode);
+          if (recordModal.mode === "edit" && recordModal.rowId) {
+            await api(endpoints.update(recordModal.rowId), { method: "PATCH", body: payload });
+          } else {
+            await api(endpoints.create, { method: "POST", body: payload });
+          }
+          setStatus("recordForm", "Сохранено", "ok");
+          await loadTable(tableKey, { resetOffset: true });
+          setTimeout(() => closeRecordModal(), 250);
         } catch (error) {
-          setStatus("quotes", "Ошибка удаления: " + error.message, "error");
+          setStatus("recordForm", "Ошибка: " + error.message, "error");
+        }
+      },
+      [api, buildRecordPayload, closeRecordModal, loadTable, recordModal, setStatus]
+    );
+
+    const deleteRecord = useCallback(
+      async (tableKey, id) => {
+        const endpoints = TABLE_MUTATION_CONFIG[tableKey];
+        if (!endpoints) return;
+        if (!confirm("Удалить запись?")) return;
+        try {
+          await api(endpoints.delete(id), { method: "DELETE" });
+          setStatus(tableKey, "Запись удалена", "ok");
+          await loadTable(tableKey, { resetOffset: true });
+        } catch (error) {
+          setStatus(tableKey, "Ошибка удаления: " + error.message, "error");
         }
       },
       [api, loadTable, setStatus]
+    );
+
+    const claimRequest = useCallback(
+      async (requestId) => {
+        if (!requestId) return;
+        try {
+          setStatus("requests", "Назначение заявки...", "");
+          await api("/api/admin/requests/" + requestId + "/claim", { method: "POST" });
+          setStatus("requests", "Заявка взята в работу", "ok");
+          await loadTable("requests", { resetOffset: true });
+        } catch (error) {
+          setStatus("requests", "Ошибка назначения: " + error.message, "error");
+        }
+      },
+      [api, loadTable, setStatus]
+    );
+
+    const openReassignModal = useCallback(
+      (row) => {
+        const options = getLawyerOptions();
+        if (!options.length) {
+          setStatus("reassignForm", "Нет доступных юристов для переназначения", "error");
+          return;
+        }
+        const current = String(row?.assigned_lawyer_id || "");
+        const hasCurrent = options.some((option) => String(option.value) === current);
+        const fallback = options[0] ? String(options[0].value) : "";
+        setReassignModal({
+          open: true,
+          requestId: row?.id || null,
+          trackNumber: row?.track_number || "",
+          lawyerId: hasCurrent ? current : fallback,
+        });
+        setStatus("reassignForm", "", "");
+      },
+      [getLawyerOptions, setStatus]
+    );
+
+    const closeReassignModal = useCallback(() => {
+      setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
+      setStatus("reassignForm", "", "");
+    }, [setStatus]);
+
+    const updateReassignLawyer = useCallback((event) => {
+      setReassignModal((prev) => ({ ...prev, lawyerId: event.target.value }));
+    }, []);
+
+    const submitReassignModal = useCallback(
+      async (event) => {
+        event.preventDefault();
+        if (!reassignModal.requestId) return;
+        const lawyerId = String(reassignModal.lawyerId || "").trim();
+        if (!lawyerId) {
+          setStatus("reassignForm", "Выберите юриста", "error");
+          return;
+        }
+        try {
+          setStatus("reassignForm", "Сохранение...", "");
+          await api("/api/admin/requests/" + reassignModal.requestId + "/reassign", {
+            method: "POST",
+            body: { lawyer_id: lawyerId },
+          });
+          setStatus("requests", "Заявка переназначена", "ok");
+          closeReassignModal();
+          await loadTable("requests", { resetOffset: true });
+        } catch (error) {
+          setStatus("reassignForm", "Ошибка: " + error.message, "error");
+        }
+      },
+      [api, closeReassignModal, loadTable, reassignModal.lawyerId, reassignModal.requestId, setStatus]
     );
 
     const defaultFilterValue = useCallback(
@@ -1290,11 +1995,10 @@
     const selectConfigNode = useCallback(
       (tableKey) => {
         setConfigActiveKey(tableKey);
-        if (activeSection === "config") {
-          loadCurrentConfigTable(false, undefined, tableKey);
-        }
+        setActiveSection("config");
+        loadCurrentConfigTable(false, undefined, tableKey);
       },
-      [activeSection, loadCurrentConfigTable]
+      [loadCurrentConfigTable]
     );
 
     const refreshAll = useCallback(() => {
@@ -1315,24 +2019,32 @@
       setToken("");
       setRole("");
       setEmail("");
-      setEditingQuoteId(null);
-      setQuoteModalOpen(false);
+      setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
       setRequestModal({ open: false, jsonText: "" });
       setFilterModal({ open: false, tableKey: null, field: "", op: "=", rawValue: "", editIndex: null });
-      setDashboardData({ cards: [], byStatus: {} });
+      setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
+      setDashboardData({ scope: "", cards: [], byStatus: {}, lawyerLoads: [], myUnreadByEvent: {} });
       setMetaJson("");
-      setConfigActiveKey("topics");
+      setConfigActiveKey("quotes");
+      setReferencesExpanded(true);
       setTables({
         requests: createTableState(),
         quotes: createTableState(),
         topics: createTableState(),
         statuses: createTableState(),
         formFields: createTableState(),
+        topicRequiredFields: createTableState(),
+        topicDataTemplates: createTableState(),
+        statusTransitions: createTableState(),
+        users: createTableState(),
+        userTopics: createTableState(),
       });
       setDictionaries({
         topics: [],
         statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
         formFieldTypes: [...DEFAULT_FORM_FIELD_TYPES],
+        formFieldKeys: [],
+        users: [],
       });
       setStatusMap({});
       setActiveSection("dashboard");
@@ -1398,7 +2110,7 @@
       };
     }, [bootstrapReferenceData, refreshSection, role, token]);
 
-    const anyOverlayOpen = requestModal.open || quoteModalOpen || filterModal.open;
+    const anyOverlayOpen = requestModal.open || recordModal.open || filterModal.open || reassignModal.open;
     useEffect(() => {
       document.body.classList.toggle("modal-open", anyOverlayOpen);
       return () => document.body.classList.remove("modal-open");
@@ -1408,8 +2120,9 @@
       const onEsc = (event) => {
         if (event.key !== "Escape") return;
         setRequestModal((prev) => ({ ...prev, open: false }));
-        setQuoteModalOpen(false);
+        setRecordModal((prev) => ({ ...prev, open: false }));
         setFilterModal((prev) => ({ ...prev, open: false }));
+        setReassignModal((prev) => ({ ...prev, open: false }));
       };
       document.addEventListener("keydown", onEsc);
       return () => document.removeEventListener("keydown", onEsc);
@@ -1417,27 +2130,24 @@
 
     const menuItems = useMemo(() => {
       return [
-        { key: "dashboard", label: "Обзор", visible: true },
-        { key: "requests", label: "Заявки", visible: true },
-        { key: "quotes", label: "Цитаты", visible: role === "ADMIN" },
-        { key: "config", label: "Справочники", visible: role === "ADMIN" },
-        { key: "meta", label: "Метаданные", visible: true },
-      ].filter((item) => item.visible);
-    }, [role]);
+        { key: "dashboard", label: "Обзор" },
+        { key: "requests", label: "Заявки" },
+        { key: "meta", label: "Метаданные" },
+      ];
+    }, []);
 
     const activeFilterFields = useMemo(() => {
       if (!filterModal.tableKey) return [];
       return getFilterFields(filterModal.tableKey);
     }, [filterModal.tableKey, getFilterFields]);
 
-    const filterTableLabel = useMemo(() => {
-      if (filterModal.tableKey === "requests") return "Заявки";
-      if (filterModal.tableKey === "quotes") return "Цитаты";
-      if (filterModal.tableKey === "topics") return "Темы";
-      if (filterModal.tableKey === "statuses") return "Статусы";
-      if (filterModal.tableKey === "formFields") return "Поля формы";
-      return "";
-    }, [filterModal.tableKey]);
+    const filterTableLabel = useMemo(() => getTableLabel(filterModal.tableKey), [filterModal.tableKey, getTableLabel]);
+
+    const recordModalFields = useMemo(() => {
+      const all = getRecordFields(recordModal.tableKey);
+      if (recordModal.mode !== "create") return all;
+      return all.filter((field) => !field.autoCreate);
+    }, [getRecordFields, recordModal.mode, recordModal.tableKey]);
 
     return (
       <>
@@ -1458,6 +2168,87 @@
                   {item.label}
                 </button>
               ))}
+              {role === "ADMIN" ? (
+                <>
+                  <button
+                    className={activeSection === "config" ? "active" : ""}
+                    type="button"
+                    onClick={() => {
+                      setReferencesExpanded((prev) => !prev);
+                      activateSection("config");
+                    }}
+                  >
+                    {"Справочники " + (referencesExpanded ? "▾" : "▸")}
+                  </button>
+                  {referencesExpanded ? (
+                    <div className="menu-tree">
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "quotes" ? "active" : ""}
+                        onClick={() => selectConfigNode("quotes")}
+                      >
+                        Цитаты
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "topics" ? "active" : ""}
+                        onClick={() => selectConfigNode("topics")}
+                      >
+                        Темы
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "statuses" ? "active" : ""}
+                        onClick={() => selectConfigNode("statuses")}
+                      >
+                        Статусы
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "formFields" ? "active" : ""}
+                        onClick={() => selectConfigNode("formFields")}
+                      >
+                        Поля формы
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "topicRequiredFields" ? "active" : ""}
+                        onClick={() => selectConfigNode("topicRequiredFields")}
+                      >
+                        Обязательные поля темы
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "topicDataTemplates" ? "active" : ""}
+                        onClick={() => selectConfigNode("topicDataTemplates")}
+                      >
+                        Шаблоны дозапроса
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "statusTransitions" ? "active" : ""}
+                        onClick={() => selectConfigNode("statusTransitions")}
+                      >
+                        Переходы статусов
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "users" ? "active" : ""}
+                        onClick={() => selectConfigNode("users")}
+                      >
+                        Пользователи
+                      </button>
+                      <button
+                        type="button"
+                        className={activeSection === "config" && configActiveKey === "userTopics" ? "active" : ""}
+                        onClick={() => selectConfigNode("userTopics")}
+                      >
+                        Темы юристов
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </nav>
             <div className="auth-box">
               {token && role ? (
@@ -1505,6 +2296,47 @@
                 ))}
               </div>
               <div className="json">{JSON.stringify(dashboardData.byStatus || {}, null, 2)}</div>
+              {dashboardData.scope === "LAWYER" ? (
+                <div className="json" style={{ marginTop: "0.5rem" }}>
+                  {JSON.stringify(dashboardData.myUnreadByEvent || {}, null, 2)}
+                </div>
+              ) : null}
+              <div style={{ marginTop: "0.85rem" }}>
+                <h3 style={{ margin: "0 0 0.55rem" }}>Загрузка юристов</h3>
+                <DataTable
+                  headers={[
+                    { key: "name", label: "Юрист" },
+                    { key: "email", label: "Email" },
+                    { key: "primary_topic_code", label: "Основная тема" },
+                    { key: "active_load", label: "Активные заявки" },
+                    { key: "total_assigned", label: "Всего назначено" },
+                    { key: "active_amount", label: "Сумма активных" },
+                    { key: "monthly_paid_gross", label: "Вал оплат за месяц" },
+                    { key: "monthly_salary", label: "Зарплата за месяц" },
+                  ]}
+                  rows={dashboardData.lawyerLoads || []}
+                  emptyColspan={8}
+                  renderRow={(row) => (
+                    <tr key={row.lawyer_id}>
+                      <td>
+                        <div className="user-identity">
+                          <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={32} />
+                          <div className="user-identity-text">
+                            <b>{row.name || "-"}</b>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{row.email || "-"}</td>
+                      <td>{row.primary_topic_code || "-"}</td>
+                      <td>{String(row.active_load ?? 0)}</td>
+                      <td>{String(row.total_assigned ?? 0)}</td>
+                      <td>{String(row.active_amount ?? 0)}</td>
+                      <td>{String(row.monthly_paid_gross ?? 0)}</td>
+                      <td>{String(row.monthly_salary ?? 0)}</td>
+                    </tr>
+                  )}
+                />
+              </div>
               <StatusLine status={getStatus("dashboard")} />
             </Section>
 
@@ -1514,9 +2346,14 @@
                   <h2>Заявки</h2>
                   <p className="muted">Серверная фильтрация и просмотр клиентских заявок.</p>
                 </div>
-                <button className="btn secondary" type="button" onClick={() => loadTable("requests", { resetOffset: true })}>
-                  Обновить
-                </button>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button className="btn secondary" type="button" onClick={() => loadTable("requests", { resetOffset: true })}>
+                    Обновить
+                  </button>
+                  <button className="btn" type="button" onClick={() => openCreateRecordModal("requests")}>
+                    Новая заявка
+                  </button>
+                </div>
               </div>
               <FilterToolbar
                 filters={tables.requests.filters}
@@ -1535,11 +2372,15 @@
                   { key: "client_phone", label: "Телефон", sortable: true, field: "client_phone" },
                   { key: "status_code", label: "Статус", sortable: true, field: "status_code" },
                   { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
+                  { key: "assigned_lawyer_id", label: "Назначен", sortable: true, field: "assigned_lawyer_id" },
+                  { key: "invoice_amount", label: "Счет", sortable: true, field: "invoice_amount" },
+                  { key: "paid_at", label: "Оплачено", sortable: true, field: "paid_at" },
+                  { key: "updates", label: "Обновления" },
                   { key: "created_at", label: "Создана", sortable: true, field: "created_at" },
                   { key: "actions", label: "Действия" },
                 ]}
                 rows={tables.requests.rows}
-                emptyColspan={7}
+                emptyColspan={11}
                 onSort={(field) => toggleTableSort("requests", field)}
                 sortClause={(tables.requests.sort && tables.requests.sort[0]) || TABLE_SERVER_CONFIG.requests.sort[0]}
                 renderRow={(row) => (
@@ -1551,10 +2392,22 @@
                     <td>{row.client_phone || "-"}</td>
                     <td>{statusLabel(row.status_code)}</td>
                     <td>{row.topic_code || "-"}</td>
+                    <td>{row.assigned_lawyer_id || "-"}</td>
+                    <td>{row.invoice_amount == null ? "-" : String(row.invoice_amount)}</td>
+                    <td>{fmtDate(row.paid_at)}</td>
+                    <td>{renderRequestUpdatesCell(row, role)}</td>
                     <td>{fmtDate(row.created_at)}</td>
                     <td>
                       <div className="table-actions">
+                        {role === "LAWYER" && !row.assigned_lawyer_id ? (
+                          <IconButton icon="📥" tooltip="Взять в работу" onClick={() => claimRequest(row.id)} />
+                        ) : null}
+                        {role === "ADMIN" && row.assigned_lawyer_id ? (
+                          <IconButton icon="⇄" tooltip="Переназначить" onClick={() => openReassignModal(row)} />
+                        ) : null}
                         <IconButton icon="👁" tooltip="Открыть заявку" onClick={() => openRequestDetails(row.id)} />
+                        <IconButton icon="✎" tooltip="Редактировать заявку" onClick={() => openEditRecordModal("requests", row)} />
+                        <IconButton icon="🗑" tooltip="Удалить заявку" onClick={() => deleteRecord("requests", row.id)} tone="danger" />
                       </div>
                     </td>
                   </tr>
@@ -1579,7 +2432,7 @@
                   <button className="btn secondary" type="button" onClick={() => loadTable("quotes", { resetOffset: true })}>
                     Обновить
                   </button>
-                  <button className="btn" type="button" onClick={openQuoteCreate}>
+                  <button className="btn" type="button" onClick={() => openCreateRecordModal("quotes")}>
                     Новая цитата
                   </button>
                 </div>
@@ -1618,8 +2471,8 @@
                     <td>{fmtDate(row.created_at)}</td>
                     <td>
                       <div className="table-actions">
-                        <IconButton icon="✎" tooltip="Редактировать цитату" onClick={() => openQuoteEdit(row)} />
-                        <IconButton icon="🗑" tooltip="Удалить цитату" onClick={() => removeQuote(row.id)} tone="danger" />
+                        <IconButton icon="✎" tooltip="Редактировать цитату" onClick={() => openEditRecordModal("quotes", row)} />
+                        <IconButton icon="🗑" tooltip="Удалить цитату" onClick={() => deleteRecord("quotes", row.id)} tone="danger" />
                       </div>
                     </td>
                   </tr>
@@ -1638,40 +2491,21 @@
               <div className="section-head">
                 <div>
                   <h2>Справочники</h2>
-                  <p className="muted">Выберите справочник слева, таблица откроется справа.</p>
+                  <p className="muted">Выберите справочник в дереве слева.</p>
                 </div>
                 <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
                   Обновить
                 </button>
               </div>
               <div className="config-layout">
-                <div className="config-tree">
-                  <div className="tree-title">Дерево справочников</div>
-                  <button
-                    type="button"
-                    className={"tree-node" + (configActiveKey === "topics" ? " active" : "")}
-                    onClick={() => selectConfigNode("topics")}
-                  >
-                    Темы
-                  </button>
-                  <button
-                    type="button"
-                    className={"tree-node" + (configActiveKey === "statuses" ? " active" : "")}
-                    onClick={() => selectConfigNode("statuses")}
-                  >
-                    Статусы
-                  </button>
-                  <button
-                    type="button"
-                    className={"tree-node" + (configActiveKey === "formFields" ? " active" : "")}
-                    onClick={() => selectConfigNode("formFields")}
-                  >
-                    Поля формы
-                  </button>
-                </div>
                 <div className="config-panel">
                   <div className="block">
-                    <h3>{configActiveKey === "topics" ? "Темы" : configActiveKey === "statuses" ? "Статусы" : "Поля формы"}</h3>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                      <h3 style={{ margin: 0 }}>{getTableLabel(configActiveKey)}</h3>
+                      <button className="btn" type="button" onClick={() => openCreateRecordModal(configActiveKey)}>
+                        Добавить
+                      </button>
+                    </div>
                     <FilterToolbar
                       filters={tables[configActiveKey].filters}
                       onOpen={() => openFilterModal(configActiveKey)}
@@ -1695,9 +2529,10 @@
                           { key: "name", label: "Название", sortable: true, field: "name" },
                           { key: "enabled", label: "Активна", sortable: true, field: "enabled" },
                           { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
+                          { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.topics.rows}
-                        emptyColspan={4}
+                        emptyColspan={5}
                         onSort={(field) => toggleTableSort("topics", field)}
                         sortClause={(tables.topics.sort && tables.topics.sort[0]) || TABLE_SERVER_CONFIG.topics.sort[0]}
                         renderRow={(row) => (
@@ -1708,6 +2543,45 @@
                             <td>{row.name || "-"}</td>
                             <td>{boolLabel(row.enabled)}</td>
                             <td>{String(row.sort_order ?? 0)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton icon="✎" tooltip="Редактировать тему" onClick={() => openEditRecordModal("topics", row)} />
+                                <IconButton icon="🗑" tooltip="Удалить тему" onClick={() => deleteRecord("topics", row.id)} tone="danger" />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      />
+                    ) : null}
+                    {configActiveKey === "quotes" ? (
+                      <DataTable
+                        headers={[
+                          { key: "author", label: "Автор", sortable: true, field: "author" },
+                          { key: "text", label: "Текст", sortable: true, field: "text" },
+                          { key: "source", label: "Источник", sortable: true, field: "source" },
+                          { key: "is_active", label: "Активна", sortable: true, field: "is_active" },
+                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
+                          { key: "created_at", label: "Создана", sortable: true, field: "created_at" },
+                          { key: "actions", label: "Действия" },
+                        ]}
+                        rows={tables.quotes.rows}
+                        emptyColspan={7}
+                        onSort={(field) => toggleTableSort("quotes", field)}
+                        sortClause={(tables.quotes.sort && tables.quotes.sort[0]) || TABLE_SERVER_CONFIG.quotes.sort[0]}
+                        renderRow={(row) => (
+                          <tr key={row.id}>
+                            <td>{row.author || "-"}</td>
+                            <td>{row.text || "-"}</td>
+                            <td>{row.source || "-"}</td>
+                            <td>{boolLabel(row.is_active)}</td>
+                            <td>{String(row.sort_order ?? 0)}</td>
+                            <td>{fmtDate(row.created_at)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton icon="✎" tooltip="Редактировать цитату" onClick={() => openEditRecordModal("quotes", row)} />
+                                <IconButton icon="🗑" tooltip="Удалить цитату" onClick={() => deleteRecord("quotes", row.id)} tone="danger" />
+                              </div>
+                            </td>
                           </tr>
                         )}
                       />
@@ -1720,9 +2594,10 @@
                           { key: "enabled", label: "Активен", sortable: true, field: "enabled" },
                           { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
                           { key: "is_terminal", label: "Терминальный", sortable: true, field: "is_terminal" },
+                          { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.statuses.rows}
-                        emptyColspan={5}
+                        emptyColspan={6}
                         onSort={(field) => toggleTableSort("statuses", field)}
                         sortClause={(tables.statuses.sort && tables.statuses.sort[0]) || TABLE_SERVER_CONFIG.statuses.sort[0]}
                         renderRow={(row) => (
@@ -1734,6 +2609,12 @@
                             <td>{boolLabel(row.enabled)}</td>
                             <td>{String(row.sort_order ?? 0)}</td>
                             <td>{boolLabel(row.is_terminal)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton icon="✎" tooltip="Редактировать статус" onClick={() => openEditRecordModal("statuses", row)} />
+                                <IconButton icon="🗑" tooltip="Удалить статус" onClick={() => deleteRecord("statuses", row.id)} tone="danger" />
+                              </div>
+                            </td>
                           </tr>
                         )}
                       />
@@ -1747,9 +2628,10 @@
                           { key: "required", label: "Обязательное", sortable: true, field: "required" },
                           { key: "enabled", label: "Активно", sortable: true, field: "enabled" },
                           { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
+                          { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.formFields.rows}
-                        emptyColspan={6}
+                        emptyColspan={7}
                         onSort={(field) => toggleTableSort("formFields", field)}
                         sortClause={(tables.formFields.sort && tables.formFields.sort[0]) || TABLE_SERVER_CONFIG.formFields.sort[0]}
                         renderRow={(row) => (
@@ -1762,8 +2644,226 @@
                             <td>{boolLabel(row.required)}</td>
                             <td>{boolLabel(row.enabled)}</td>
                             <td>{String(row.sort_order ?? 0)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton icon="✎" tooltip="Редактировать поле формы" onClick={() => openEditRecordModal("formFields", row)} />
+                                <IconButton icon="🗑" tooltip="Удалить поле формы" onClick={() => deleteRecord("formFields", row.id)} tone="danger" />
+                              </div>
+                            </td>
                           </tr>
                         )}
+                      />
+                    ) : null}
+                    {configActiveKey === "topicRequiredFields" ? (
+                      <DataTable
+                        headers={[
+                          { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
+                          { key: "field_key", label: "Поле формы", sortable: true, field: "field_key" },
+                          { key: "required", label: "Обязательное", sortable: true, field: "required" },
+                          { key: "enabled", label: "Активно", sortable: true, field: "enabled" },
+                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
+                          { key: "created_at", label: "Создано", sortable: true, field: "created_at" },
+                          { key: "actions", label: "Действия" },
+                        ]}
+                        rows={tables.topicRequiredFields.rows}
+                        emptyColspan={7}
+                        onSort={(field) => toggleTableSort("topicRequiredFields", field)}
+                        sortClause={
+                          (tables.topicRequiredFields.sort && tables.topicRequiredFields.sort[0]) ||
+                          TABLE_SERVER_CONFIG.topicRequiredFields.sort[0]
+                        }
+                        renderRow={(row) => (
+                          <tr key={row.id}>
+                            <td>{row.topic_code || "-"}</td>
+                            <td>
+                              <code>{row.field_key || "-"}</code>
+                            </td>
+                            <td>{boolLabel(row.required)}</td>
+                            <td>{boolLabel(row.enabled)}</td>
+                            <td>{String(row.sort_order ?? 0)}</td>
+                            <td>{fmtDate(row.created_at)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton
+                                  icon="✎"
+                                  tooltip="Редактировать обязательное поле"
+                                  onClick={() => openEditRecordModal("topicRequiredFields", row)}
+                                />
+                                <IconButton
+                                  icon="🗑"
+                                  tooltip="Удалить обязательное поле"
+                                  onClick={() => deleteRecord("topicRequiredFields", row.id)}
+                                  tone="danger"
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      />
+                    ) : null}
+                    {configActiveKey === "topicDataTemplates" ? (
+                      <DataTable
+                        headers={[
+                          { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
+                          { key: "key", label: "Ключ", sortable: true, field: "key" },
+                          { key: "label", label: "Метка", sortable: true, field: "label" },
+                          { key: "description", label: "Описание", sortable: true, field: "description" },
+                          { key: "required", label: "Обязательное", sortable: true, field: "required" },
+                          { key: "enabled", label: "Активно", sortable: true, field: "enabled" },
+                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
+                          { key: "created_at", label: "Создано", sortable: true, field: "created_at" },
+                          { key: "actions", label: "Действия" },
+                        ]}
+                        rows={tables.topicDataTemplates.rows}
+                        emptyColspan={9}
+                        onSort={(field) => toggleTableSort("topicDataTemplates", field)}
+                        sortClause={
+                          (tables.topicDataTemplates.sort && tables.topicDataTemplates.sort[0]) ||
+                          TABLE_SERVER_CONFIG.topicDataTemplates.sort[0]
+                        }
+                        renderRow={(row) => (
+                          <tr key={row.id}>
+                            <td>{row.topic_code || "-"}</td>
+                            <td>
+                              <code>{row.key || "-"}</code>
+                            </td>
+                            <td>{row.label || "-"}</td>
+                            <td>{row.description || "-"}</td>
+                            <td>{boolLabel(row.required)}</td>
+                            <td>{boolLabel(row.enabled)}</td>
+                            <td>{String(row.sort_order ?? 0)}</td>
+                            <td>{fmtDate(row.created_at)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton icon="✎" tooltip="Редактировать шаблон" onClick={() => openEditRecordModal("topicDataTemplates", row)} />
+                                <IconButton icon="🗑" tooltip="Удалить шаблон" onClick={() => deleteRecord("topicDataTemplates", row.id)} tone="danger" />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      />
+                    ) : null}
+                    {configActiveKey === "statusTransitions" ? (
+                      <DataTable
+                        headers={[
+                          { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
+                          { key: "from_status", label: "Из статуса", sortable: true, field: "from_status" },
+                          { key: "to_status", label: "В статус", sortable: true, field: "to_status" },
+                          { key: "sla_hours", label: "SLA (часы)", sortable: true, field: "sla_hours" },
+                          { key: "enabled", label: "Активен", sortable: true, field: "enabled" },
+                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
+                          { key: "actions", label: "Действия" },
+                        ]}
+                        rows={tables.statusTransitions.rows}
+                        emptyColspan={7}
+                        onSort={(field) => toggleTableSort("statusTransitions", field)}
+                        sortClause={
+                          (tables.statusTransitions.sort && tables.statusTransitions.sort[0]) || TABLE_SERVER_CONFIG.statusTransitions.sort[0]
+                        }
+                        renderRow={(row) => (
+                          <tr key={row.id}>
+                            <td>{row.topic_code || "-"}</td>
+                            <td>{statusLabel(row.from_status)}</td>
+                            <td>{statusLabel(row.to_status)}</td>
+                            <td>{row.sla_hours == null ? "-" : String(row.sla_hours)}</td>
+                            <td>{boolLabel(row.enabled)}</td>
+                            <td>{String(row.sort_order ?? 0)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton
+                                  icon="✎"
+                                  tooltip="Редактировать переход"
+                                  onClick={() => openEditRecordModal("statusTransitions", row)}
+                                />
+                                <IconButton
+                                  icon="🗑"
+                                  tooltip="Удалить переход"
+                                  onClick={() => deleteRecord("statusTransitions", row.id)}
+                                  tone="danger"
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      />
+                    ) : null}
+                    {configActiveKey === "users" ? (
+                      <DataTable
+                        headers={[
+                          { key: "name", label: "Пользователь", sortable: true, field: "name" },
+                          { key: "email", label: "Email", sortable: true, field: "email" },
+                          { key: "role", label: "Роль", sortable: true, field: "role" },
+                          { key: "primary_topic_code", label: "Профиль (тема)", sortable: true, field: "primary_topic_code" },
+                          { key: "default_rate", label: "Ставка", sortable: true, field: "default_rate" },
+                          { key: "salary_percent", label: "Процент", sortable: true, field: "salary_percent" },
+                          { key: "is_active", label: "Активен", sortable: true, field: "is_active" },
+                          { key: "responsible", label: "Ответственный", sortable: true, field: "responsible" },
+                          { key: "created_at", label: "Создан", sortable: true, field: "created_at" },
+                          { key: "actions", label: "Действия" },
+                        ]}
+                        rows={tables.users.rows}
+                        emptyColspan={10}
+                        onSort={(field) => toggleTableSort("users", field)}
+                        sortClause={(tables.users.sort && tables.users.sort[0]) || TABLE_SERVER_CONFIG.users.sort[0]}
+                        renderRow={(row) => (
+                          <tr key={row.id}>
+                            <td>
+                              <div className="user-identity">
+                                <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={32} />
+                                <div className="user-identity-text">
+                                  <b>{row.name || "-"}</b>
+                                </div>
+                              </div>
+                            </td>
+                            <td>{row.email || "-"}</td>
+                            <td>{roleLabel(row.role)}</td>
+                            <td>{row.primary_topic_code || "-"}</td>
+                            <td>{row.default_rate == null ? "-" : String(row.default_rate)}</td>
+                            <td>{row.salary_percent == null ? "-" : String(row.salary_percent)}</td>
+                            <td>{boolLabel(row.is_active)}</td>
+                            <td>{row.responsible || "-"}</td>
+                            <td>{fmtDate(row.created_at)}</td>
+                            <td>
+                              <div className="table-actions">
+                                <IconButton icon="✎" tooltip="Редактировать пользователя" onClick={() => openEditRecordModal("users", row)} />
+                                <IconButton icon="🗑" tooltip="Удалить пользователя" onClick={() => deleteRecord("users", row.id)} tone="danger" />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      />
+                    ) : null}
+                    {configActiveKey === "userTopics" ? (
+                      <DataTable
+                        headers={[
+                          { key: "admin_user_id", label: "Юрист", sortable: true, field: "admin_user_id" },
+                          { key: "topic_code", label: "Доп. тема", sortable: true, field: "topic_code" },
+                          { key: "responsible", label: "Ответственный", sortable: true, field: "responsible" },
+                          { key: "created_at", label: "Создано", sortable: true, field: "created_at" },
+                          { key: "actions", label: "Действия" },
+                        ]}
+                        rows={tables.userTopics.rows}
+                        emptyColspan={5}
+                        onSort={(field) => toggleTableSort("userTopics", field)}
+                        sortClause={(tables.userTopics.sort && tables.userTopics.sort[0]) || TABLE_SERVER_CONFIG.userTopics.sort[0]}
+                        renderRow={(row) => {
+                          const lawyer = (dictionaries.users || []).find((item) => String(item.id) === String(row.admin_user_id));
+                          const lawyerLabel = lawyer ? (lawyer.name || lawyer.email || row.admin_user_id) : row.admin_user_id || "-";
+                          return (
+                            <tr key={row.id}>
+                              <td>{lawyerLabel}</td>
+                              <td>{row.topic_code || "-"}</td>
+                              <td>{row.responsible || "-"}</td>
+                              <td>{fmtDate(row.created_at)}</td>
+                              <td>
+                                <div className="table-actions">
+                                  <IconButton icon="✎" tooltip="Редактировать связь" onClick={() => openEditRecordModal("userTopics", row)} />
+                                  <IconButton icon="🗑" tooltip="Удалить связь" onClick={() => deleteRecord("userTopics", row.id)} tone="danger" />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }}
                       />
                     ) : null}
                     <TablePager
@@ -1810,14 +2910,16 @@
 
         <RequestModal open={requestModal.open} jsonText={requestModal.jsonText} onClose={() => setRequestModal((prev) => ({ ...prev, open: false }))} />
 
-        <QuoteModal
-          open={quoteModalOpen}
-          editing={Boolean(editingQuoteId)}
-          form={quoteForm}
-          status={getStatus("quoteForm")}
-          onClose={() => setQuoteModalOpen(false)}
-          onChange={(field, value) => setQuoteForm((prev) => ({ ...prev, [field]: value }))}
-          onSubmit={saveQuote}
+        <RecordModal
+          open={recordModal.open}
+          title={(recordModal.mode === "edit" ? "Редактирование • " : "Создание • ") + getTableLabel(recordModal.tableKey)}
+          fields={recordModalFields}
+          form={recordModal.form || {}}
+          status={getStatus("recordForm")}
+          onClose={closeRecordModal}
+          onChange={updateRecordField}
+          onUploadField={uploadRecordFieldFile}
+          onSubmit={submitRecordModal}
         />
 
         <FilterModal
@@ -1834,6 +2936,17 @@
           onClear={clearFiltersFromModal}
           getOperators={getOperatorsForType}
           getFieldOptions={getFieldOptions}
+        />
+
+        <ReassignModal
+          open={reassignModal.open}
+          status={getStatus("reassignForm")}
+          options={getLawyerOptions()}
+          value={reassignModal.lawyerId}
+          onChange={updateReassignLawyer}
+          onClose={closeReassignModal}
+          onSubmit={submitReassignModal}
+          trackNumber={reassignModal.trackNumber}
         />
 
         {!token || !role ? <LoginScreen onSubmit={login} status={getStatus("login")} /> : null}

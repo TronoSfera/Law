@@ -95,6 +95,21 @@
       color: #fde5c2;
     }
 
+    .menu-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding-left: 0.6rem;
+      border-left: 1px dashed rgba(212, 168, 106, 0.3);
+      margin: 0.2rem 0 0.1rem 0.2rem;
+    }
+
+    .menu-tree button {
+      font-size: 0.85rem;
+      padding: 0.52rem 0.62rem;
+      color: #c8d8ea;
+    }
+
     .auth-box {
       margin-top: 1.2rem;
       border: 1px solid var(--line);
@@ -309,6 +324,18 @@
       font-weight: 700;
     }
 
+    .field-inline {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .btn-sm {
+      min-height: 38px;
+      padding: 0.5rem 0.68rem;
+      font-size: 0.82rem;
+    }
+
     input, textarea, select {
       width: 100%;
       border: 1px solid #3c4d62;
@@ -380,10 +407,90 @@
       color: #f7dfb8;
     }
 
+    .avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: #f5f8ff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .user-identity {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.52rem;
+      min-width: 0;
+    }
+
+    .user-identity-text {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .user-identity-text b {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #eaf2fd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 230px;
+    }
+
     .table-actions {
       display: flex;
       gap: 0.4rem;
       flex-wrap: wrap;
+    }
+
+    .request-updates-stack {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 0.24rem;
+      align-items: flex-start;
+    }
+
+    .request-update-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.32rem;
+      border: 1px solid rgba(95, 182, 145, 0.34);
+      border-radius: 999px;
+      background: rgba(77, 190, 147, 0.14);
+      color: #bef5df;
+      font-size: 0.74rem;
+      line-height: 1.1;
+      padding: 0.18rem 0.45rem;
+      white-space: nowrap;
+    }
+
+    .request-update-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #3ed692;
+      box-shadow: 0 0 0 3px rgba(62, 214, 146, 0.18);
+      flex-shrink: 0;
+    }
+
+    .request-update-empty {
+      color: #8ea1b8;
+      font-size: 0.8rem;
     }
 
     .icon-btn {
@@ -472,52 +579,8 @@
 
     .config-layout {
       display: grid;
-      grid-template-columns: 260px 1fr;
+      grid-template-columns: 1fr;
       gap: 0.85rem;
-    }
-
-    .config-tree {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.02);
-      padding: 0.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.45rem;
-      align-self: start;
-      position: sticky;
-      top: 1rem;
-    }
-
-    .tree-title {
-      margin: 0 0 0.2rem;
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #8da2bc;
-      font-weight: 700;
-    }
-
-    .tree-node {
-      border: 1px solid transparent;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.02);
-      color: #d7e4f5;
-      cursor: pointer;
-      text-align: left;
-      padding: 0.52rem 0.6rem;
-      font-weight: 600;
-    }
-
-    .tree-node:hover {
-      border-color: var(--line);
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    .tree-node.active {
-      border-color: rgba(212, 168, 106, 0.5);
-      background: var(--brand-soft);
-      color: #f7dfb8;
     }
 
     .config-panel {
@@ -635,7 +698,6 @@
       .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .triple { grid-template-columns: 1fr; }
       .config-layout { grid-template-columns: 1fr; }
-      .config-tree { position: static; }
     }
 
     @media (max-width: 920px) {

@@ -83,6 +83,9 @@ class MigrationTests(unittest.TestCase):
             "topics",
             "statuses",
             "form_fields",
+            "topic_required_fields",
+            "topic_data_templates",
+            "request_data_requirements",
             "requests",
             "messages",
             "attachments",
@@ -90,6 +93,9 @@ class MigrationTests(unittest.TestCase):
             "audit_log",
             "otp_sessions",
             "quotes",
+            "admin_user_topics",
+            "topic_status_transitions",
+            "notifications",
             "alembic_version",
         }
         tables = set(self.inspector.get_table_names())
@@ -98,4 +104,70 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0001_init")
+        self.assertEqual(version, "0011_dashboard_financial_fields")
+
+    def test_responsible_column_exists_in_all_domain_tables(self):
+        tables = {
+            "admin_users",
+            "topics",
+            "statuses",
+            "form_fields",
+            "topic_required_fields",
+            "topic_data_templates",
+            "request_data_requirements",
+            "requests",
+            "messages",
+            "attachments",
+            "status_history",
+            "audit_log",
+            "otp_sessions",
+            "quotes",
+            "admin_user_topics",
+            "topic_status_transitions",
+            "notifications",
+        }
+        for table in tables:
+            columns = {column["name"] for column in self.inspector.get_columns(table)}
+            self.assertIn("id", columns)
+            self.assertIn("created_at", columns)
+            self.assertIn("responsible", columns)
+
+    def test_admin_users_contains_primary_topic_profile_column(self):
+        columns = {column["name"] for column in self.inspector.get_columns("admin_users")}
+        self.assertIn("primary_topic_code", columns)
+
+    def test_admin_users_contains_avatar_column(self):
+        columns = {column["name"] for column in self.inspector.get_columns("admin_users")}
+        self.assertIn("avatar_url", columns)
+
+    def test_requests_contains_read_marker_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("requests")}
+        self.assertIn("client_has_unread_updates", columns)
+        self.assertIn("client_unread_event_type", columns)
+        self.assertIn("lawyer_has_unread_updates", columns)
+        self.assertIn("lawyer_unread_event_type", columns)
+
+    def test_status_transitions_contains_sla_hours_column(self):
+        columns = {column["name"] for column in self.inspector.get_columns("topic_status_transitions")}
+        self.assertIn("sla_hours", columns)
+
+    def test_notifications_has_recipient_and_read_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("notifications")}
+        self.assertIn("recipient_type", columns)
+        self.assertIn("recipient_admin_user_id", columns)
+        self.assertIn("recipient_track_number", columns)
+        self.assertIn("event_type", columns)
+        self.assertIn("is_read", columns)
+        self.assertIn("read_at", columns)
+
+    def test_admin_users_contains_rate_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("admin_users")}
+        self.assertIn("default_rate", columns)
+        self.assertIn("salary_percent", columns)
+
+    def test_requests_contains_financial_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("requests")}
+        self.assertIn("effective_rate", columns)
+        self.assertIn("invoice_amount", columns)
+        self.assertIn("paid_at", columns)
+        self.assertIn("paid_by_admin_id", columns)

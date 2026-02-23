@@ -50,7 +50,8 @@ def query_topics(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depend
 
 @router.post("/topics", status_code=201)
 def create_topic(payload: TopicUpsert, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN"))):
-    row = Topic(**payload.model_dump())
+    responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    row = Topic(**payload.model_dump(), responsible=responsible)
     try:
         db.add(row)
         db.commit()
@@ -97,7 +98,8 @@ def query_statuses(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depe
 
 @router.post("/statuses", status_code=201)
 def create_status(payload: StatusUpsert, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN"))):
-    row = Status(**payload.model_dump())
+    responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    row = Status(**payload.model_dump(), responsible=responsible)
     try:
         db.add(row)
         db.commit()
@@ -144,7 +146,8 @@ def query_form_fields(uq: UniversalQuery, db: Session = Depends(get_db), admin=D
 
 @router.post("/form-fields", status_code=201)
 def create_form_field(payload: FormFieldUpsert, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN"))):
-    row = FormField(**payload.model_dump())
+    responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    row = FormField(**payload.model_dump(), responsible=responsible)
     try:
         db.add(row)
         db.commit()

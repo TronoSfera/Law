@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional
 
 class AdminLogin(BaseModel):
     email: str
@@ -51,6 +53,10 @@ class RequestAdminCreate(BaseModel):
     description: Optional[str] = None
     extra_fields: dict = Field(default_factory=dict)
     assigned_lawyer_id: Optional[str] = None
+    effective_rate: Optional[float] = None
+    invoice_amount: Optional[float] = None
+    paid_at: Optional[datetime] = None
+    paid_by_admin_id: Optional[str] = None
     total_attachments_bytes: int = 0
 
 
@@ -63,4 +69,30 @@ class RequestAdminPatch(BaseModel):
     description: Optional[str] = None
     extra_fields: Optional[dict] = None
     assigned_lawyer_id: Optional[str] = None
+    effective_rate: Optional[float] = None
+    invoice_amount: Optional[float] = None
+    paid_at: Optional[datetime] = None
+    paid_by_admin_id: Optional[str] = None
     total_attachments_bytes: Optional[int] = None
+
+
+class RequestReassign(BaseModel):
+    lawyer_id: str
+
+
+class RequestDataRequirementCreate(BaseModel):
+    key: str
+    label: str
+    description: Optional[str] = None
+    required: bool = True
+
+
+class RequestDataRequirementPatch(BaseModel):
+    key: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
+    required: Optional[bool] = None
+
+
+class NotificationsReadAll(BaseModel):
+    request_id: Optional[str] = None

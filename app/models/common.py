@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, String
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -13,3 +13,4 @@ class UUIDMixin:
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    responsible: Mapped[str] = mapped_column(String(200), nullable=False, default="Администратор системы")

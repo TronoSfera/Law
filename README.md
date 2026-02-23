@@ -15,3 +15,9 @@ Swagger: http://localhost:8002/docs
 ```bash
 docker compose exec backend alembic upgrade head
 ```
+
+## Seed Quotes (Upsert)
+```bash
+make seed-quotes
+```
+Loads 50 justice-themed quotes into `quotes` with idempotent upsert by `(author, text)`.

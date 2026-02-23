@@ -32,7 +32,8 @@ def query_quotes(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depend
 
 @router.post("", status_code=201)
 def create_quote(payload: QuoteUpsert, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN"))):
-    q = Quote(**payload.model_dump())
+    responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    q = Quote(**payload.model_dump(), responsible=responsible)
     db.add(q); db.commit(); db.refresh(q)
     return {"id": str(q.id)}
 

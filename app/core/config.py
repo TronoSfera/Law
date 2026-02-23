@@ -23,11 +23,12 @@ class Settings(BaseSettings):
     S3_REGION: str = "us-east-1"
     S3_USE_SSL: bool = False
     MAX_FILE_MB: int = 25
-    MAX_CASE_MB: int = 350
+    MAX_CASE_MB: int = 250
 
     TELEGRAM_BOT_TOKEN: str = "change_me"
     TELEGRAM_CHAT_ID: str = "0"
     SMS_PROVIDER: str = "dummy"
+    DATA_ENCRYPTION_SECRET: str = "change_me_data_encryption"
 
     @property
     def cors_origins_list(self) -> List[str]:
