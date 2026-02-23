@@ -9,6 +9,7 @@ from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
@@ -144,6 +145,31 @@ def _require_table_action(admin: dict, table_name: str, action: str) -> None:
 
 def _is_lawyer(admin: dict) -> bool:
     return str(admin.get("role") or "").upper() == "LAWYER"
+
+
+def _lawyer_actor_id_or_401(admin: dict) -> str:
+    actor_id = str(admin.get("sub") or "").strip()
+    if not actor_id:
+        raise HTTPException(status_code=401, detail="Некорректный токен")
+    return actor_id
+
+
+def _ensure_lawyer_can_view_request_or_403(admin: dict, req: Request) -> None:
+    if not _is_lawyer(admin):
+        return
+    actor_id = _lawyer_actor_id_or_401(admin)
+    assigned = str(req.assigned_lawyer_id or "").strip()
+    if assigned and assigned != actor_id:
+        raise HTTPException(status_code=403, detail="Юрист может видеть только свои и неназначенные заявки")
+
+
+def _ensure_lawyer_can_manage_request_or_403(admin: dict, req: Request) -> None:
+    if not _is_lawyer(admin):
+        return
+    actor_id = _lawyer_actor_id_or_401(admin)
+    assigned = str(req.assigned_lawyer_id or "").strip()
+    if not assigned or assigned != actor_id:
+        raise HTTPException(status_code=403, detail="Юрист может работать только со своими назначенными заявками")
 
 
 def _serialize_value(value: Any) -> Any:
@@ -364,7 +390,6 @@ def _column_label(table_name: str, column_name: str) -> str:
         "phone": "Телефон",
         "verified_at": "Подтверждено",
         "expires_at": "Истекает",
-        "jwt_token": "JWT-токен",
         "action": "Действие",
         "entity": "Сущность",
         "entity_id": "ID сущности",
@@ -969,7 +994,16 @@ def query_table(
 ):
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "query")
-    query = apply_universal_query(db.query(model), model, uq)
+    base_query = db.query(model)
+    if normalized == "requests" and _is_lawyer(admin):
+        actor_id = _lawyer_actor_id_or_401(admin)
+        base_query = base_query.filter(
+            or_(
+                Request.assigned_lawyer_id == actor_id,
+                Request.assigned_lawyer_id.is_(None),
+            )
+        )
+    query = apply_universal_query(base_query, model, uq)
     total = query.count()
     rows = query.offset(uq.page.offset).limit(uq.page.limit).all()
     return {"rows": [_strip_hidden_fields(normalized, _row_to_dict(row)) for row in rows], "total": total}
@@ -988,6 +1022,7 @@ def get_row(
     if normalized == "requests":
         req = row if isinstance(row, Request) else None
         if req is not None:
+            _ensure_lawyer_can_view_request_or_403(admin, req)
             changed = False
             if _is_lawyer(admin) and clear_unread_for_lawyer(req):
                 changed = True
@@ -1093,6 +1128,8 @@ def update_row(
         if forbidden_fields:
             raise HTTPException(status_code=403, detail="Юрист не может изменять финансовые поля заявки")
     row = _load_row_or_404(db, model, row_id)
+    if normalized == "requests" and isinstance(row, Request):
+        _ensure_lawyer_can_manage_request_or_403(admin, row)
     if normalized in {"messages", "attachments"} and bool(getattr(row, "immutable", False)):
         raise HTTPException(status_code=400, detail="Запись зафиксирована и недоступна для редактирования")
     prepared = dict(payload)
@@ -1197,6 +1234,8 @@ def delete_row(
     if normalized == "admin_users" and str(admin.get("sub") or "") == str(row_id):
         raise HTTPException(status_code=400, detail="Нельзя удалить собственную учетную запись")
     row = _load_row_or_404(db, model, row_id)
+    if normalized == "requests" and isinstance(row, Request):
+        _ensure_lawyer_can_manage_request_or_403(admin, row)
     if normalized in {"messages", "attachments"} and bool(getattr(row, "immutable", False)):
         raise HTTPException(status_code=400, detail="Запись зафиксирована и недоступна для удаления")
 

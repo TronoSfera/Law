@@ -19,7 +19,7 @@ os.environ.setdefault("S3_BUCKET", "test")
 
 from app.main import app
 from app.core.config import settings
-from app.core.security import create_jwt
+from app.core.security import create_jwt, decode_jwt
 from app.db.session import get_db
 from app.models.notification import Notification
 from app.models.otp_session import OtpSession
@@ -244,3 +244,33 @@ class PublicRequestCreateTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 201)
         self.assertTrue(created.json()["track_number"].startswith("TRK-"))
+
+    def test_verify_otp_sets_public_cookie_for_configured_ttl(self):
+        phone = "+79990001234"
+        with patch("app.api.public.otp._generate_code", return_value="777777"):
+            sent = self.client.post(
+                "/api/public/otp/send",
+                json={"purpose": "CREATE_REQUEST", "client_phone": phone},
+            )
+            self.assertEqual(sent.status_code, 200)
+
+        verified = self.client.post(
+            "/api/public/otp/verify",
+            json={"purpose": "CREATE_REQUEST", "client_phone": phone, "code": "777777"},
+        )
+        self.assertEqual(verified.status_code, 200)
+
+        token = verified.cookies.get(settings.PUBLIC_COOKIE_NAME)
+        self.assertTrue(token)
+        payload = decode_jwt(token, settings.PUBLIC_JWT_SECRET)
+        self.assertEqual(payload.get("sub"), phone)
+        self.assertEqual(payload.get("purpose"), "CREATE_REQUEST")
+        self.assertEqual(
+            int(payload.get("exp") or 0) - int(payload.get("iat") or 0),
+            settings.PUBLIC_JWT_TTL_DAYS * 24 * 3600,
+        )
+
+        cookie_header = str(verified.headers.get("set-cookie") or "")
+        self.assertIn(f"{settings.PUBLIC_COOKIE_NAME}=", cookie_header)
+        self.assertIn(f"Max-Age={settings.PUBLIC_JWT_TTL_DAYS * 24 * 3600}", cookie_header)
+        self.assertIn("httponly", cookie_header.lower())

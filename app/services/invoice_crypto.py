@@ -14,8 +14,12 @@ _VERSION = b"v1"
 
 def _key() -> bytes:
     secret = str(settings.DATA_ENCRYPTION_SECRET or "").strip()
-    if not secret or secret == "change_me_data_encryption":
-        secret = str(settings.ADMIN_JWT_SECRET or "change_me_admin")
+    if not secret:
+        secret = str(settings.ADMIN_JWT_SECRET or "").strip()
+    if not secret:
+        secret = str(settings.PUBLIC_JWT_SECRET or "").strip()
+    if not secret:
+        raise ValueError("Не задан секрет шифрования")
     return hashlib.sha256(secret.encode("utf-8")).digest()
 
 

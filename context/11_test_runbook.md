@@ -54,6 +54,32 @@ docker compose run --rm --no-deps --entrypoint sh frontend -lc "apk add --no-cac
 | P26 | Security audit S3/ПДн | `tests/test_security_audit.py` + `tests/test_uploads_s3.py` + `tests/test_migrations.py` | `docker compose exec -T backend python -m unittest tests.test_security_audit tests.test_uploads_s3 tests.test_migrations -v`; проверить события allow/deny в `security_audit_log` и применимость миграции `0014_security_audit_log` |
 | P27 | Итоговые E2E критические сценарии | набор `tests/test_*.py` + новые E2E-тесты | базовые команды 1-3 + полный прогон |
 
+## Ролевое покрытие (PUBLIC / LAWYER / ADMIN)
+### PUBLIC (клиент)
+- Лендинг и клиентский контур (ручной e2e через `http://localhost:8081`): открыть лендинг, создать заявку, открыть кабинет.
+- OTP create/view + 7-day cookie + rate-limit: `tests/test_public_requests.py`, `tests/test_otp_rate_limit.py`.
+- Просмотр статуса/истории/чата/файлов/таймлайна по `track_number`: `tests/test_public_cabinet.py`.
+- Переписка клиент -> юрист и маркеры непрочитанного: `tests/test_public_cabinet.py`, `tests/test_notifications.py`.
+- Загрузка и скачивание файлов + лимиты 25MB/250MB + контроль доступа: `tests/test_uploads_s3.py`, `tests/test_public_cabinet.py`.
+- Публичные счета и PDF в кабинете: `tests/test_invoices.py`.
+
+### LAWYER (юрист)
+- Дашборд юриста (свои, неназначенные, непрочитанные): `tests/test_dashboard_finance.py`.
+- Видимость заявок: свои + неназначенные; запрет доступа к чужим: `tests/test_admin_universal_crud.py`.
+- Claim неназначенной заявки, запрет takeover, запрет назначения через CRUD: `tests/test_admin_universal_crud.py`.
+- Смена статуса и завершение только своих заявок: `tests/test_admin_universal_crud.py`.
+- Оповещения (алерты): список/прочтение и генерация по событиям: `tests/test_notifications.py`.
+- Сообщения/файлы по заявке и непрочитанные маркеры: `tests/test_notifications.py`, `tests/test_uploads_s3.py`, `tests/test_admin_universal_crud.py`.
+- Счета: видимость только своих, запрет ставить `PAID`: `tests/test_invoices.py`, `tests/test_billing_flow.py`.
+
+### ADMIN (администратор)
+- CRUD пользователей/юристов (пароли, роли, профильная тема, аватар): `tests/test_admin_universal_crud.py`, `tests/test_uploads_s3.py`.
+- Темы и флоу статусов (включая ветвление), SLA-переходы: `tests/test_admin_universal_crud.py`, `tests/test_worker_maintenance.py`.
+- Шаблоны обязательных/дозапрашиваемых данных: `tests/test_admin_universal_crud.py`, `tests/test_public_requests.py`.
+- Счета и оплаты (создание, статусы, подтверждение оплаты, multiple cycles): `tests/test_invoices.py`, `tests/test_billing_flow.py`.
+- Дашборд портала и загрузка юристов + финансовые метрики: `tests/test_dashboard_finance.py`, `tests/test_admin_universal_crud.py`.
+- Безопасность: security-audit по S3 доступам, RBAC и шифрование реквизитов: `tests/test_security_audit.py`, `tests/test_uploads_s3.py`, `tests/test_invoices.py`.
+
 ## Минимальный чеклист закрытия пункта
 1. Выполнить миграции (если были изменения схемы).
 2. Выполнить целевые тесты пункта по матрице выше.

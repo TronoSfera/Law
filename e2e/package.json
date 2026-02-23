@@ -1,0 +1,14 @@
+{
+  "name": "law-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for Law project",
+  "scripts": {
+    "test": "playwright test --config=playwright.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0",
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

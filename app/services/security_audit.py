@@ -126,4 +126,4 @@ def record_file_security_event(
             try:
                 db.rollback()
             except Exception:
-                pass
+                logger.debug("security_audit_rollback_failed", exc_info=True)

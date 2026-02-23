@@ -10,7 +10,8 @@ from app.core.config import settings
 def _telegram_enabled() -> bool:
     token = str(settings.TELEGRAM_BOT_TOKEN or "").strip()
     chat_id = str(settings.TELEGRAM_CHAT_ID or "").strip()
-    if not token or token == "change_me":
+    # Telegram bot token is expected in "<bot_id>:<secret>" format.
+    if not token or ":" not in token or len(token) < 20:
         return False
     if not chat_id or chat_id == "0":
         return False

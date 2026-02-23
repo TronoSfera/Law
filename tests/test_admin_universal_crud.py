@@ -243,6 +243,157 @@ class AdminUniversalCrudTests(unittest.TestCase):
         )
         self.assertEqual(status_forbidden.status_code, 403)
 
+    def test_lawyer_can_see_own_and_unassigned_requests_and_close_only_own(self):
+        with self.SessionLocal() as db:
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Свой",
+                email="lawyer.self@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_other = AdminUser(
+                role="LAWYER",
+                name="Юрист Чужой",
+                email="lawyer.other@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer_self, lawyer_other])
+            db.flush()
+            self_id = str(lawyer_self.id)
+            other_id = str(lawyer_other.id)
+
+            own = Request(
+                track_number="TRK-LAWYER-OWN",
+                client_name="Клиент Свой",
+                client_phone="+79990001011",
+                status_code="NEW",
+                description="own",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            foreign = Request(
+                track_number="TRK-LAWYER-FOREIGN",
+                client_name="Клиент Чужой",
+                client_phone="+79990001012",
+                status_code="NEW",
+                description="foreign",
+                extra_fields={},
+                assigned_lawyer_id=other_id,
+            )
+            unassigned = Request(
+                track_number="TRK-LAWYER-UNASSIGNED",
+                client_name="Клиент Без назначения",
+                client_phone="+79990001013",
+                status_code="NEW",
+                description="unassigned",
+                extra_fields={},
+                assigned_lawyer_id=None,
+            )
+            db.add_all([own, foreign, unassigned])
+            db.commit()
+            own_id = str(own.id)
+            foreign_id = str(foreign.id)
+            unassigned_id = str(unassigned.id)
+
+        headers = self._auth_headers("LAWYER", email="lawyer.self@example.com", sub=self_id)
+
+        crud_query = self.client.post(
+            "/api/admin/crud/requests/query",
+            headers=headers,
+            json={"filters": [], "sort": [{"field": "created_at", "dir": "asc"}], "page": {"limit": 50, "offset": 0}},
+        )
+        self.assertEqual(crud_query.status_code, 200)
+        crud_ids = {str(row["id"]) for row in (crud_query.json().get("rows") or [])}
+        self.assertEqual(crud_ids, {own_id, unassigned_id})
+
+        legacy_query = self.client.post(
+            "/api/admin/requests/query",
+            headers=headers,
+            json={"filters": [], "sort": [{"field": "created_at", "dir": "asc"}], "page": {"limit": 50, "offset": 0}},
+        )
+        self.assertEqual(legacy_query.status_code, 200)
+        legacy_ids = {str(row["id"]) for row in (legacy_query.json().get("rows") or [])}
+        self.assertEqual(legacy_ids, {own_id, unassigned_id})
+
+        crud_get_foreign = self.client.get(f"/api/admin/crud/requests/{foreign_id}", headers=headers)
+        self.assertEqual(crud_get_foreign.status_code, 403)
+        legacy_get_foreign = self.client.get(f"/api/admin/requests/{foreign_id}", headers=headers)
+        self.assertEqual(legacy_get_foreign.status_code, 403)
+
+        crud_update_unassigned = self.client.patch(
+            f"/api/admin/crud/requests/{unassigned_id}",
+            headers=headers,
+            json={"status_code": "CLOSED"},
+        )
+        self.assertEqual(crud_update_unassigned.status_code, 403)
+        legacy_update_unassigned = self.client.patch(
+            f"/api/admin/requests/{unassigned_id}",
+            headers=headers,
+            json={"status_code": "CLOSED"},
+        )
+        self.assertEqual(legacy_update_unassigned.status_code, 403)
+
+        close_own = self.client.patch(
+            f"/api/admin/requests/{own_id}",
+            headers=headers,
+            json={"status_code": "CLOSED"},
+        )
+        self.assertEqual(close_own.status_code, 200)
+
+        with self.SessionLocal() as db:
+            refreshed = db.get(Request, UUID(own_id))
+            self.assertIsNotNone(refreshed)
+            self.assertEqual(refreshed.status_code, "CLOSED")
+
+    def test_topic_status_flow_supports_branching_transitions(self):
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+        with self.SessionLocal() as db:
+            db.add_all(
+                [
+                    Topic(code="civil-branch", name="Гражданское (ветвление)", enabled=True, sort_order=1),
+                    TopicStatusTransition(topic_code="civil-branch", from_status="NEW", to_status="IN_PROGRESS", enabled=True, sort_order=1),
+                    TopicStatusTransition(topic_code="civil-branch", from_status="NEW", to_status="WAITING_CLIENT", enabled=True, sort_order=2),
+                ]
+            )
+            req_in_progress = Request(
+                track_number="TRK-BRANCH-1",
+                client_name="Клиент 1",
+                client_phone="+79991110021",
+                topic_code="civil-branch",
+                status_code="NEW",
+                description="branch 1",
+                extra_fields={},
+            )
+            req_waiting = Request(
+                track_number="TRK-BRANCH-2",
+                client_name="Клиент 2",
+                client_phone="+79991110022",
+                topic_code="civil-branch",
+                status_code="NEW",
+                description="branch 2",
+                extra_fields={},
+            )
+            db.add_all([req_in_progress, req_waiting])
+            db.commit()
+            req_in_progress_id = str(req_in_progress.id)
+            req_waiting_id = str(req_waiting.id)
+
+        first_branch = self.client.patch(
+            f"/api/admin/crud/requests/{req_in_progress_id}",
+            headers=headers,
+            json={"status_code": "IN_PROGRESS"},
+        )
+        self.assertEqual(first_branch.status_code, 200)
+
+        second_branch = self.client.patch(
+            f"/api/admin/crud/requests/{req_waiting_id}",
+            headers=headers,
+            json={"status_code": "WAITING_CLIENT"},
+        )
+        self.assertEqual(second_branch.status_code, 200)
+
     def test_request_read_markers_status_update_and_lawyer_open_reset(self):
         with self.SessionLocal() as db:
             lawyer = AdminUser(

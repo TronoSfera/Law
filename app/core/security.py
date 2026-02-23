@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from jose import jwt
+import jwt
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
@@ -14,7 +14,8 @@ def create_jwt(payload: dict, secret: str, expires_delta: timedelta) -> str:
     now = datetime.now(timezone.utc)
     data = payload.copy()
     data.update({"iat": int(now.timestamp()), "exp": int((now + expires_delta).timestamp())})
-    return jwt.encode(data, secret, algorithm="HS256")
+    token = jwt.encode(data, secret, algorithm="HS256")
+    return str(token)
 
 def decode_jwt(token: str, secret: str) -> dict:
-    return jwt.decode(token, secret, algorithms=["HS256"])
+    return jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["iat", "exp"]})

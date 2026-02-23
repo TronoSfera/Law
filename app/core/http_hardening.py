@@ -17,6 +17,10 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "X-Permitted-Cross-Domain-Policies": "none",
     "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "credentialless",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+    "Content-Security-Policy": "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
 
 
@@ -40,6 +44,11 @@ def install_http_hardening(app: FastAPI) -> None:
 
         for key, value in SECURITY_HEADERS.items():
             response.headers[key] = value
+        # Backend serves application data and operational endpoints only.
+        # Keep responses non-cacheable to avoid stale or sensitive data reuse.
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
         response.headers[REQUEST_ID_HEADER] = request_id
 
         duration_ms = (perf_counter() - started_at) * 1000.0

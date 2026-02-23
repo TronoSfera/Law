@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import case, update
+from sqlalchemy import case, or_, update
 
 from app.db.session import get_db
 from app.core.deps import require_role
@@ -60,9 +60,23 @@ def _ensure_lawyer_can_manage_request_or_403(admin: dict, req: Request) -> None:
     if role != "LAWYER":
         return
     actor = str(admin.get("sub") or "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="Некорректный токен")
     assigned = str(req.assigned_lawyer_id or "").strip()
     if not actor or not assigned or actor != assigned:
         raise HTTPException(status_code=403, detail="Юрист может работать только со своими назначенными заявками")
+
+
+def _ensure_lawyer_can_view_request_or_403(admin: dict, req: Request) -> None:
+    role = str(admin.get("role") or "").upper()
+    if role != "LAWYER":
+        return
+    actor = str(admin.get("sub") or "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="Некорректный токен")
+    assigned = str(req.assigned_lawyer_id or "").strip()
+    if assigned and actor != assigned:
+        raise HTTPException(status_code=403, detail="Юрист может видеть только свои и неназначенные заявки")
 
 
 def _request_data_requirement_row(row: RequestDataRequirement) -> dict:
@@ -81,7 +95,20 @@ def _request_data_requirement_row(row: RequestDataRequirement) -> dict:
 
 @router.post("/query")
 def query_requests(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN","LAWYER"))):
-    q = apply_universal_query(db.query(Request), Request, uq)
+    base_query = db.query(Request)
+    role = str(admin.get("role") or "").upper()
+    if role == "LAWYER":
+        actor = str(admin.get("sub") or "").strip()
+        if not actor:
+            raise HTTPException(status_code=401, detail="Некорректный токен")
+        base_query = base_query.filter(
+            or_(
+                Request.assigned_lawyer_id == actor,
+                Request.assigned_lawyer_id.is_(None),
+            )
+        )
+
+    q = apply_universal_query(base_query, Request, uq)
     total = q.count()
     rows = q.offset(uq.page.offset).limit(uq.page.limit).all()
     return {
@@ -166,6 +193,7 @@ def update_request(
     row = db.get(Request, request_uuid)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_lawyer_can_manage_request_or_403(admin, row)
     changes = payload.model_dump(exclude_unset=True)
     actor_role = str(admin.get("role") or "").upper()
     if actor_role == "LAWYER":
@@ -238,6 +266,7 @@ def delete_request(request_id: str, db: Session = Depends(get_db), admin=Depends
     row = db.get(Request, request_uuid)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_lawyer_can_manage_request_or_403(admin, row)
     db.delete(row)
     db.commit()
     return {"status": "удалено"}
@@ -248,6 +277,7 @@ def get_request(request_id: str, db: Session = Depends(get_db), admin=Depends(re
     req = db.get(Request, request_uuid)
     if not req:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_lawyer_can_view_request_or_403(admin, req)
     changed = False
     if str(admin.get("role") or "").upper() == "LAWYER" and clear_unread_for_lawyer(req):
         changed = True
