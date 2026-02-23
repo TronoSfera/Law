@@ -22,6 +22,10 @@ docker compose exec -T backend python -m compileall app tests alembic
 docker compose build frontend
 docker compose run --rm --no-deps --entrypoint sh frontend -lc "apk add --no-cache nodejs npm >/dev/null && npx --yes esbuild /usr/share/nginx/html/admin.jsx --loader:.jsx=jsx --bundle --outfile=/tmp/admin.bundle.js"
 ```
+5. Браузерный E2E (Playwright) для публичного флоу:
+```bash
+docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft.com/playwright:v1.51.0-noble sh -lc "npm install && E2E_BASE_URL=http://frontend npx playwright test --config=playwright.config.js"
+```
 
 ## Матрица проверок по задачам
 | ID | Что проверяем | Где тесты | Как запускать |
@@ -89,4 +93,5 @@ docker compose run --rm --no-deps --entrypoint sh frontend -lc "apk add --no-cac
 6. После успешной проверки обновить статус пункта в `context/10_development_execution_plan.md`.
 
 ## Последний регрессионный прогон
-- `python -m unittest discover -s tests -p 'test_*.py' -v` — `91 tests OK`.
+- `python -m unittest discover -s tests -p 'test_*.py' -v` — `94 tests OK`.
+- `Playwright public flow` (`e2e/tests/public_client_flow.spec.js`) — `1 passed`.
