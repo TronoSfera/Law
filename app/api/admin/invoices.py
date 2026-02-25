@@ -134,6 +134,7 @@ def _serialize_invoice(
         "id": str(row.id),
         "invoice_number": row.invoice_number,
         "request_id": str(row.request_id),
+        "client_id": str(row.client_id) if row.client_id else None,
         "request_track_number": request_track,
         "status": row.status,
         "status_label": STATUS_LABELS.get(str(row.status or "").upper(), row.status),
@@ -275,6 +276,7 @@ def create_invoice(
 
     invoice = Invoice(
         request_id=req.id,
+        client_id=req.client_id,
         invoice_number=str(payload.get("invoice_number") or "").strip() or _invoice_number(db),
         status=status,
         amount=_amount_or_400(payload.get("amount")),

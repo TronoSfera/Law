@@ -232,6 +232,44 @@ class UploadsS3Tests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].s3_key, key)
 
+    def test_public_attachment_object_preview_returns_inline_response(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-PUB-PREVIEW",
+                client_name="Клиент",
+                client_phone="+79994443322",
+                topic_code="civil-law",
+                status_code="IN_PROGRESS",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            key = f"requests/{req.id}/preview.pdf"
+            attachment = Attachment(
+                request_id=req.id,
+                file_name="preview.pdf",
+                mime_type="application/pdf",
+                size_bytes=1280,
+                s3_key=key,
+            )
+            db.add(attachment)
+            db.commit()
+            attachment_id = str(attachment.id)
+            track = req.track_number
+
+        fake_s3.objects[key] = {"size": 1280, "mime": "application/pdf", "content": b"pdf-preview"}
+        public_token = create_jwt({"sub": track, "purpose": "VIEW_REQUEST"}, settings.PUBLIC_JWT_SECRET, timedelta(days=1))
+        cookies = {settings.PUBLIC_COOKIE_NAME: public_token}
+
+        with patch("app.api.public.uploads.get_s3_storage", return_value=fake_s3):
+            response = self.client.get(f"/api/public/uploads/object/{attachment_id}", cookies=cookies)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"pdf-preview")
+        self.assertIn("application/pdf", response.headers.get("content-type", ""))
+        self.assertIn("inline;", response.headers.get("content-disposition", ""))
+
     def test_admin_request_attachment_upload_sets_client_unread_marker(self):
         fake_s3 = _FakeS3Storage()
         with self.SessionLocal() as db:

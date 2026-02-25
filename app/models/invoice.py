@@ -13,6 +13,7 @@ class Invoice(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "invoices"
 
     request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
+    client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
     invoice_number: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, index=True, default="WAITING_PAYMENT")
     amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)

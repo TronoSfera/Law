@@ -25,9 +25,11 @@ from app.models.admin_user import AdminUser
 from app.models.admin_user_topic import AdminUserTopic
 from app.models.attachment import Attachment
 from app.models.audit_log import AuditLog
+from app.models.client import Client
 from app.models.form_field import FormField
 from app.models.message import Message
 from app.models.notification import Notification
+from app.models.table_availability import TableAvailability
 from app.models.quote import Quote
 from app.models.request import Request
 from app.models.status import Status
@@ -49,6 +51,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
         )
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         AdminUser.__table__.create(bind=cls.engine)
+        Client.__table__.create(bind=cls.engine)
         Quote.__table__.create(bind=cls.engine)
         FormField.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
@@ -63,12 +66,14 @@ class AdminUniversalCrudTests(unittest.TestCase):
         TopicStatusTransition.__table__.create(bind=cls.engine)
         AdminUserTopic.__table__.create(bind=cls.engine)
         Notification.__table__.create(bind=cls.engine)
+        TableAvailability.__table__.create(bind=cls.engine)
         AuditLog.__table__.create(bind=cls.engine)
 
     @classmethod
     def tearDownClass(cls):
         AuditLog.__table__.drop(bind=cls.engine)
         Notification.__table__.drop(bind=cls.engine)
+        TableAvailability.__table__.drop(bind=cls.engine)
         AdminUserTopic.__table__.drop(bind=cls.engine)
         RequestDataRequirement.__table__.drop(bind=cls.engine)
         TopicDataTemplate.__table__.drop(bind=cls.engine)
@@ -82,6 +87,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
         Request.__table__.drop(bind=cls.engine)
         FormField.__table__.drop(bind=cls.engine)
         Quote.__table__.drop(bind=cls.engine)
+        Client.__table__.drop(bind=cls.engine)
         AdminUser.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
 
@@ -92,6 +98,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
             db.execute(delete(Attachment))
             db.execute(delete(Message))
             db.execute(delete(Request))
+            db.execute(delete(Client))
             db.execute(delete(Status))
             db.execute(delete(FormField))
             db.execute(delete(Topic))
@@ -101,6 +108,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
             db.execute(delete(TopicStatusTransition))
             db.execute(delete(AdminUserTopic))
             db.execute(delete(Notification))
+            db.execute(delete(TableAvailability))
             db.execute(delete(Quote))
             db.execute(delete(AdminUser))
             db.commit()
@@ -177,6 +185,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
         by_table = {row["table"]: row for row in tables}
         self.assertIn("requests", by_table)
         self.assertIn("invoices", by_table)
+        self.assertIn("clients", by_table)
         self.assertIn("quotes", by_table)
         self.assertIn("statuses", by_table)
 
@@ -191,7 +200,12 @@ class AdminUniversalCrudTests(unittest.TestCase):
         self.assertEqual(quotes_columns["sort_order"]["label"], "Порядок")
         self.assertTrue(all(str(col.get("label") or "").strip() for col in (by_table["quotes"].get("columns") or [])))
         for table_name, table_meta in by_table.items():
-            expected_section = "main" if table_name in {"requests", "invoices"} else "dictionary"
+            if table_name in {"requests", "invoices"}:
+                expected_section = "main"
+            elif table_name == "table_availability":
+                expected_section = "system"
+            else:
+                expected_section = "dictionary"
             self.assertEqual(table_meta.get("section"), expected_section)
 
         admin_users_cols = {col["name"] for col in (by_table["admin_users"].get("columns") or [])}
@@ -200,6 +214,55 @@ class AdminUniversalCrudTests(unittest.TestCase):
         lawyer_headers = self._auth_headers("LAWYER")
         forbidden = self.client.get("/api/admin/crud/meta/tables", headers=lawyer_headers)
         self.assertEqual(forbidden.status_code, 403)
+
+    def test_admin_can_toggle_dictionary_table_visibility(self):
+        admin_headers = self._auth_headers("ADMIN")
+        available = self.client.get("/api/admin/crud/meta/available-tables", headers=admin_headers)
+        self.assertEqual(available.status_code, 200)
+        rows = available.json().get("rows") or []
+        by_table = {row["table"]: row for row in rows}
+        self.assertIn("clients", by_table)
+        self.assertIn("table_availability", by_table)
+        self.assertEqual(by_table["table_availability"]["section"], "system")
+        self.assertTrue(bool(by_table["clients"]["is_active"]))
+
+        deactivated = self.client.patch(
+            "/api/admin/crud/meta/available-tables/clients",
+            headers=admin_headers,
+            json={"is_active": False},
+        )
+        self.assertEqual(deactivated.status_code, 200)
+        self.assertFalse(bool(deactivated.json().get("is_active")))
+
+        filtered_catalog = self.client.get("/api/admin/crud/meta/tables", headers=admin_headers)
+        self.assertEqual(filtered_catalog.status_code, 200)
+        filtered_tables = {row["table"] for row in (filtered_catalog.json().get("tables") or [])}
+        self.assertNotIn("clients", filtered_tables)
+        self.assertIn("requests", filtered_tables)
+        self.assertIn("invoices", filtered_tables)
+
+        activated = self.client.patch(
+            "/api/admin/crud/meta/available-tables/clients",
+            headers=admin_headers,
+            json={"is_active": True},
+        )
+        self.assertEqual(activated.status_code, 200)
+        self.assertTrue(bool(activated.json().get("is_active")))
+
+        refreshed_catalog = self.client.get("/api/admin/crud/meta/tables", headers=admin_headers)
+        self.assertEqual(refreshed_catalog.status_code, 200)
+        refreshed_tables = {row["table"] for row in (refreshed_catalog.json().get("tables") or [])}
+        self.assertIn("clients", refreshed_tables)
+
+        lawyer_headers = self._auth_headers("LAWYER")
+        forbidden_list = self.client.get("/api/admin/crud/meta/available-tables", headers=lawyer_headers)
+        self.assertEqual(forbidden_list.status_code, 403)
+        forbidden_patch = self.client.patch(
+            "/api/admin/crud/meta/available-tables/clients",
+            headers=lawyer_headers,
+            json={"is_active": False},
+        )
+        self.assertEqual(forbidden_patch.status_code, 403)
 
     def test_lawyer_permissions_and_request_crud(self):
         lawyer_headers = self._auth_headers("LAWYER")
@@ -347,6 +410,139 @@ class AdminUniversalCrudTests(unittest.TestCase):
             self.assertIsNotNone(refreshed)
             self.assertEqual(refreshed.status_code, "CLOSED")
 
+    def test_lawyer_messages_and_attachments_are_scoped_by_request_access(self):
+        with self.SessionLocal() as db:
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Свой",
+                email="lawyer.msg.self@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_other = AdminUser(
+                role="LAWYER",
+                name="Юрист Чужой",
+                email="lawyer.msg.other@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer_self, lawyer_other])
+            db.flush()
+            self_id = str(lawyer_self.id)
+            other_id = str(lawyer_other.id)
+
+            own = Request(
+                track_number="TRK-MSG-OWN",
+                client_name="Клиент Свой",
+                client_phone="+79990010101",
+                status_code="IN_PROGRESS",
+                description="own",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            foreign = Request(
+                track_number="TRK-MSG-FOREIGN",
+                client_name="Клиент Чужой",
+                client_phone="+79990010102",
+                status_code="IN_PROGRESS",
+                description="foreign",
+                extra_fields={},
+                assigned_lawyer_id=other_id,
+            )
+            unassigned = Request(
+                track_number="TRK-MSG-UNASSIGNED",
+                client_name="Клиент Без назначения",
+                client_phone="+79990010103",
+                status_code="NEW",
+                description="unassigned",
+                extra_fields={},
+                assigned_lawyer_id=None,
+            )
+            db.add_all([own, foreign, unassigned])
+            db.flush()
+
+            msg_own = Message(request_id=own.id, author_type="CLIENT", author_name="Клиент", body="own", immutable=False)
+            msg_foreign = Message(request_id=foreign.id, author_type="CLIENT", author_name="Клиент", body="foreign", immutable=False)
+            msg_unassigned = Message(request_id=unassigned.id, author_type="CLIENT", author_name="Клиент", body="unassigned", immutable=False)
+            db.add_all([msg_own, msg_foreign, msg_unassigned])
+            db.flush()
+
+            att_own = Attachment(
+                request_id=own.id,
+                message_id=msg_own.id,
+                file_name="own.pdf",
+                mime_type="application/pdf",
+                size_bytes=100,
+                s3_key=f"requests/{own.id}/own.pdf",
+                immutable=False,
+            )
+            att_foreign = Attachment(
+                request_id=foreign.id,
+                message_id=msg_foreign.id,
+                file_name="foreign.pdf",
+                mime_type="application/pdf",
+                size_bytes=100,
+                s3_key=f"requests/{foreign.id}/foreign.pdf",
+                immutable=False,
+            )
+            att_unassigned = Attachment(
+                request_id=unassigned.id,
+                message_id=msg_unassigned.id,
+                file_name="unassigned.pdf",
+                mime_type="application/pdf",
+                size_bytes=100,
+                s3_key=f"requests/{unassigned.id}/unassigned.pdf",
+                immutable=False,
+            )
+            db.add_all([att_own, att_foreign, att_unassigned])
+            db.commit()
+
+            own_id = str(own.id)
+            unassigned_id = str(unassigned.id)
+            foreign_msg_id = str(msg_foreign.id)
+            foreign_att_id = str(att_foreign.id)
+
+        headers = self._auth_headers("LAWYER", email="lawyer.msg.self@example.com", sub=self_id)
+
+        messages_query = self.client.post(
+            "/api/admin/crud/messages/query",
+            headers=headers,
+            json={"filters": [], "sort": [{"field": "created_at", "dir": "asc"}], "page": {"limit": 50, "offset": 0}},
+        )
+        self.assertEqual(messages_query.status_code, 200)
+        message_request_ids = {str(row.get("request_id")) for row in (messages_query.json().get("rows") or [])}
+        self.assertEqual(message_request_ids, {own_id, unassigned_id})
+
+        attachments_query = self.client.post(
+            "/api/admin/crud/attachments/query",
+            headers=headers,
+            json={"filters": [], "sort": [{"field": "created_at", "dir": "asc"}], "page": {"limit": 50, "offset": 0}},
+        )
+        self.assertEqual(attachments_query.status_code, 200)
+        attachment_request_ids = {str(row.get("request_id")) for row in (attachments_query.json().get("rows") or [])}
+        self.assertEqual(attachment_request_ids, {own_id, unassigned_id})
+
+        foreign_message_get = self.client.get(f"/api/admin/crud/messages/{foreign_msg_id}", headers=headers)
+        self.assertEqual(foreign_message_get.status_code, 403)
+        foreign_attachment_get = self.client.get(f"/api/admin/crud/attachments/{foreign_att_id}", headers=headers)
+        self.assertEqual(foreign_attachment_get.status_code, 403)
+
+        created_message = self.client.post(
+            "/api/admin/crud/messages",
+            headers=headers,
+            json={"request_id": own_id, "body": "Ответ юриста"},
+        )
+        self.assertEqual(created_message.status_code, 201)
+        self.assertEqual(created_message.json().get("author_type"), "LAWYER")
+        self.assertEqual(created_message.json().get("request_id"), own_id)
+
+        blocked_unassigned_create = self.client.post(
+            "/api/admin/crud/messages",
+            headers=headers,
+            json={"request_id": unassigned_id, "body": "Попытка без назначения"},
+        )
+        self.assertEqual(blocked_unassigned_create.status_code, 403)
+
     def test_topic_status_flow_supports_branching_transitions(self):
         headers = self._auth_headers("ADMIN", email="root@example.com")
         with self.SessionLocal() as db:
@@ -393,6 +589,95 @@ class AdminUniversalCrudTests(unittest.TestCase):
             json={"status_code": "WAITING_CLIENT"},
         )
         self.assertEqual(second_branch.status_code, 200)
+
+    def test_admin_chat_service_endpoints_follow_rbac(self):
+        with self.SessionLocal() as db:
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Чат Свой",
+                email="lawyer.chat.self@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_other = AdminUser(
+                role="LAWYER",
+                name="Юрист Чат Чужой",
+                email="lawyer.chat.other@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer_self, lawyer_other])
+            db.flush()
+            self_id = str(lawyer_self.id)
+            other_id = str(lawyer_other.id)
+
+            own = Request(
+                track_number="TRK-CHAT-ADMIN-OWN",
+                client_name="Клиент Свой",
+                client_phone="+79990030001",
+                status_code="IN_PROGRESS",
+                description="own",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            foreign = Request(
+                track_number="TRK-CHAT-ADMIN-FOREIGN",
+                client_name="Клиент Чужой",
+                client_phone="+79990030002",
+                status_code="IN_PROGRESS",
+                description="foreign",
+                extra_fields={},
+                assigned_lawyer_id=other_id,
+            )
+            unassigned = Request(
+                track_number="TRK-CHAT-ADMIN-UNASSIGNED",
+                client_name="Клиент Без назначения",
+                client_phone="+79990030003",
+                status_code="NEW",
+                description="unassigned",
+                extra_fields={},
+                assigned_lawyer_id=None,
+            )
+            db.add_all([own, foreign, unassigned])
+            db.flush()
+            db.add(Message(request_id=own.id, author_type="CLIENT", author_name="Клиент", body="start"))
+            db.commit()
+            own_id = str(own.id)
+            foreign_id = str(foreign.id)
+            unassigned_id = str(unassigned.id)
+
+        lawyer_headers = self._auth_headers("LAWYER", email="lawyer.chat.self@example.com", sub=self_id)
+        admin_headers = self._auth_headers("ADMIN", email="root@example.com")
+
+        own_list = self.client.get(f"/api/admin/chat/requests/{own_id}/messages", headers=lawyer_headers)
+        self.assertEqual(own_list.status_code, 200)
+        self.assertEqual(own_list.json()["total"], 1)
+
+        foreign_list = self.client.get(f"/api/admin/chat/requests/{foreign_id}/messages", headers=lawyer_headers)
+        self.assertEqual(foreign_list.status_code, 403)
+
+        own_create = self.client.post(
+            f"/api/admin/chat/requests/{own_id}/messages",
+            headers=lawyer_headers,
+            json={"body": "Ответ из chat service"},
+        )
+        self.assertEqual(own_create.status_code, 201)
+        self.assertEqual(own_create.json()["author_type"], "LAWYER")
+
+        unassigned_create = self.client.post(
+            f"/api/admin/chat/requests/{unassigned_id}/messages",
+            headers=lawyer_headers,
+            json={"body": "Нельзя в неназначенную"},
+        )
+        self.assertEqual(unassigned_create.status_code, 403)
+
+        admin_create = self.client.post(
+            f"/api/admin/chat/requests/{foreign_id}/messages",
+            headers=admin_headers,
+            json={"body": "Сообщение администратора"},
+        )
+        self.assertEqual(admin_create.status_code, 201)
+        self.assertEqual(admin_create.json()["author_type"], "SYSTEM")
 
     def test_request_read_markers_status_update_and_lawyer_open_reset(self):
         with self.SessionLocal() as db:
@@ -688,6 +973,100 @@ class AdminUniversalCrudTests(unittest.TestCase):
             self.assertEqual(history[0].from_status, "NEW")
             self.assertEqual(history[0].to_status, "IN_PROGRESS")
 
+    def test_request_status_route_returns_progress_and_respects_role_scope(self):
+        with self.SessionLocal() as db:
+            db.add_all(
+                [
+                    Status(code="NEW", name="Новая", enabled=True, sort_order=1, kind="DEFAULT"),
+                    Status(code="IN_PROGRESS", name="В работе", enabled=True, sort_order=2, kind="DEFAULT"),
+                    Status(code="WAITING_CLIENT", name="Ожидание клиента", enabled=True, sort_order=3, kind="DEFAULT"),
+                ]
+            )
+            db.add_all(
+                [
+                    TopicStatusTransition(
+                        topic_code="civil-law",
+                        from_status="NEW",
+                        to_status="IN_PROGRESS",
+                        enabled=True,
+                        sla_hours=24,
+                        sort_order=1,
+                    ),
+                    TopicStatusTransition(
+                        topic_code="civil-law",
+                        from_status="IN_PROGRESS",
+                        to_status="WAITING_CLIENT",
+                        enabled=True,
+                        sla_hours=72,
+                        sort_order=2,
+                    ),
+                ]
+            )
+            lawyer = AdminUser(
+                role="LAWYER",
+                name="Юрист маршрута",
+                email="lawyer.route@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            outsider = AdminUser(
+                role="LAWYER",
+                name="Чужой юрист",
+                email="lawyer.outside.route@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer, outsider])
+            db.flush()
+            req = Request(
+                track_number="TRK-ROUTE-1",
+                client_name="Клиент",
+                client_phone="+79990001122",
+                topic_code="civil-law",
+                status_code="IN_PROGRESS",
+                assigned_lawyer_id=str(lawyer.id),
+                description="route check",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            db.add(
+                StatusHistory(
+                    request_id=req.id,
+                    from_status="NEW",
+                    to_status="IN_PROGRESS",
+                    comment="start progress",
+                    changed_by_admin_id=None,
+                )
+            )
+            db.commit()
+            request_id = str(req.id)
+            lawyer_id = str(lawyer.id)
+            outsider_id = str(outsider.id)
+
+        admin_headers = self._auth_headers("ADMIN", email="root@example.com")
+        assigned_headers = self._auth_headers("LAWYER", email="lawyer.route@example.com", sub=lawyer_id)
+        outsider_headers = self._auth_headers("LAWYER", email="lawyer.outside.route@example.com", sub=outsider_id)
+
+        admin_response = self.client.get(f"/api/admin/requests/{request_id}/status-route", headers=admin_headers)
+        self.assertEqual(admin_response.status_code, 200)
+        payload = admin_response.json()
+        self.assertEqual(payload["current_status"], "IN_PROGRESS")
+        nodes = payload.get("nodes") or []
+        self.assertEqual([item["code"] for item in nodes], ["NEW", "IN_PROGRESS", "WAITING_CLIENT"])
+        self.assertEqual(nodes[0]["state"], "completed")
+        self.assertEqual(nodes[1]["state"], "current")
+        self.assertEqual(nodes[2]["state"], "pending")
+        self.assertEqual(nodes[1]["sla_hours"], 24)
+        self.assertEqual(nodes[2]["sla_hours"], 72)
+
+        assigned_response = self.client.get(f"/api/admin/requests/{request_id}/status-route", headers=assigned_headers)
+        self.assertEqual(assigned_response.status_code, 200)
+        self.assertEqual(assigned_response.json()["current_status"], "IN_PROGRESS")
+
+        outsider_forbidden = self.client.get(f"/api/admin/requests/{request_id}/status-route", headers=outsider_headers)
+        self.assertEqual(outsider_forbidden.status_code, 403)
+
     def test_lawyer_can_claim_unassigned_request_and_takeover_is_forbidden(self):
         with self.SessionLocal() as db:
             lawyer1 = AdminUser(
@@ -935,6 +1314,64 @@ class AdminUniversalCrudTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Неизвестные поля", response.json().get("detail", ""))
+
+    def test_calculated_fields_are_read_only_for_universal_crud(self):
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+
+        blocked_create = self.client.post(
+            "/api/admin/crud/requests",
+            headers=headers,
+            json={
+                "client_name": "Клиент readonly",
+                "client_phone": "+79995550011",
+                "status_code": "NEW",
+                "description": "calc readonly",
+                "invoice_amount": 12500,
+            },
+        )
+        self.assertEqual(blocked_create.status_code, 400)
+        self.assertIn("Неизвестные поля", blocked_create.json().get("detail", ""))
+
+        created = self.client.post(
+            "/api/admin/crud/requests",
+            headers=headers,
+            json={
+                "client_name": "Клиент readonly",
+                "client_phone": "+79995550012",
+                "status_code": "NEW",
+                "description": "valid create",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        request_id = created.json()["id"]
+
+        blocked_patch = self.client.patch(
+            f"/api/admin/crud/requests/{request_id}",
+            headers=headers,
+            json={"paid_at": "2026-02-24T12:00:00+03:00"},
+        )
+        self.assertEqual(blocked_patch.status_code, 400)
+        self.assertIn("Неизвестные поля", blocked_patch.json().get("detail", ""))
+
+        meta_response = self.client.get("/api/admin/crud/meta/tables", headers=headers)
+        self.assertEqual(meta_response.status_code, 200)
+        by_table = {row["table"]: row for row in (meta_response.json().get("tables") or [])}
+
+        request_columns = {col["name"]: col for col in (by_table.get("requests", {}).get("columns") or [])}
+        self.assertIn("invoice_amount", request_columns)
+        self.assertIn("paid_at", request_columns)
+        self.assertIn("paid_by_admin_id", request_columns)
+        self.assertIn("total_attachments_bytes", request_columns)
+        self.assertFalse(request_columns["invoice_amount"]["editable"])
+        self.assertFalse(request_columns["paid_at"]["editable"])
+        self.assertFalse(request_columns["paid_by_admin_id"]["editable"])
+        self.assertFalse(request_columns["total_attachments_bytes"]["editable"])
+
+        invoice_columns = {col["name"]: col for col in (by_table.get("invoices", {}).get("columns") or [])}
+        self.assertIn("issued_at", invoice_columns)
+        self.assertIn("paid_at", invoice_columns)
+        self.assertFalse(invoice_columns["issued_at"]["editable"])
+        self.assertFalse(invoice_columns["paid_at"]["editable"])
 
     def test_topic_code_is_autogenerated_when_missing(self):
         headers = self._auth_headers("ADMIN")

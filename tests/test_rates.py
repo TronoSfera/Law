@@ -22,6 +22,7 @@ from app.main import app
 from app.models.admin_user import AdminUser
 from app.models.admin_user_topic import AdminUserTopic
 from app.models.audit_log import AuditLog
+from app.models.client import Client
 from app.models.notification import Notification
 from app.models.request import Request
 from app.models.status import Status
@@ -40,6 +41,7 @@ class RequestRatesTests(unittest.TestCase):
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         AdminUser.__table__.create(bind=cls.engine)
         AdminUserTopic.__table__.create(bind=cls.engine)
+        Client.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
         Status.__table__.create(bind=cls.engine)
         TopicRequiredField.__table__.create(bind=cls.engine)
@@ -57,6 +59,7 @@ class RequestRatesTests(unittest.TestCase):
         TopicRequiredField.__table__.drop(bind=cls.engine)
         Status.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
+        Client.__table__.drop(bind=cls.engine)
         AdminUserTopic.__table__.drop(bind=cls.engine)
         AdminUser.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
@@ -68,6 +71,7 @@ class RequestRatesTests(unittest.TestCase):
             db.execute(delete(TopicRequiredField))
             db.execute(delete(Status))
             db.execute(delete(Request))
+            db.execute(delete(Client))
             db.execute(delete(AdminUserTopic))
             db.execute(delete(AdminUser))
             db.commit()

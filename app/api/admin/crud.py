@@ -3,12 +3,13 @@ from __future__ import annotations
 import importlib
 import pkgutil
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.inspection import inspect as sa_inspect
@@ -22,6 +23,8 @@ from app.db.session import Base, get_db
 from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
 from app.models.form_field import FormField
+from app.models.client import Client
+from app.models.table_availability import TableAvailability
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.attachment import Attachment
 from app.models.message import Message
@@ -66,6 +69,8 @@ SYSTEM_FIELDS = {
     "lawyer_unread_event_type",
 }
 REQUEST_FINANCIAL_FIELDS = {"effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"}
+REQUEST_CALCULATED_FIELDS = {"invoice_amount", "paid_at", "paid_by_admin_id", "total_attachments_bytes"}
+INVOICE_CALCULATED_FIELDS = {"issued_by_admin_user_id", "issued_by_role", "issued_at", "paid_at"}
 ALLOWED_ADMIN_ROLES = {"ADMIN", "LAWYER"}
 
 # Per-table RBAC: table -> role -> actions.
@@ -75,10 +80,20 @@ TABLE_ROLE_ACTIONS: dict[str, dict[str, set[str]]] = {
         "ADMIN": set(CRUD_ACTIONS),
         "LAWYER": set(CRUD_ACTIONS),
     },
+    "messages": {
+        "ADMIN": set(CRUD_ACTIONS),
+        "LAWYER": {"query", "read", "create"},
+    },
+    "attachments": {
+        "ADMIN": set(CRUD_ACTIONS),
+        "LAWYER": {"query", "read"},
+    },
     "quotes": {"ADMIN": set(CRUD_ACTIONS)},
     "topics": {"ADMIN": set(CRUD_ACTIONS)},
     "statuses": {"ADMIN": set(CRUD_ACTIONS)},
     "form_fields": {"ADMIN": set(CRUD_ACTIONS)},
+    "clients": {"ADMIN": set(CRUD_ACTIONS)},
+    "table_availability": {"ADMIN": set(CRUD_ACTIONS)},
     "audit_log": {"ADMIN": {"query", "read"}},
     "security_audit_log": {"ADMIN": {"query", "read"}},
     "otp_sessions": {"ADMIN": {"query", "read"}},
@@ -172,6 +187,16 @@ def _ensure_lawyer_can_manage_request_or_403(admin: dict, req: Request) -> None:
         raise HTTPException(status_code=403, detail="Юрист может работать только со своими назначенными заявками")
 
 
+def _request_for_related_row_or_404(db: Session, row: Any) -> Request:
+    request_id = getattr(row, "request_id", None)
+    if request_id is None:
+        raise HTTPException(status_code=400, detail="Связанная заявка не найдена")
+    req = db.get(Request, request_id)
+    if req is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    return req
+
+
 def _serialize_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _serialize_value(val) for key, val in value.items()}
@@ -231,6 +256,8 @@ def _table_label(table_name: str) -> str:
         "topics": "Темы",
         "statuses": "Статусы",
         "form_fields": "Поля формы",
+        "clients": "Клиенты",
+        "table_availability": "Доступность таблиц",
         "topic_required_fields": "Обязательные поля темы",
         "topic_data_templates": "Шаблоны данных темы",
         "topic_status_transitions": "Переходы статусов темы",
@@ -341,6 +368,7 @@ def _column_label(table_name: str, column_name: str) -> str:
         "amount": "Сумма",
         "currency": "Валюта",
         "client_name": "Клиент",
+        "client_id": "Клиент (ID)",
         "client_phone": "Телефон",
         "payer_display_name": "Плательщик",
         "payer_details_encrypted": "Реквизиты (шифр.)",
@@ -401,6 +429,7 @@ def _column_label(table_name: str, column_name: str) -> str:
         "reason": "Причина",
         "diff": "Изменения",
         "details": "Детали",
+        "table_name": "Таблица",
     }
     if normalized_column in explicit:
         return explicit[normalized_column]
@@ -459,6 +488,10 @@ def _hidden_response_fields(table_name: str) -> set[str]:
 def _protected_input_fields(table_name: str) -> set[str]:
     if table_name == "admin_users":
         return {"password_hash"}
+    if table_name == "requests":
+        return {"client_id", *REQUEST_CALCULATED_FIELDS}
+    if table_name == "invoices":
+        return {"client_id", *INVOICE_CALCULATED_FIELDS}
     return set()
 
 
@@ -550,6 +583,52 @@ def _prepare_create_payload(table_name: str, payload: dict[str, Any]) -> dict[st
 def _normalize_optional_string(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _normalize_client_phone(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    allowed = {"+", "(", ")", "-", " "}
+    return "".join(ch for ch in text if ch.isdigit() or ch in allowed).strip()
+
+
+def _upsert_client_or_400(db: Session, *, full_name: Any, phone: Any, responsible: str) -> Client:
+    normalized_phone = _normalize_client_phone(phone)
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail='Поле "client_phone" обязательно')
+    normalized_name = str(full_name or "").strip() or "Клиент"
+
+    row = db.query(Client).filter(Client.phone == normalized_phone).first()
+    if row is None:
+        row = Client(
+            full_name=normalized_name,
+            phone=normalized_phone,
+            responsible=responsible or "Администратор системы",
+        )
+        db.add(row)
+        db.flush()
+        return row
+
+    changed = False
+    if normalized_name and row.full_name != normalized_name:
+        row.full_name = normalized_name
+        changed = True
+    if responsible and row.responsible != responsible:
+        row.responsible = responsible
+        changed = True
+    if changed:
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _request_for_uuid_or_400(db: Session, raw_request_id: Any) -> Request:
+    request_uuid = _parse_uuid_or_400(raw_request_id, "request_id")
+    req = db.get(Request, request_uuid)
+    if req is None:
+        raise HTTPException(status_code=400, detail="Заявка не найдена")
+    return req
 
 
 def _active_lawyer_or_400(db: Session, lawyer_id: Any) -> AdminUser:
@@ -955,23 +1034,49 @@ def _apply_create_side_effects(db: Session, *, table_name: str, row: Any, admin:
         )
 
 
-@router.get("/meta/tables")
-def list_tables_meta(admin: dict = Depends(get_current_admin)):
-    role = str(admin.get("role") or "").upper()
-    if role != "ADMIN":
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+def _table_section(table_name: str) -> str:
+    if table_name in {"requests", "invoices"}:
+        return "main"
+    if table_name == "table_availability":
+        return "system"
+    return "dictionary"
 
+
+def _table_availability_map(db: Session) -> dict[str, TableAvailability]:
+    rows = db.query(TableAvailability).all()
+    return {str(row.table_name): row for row in rows if row and row.table_name}
+
+
+def _table_is_active(table_name: str, availability: dict[str, TableAvailability]) -> bool:
+    row = availability.get(table_name)
+    if row is None:
+        return True
+    return bool(row.is_active)
+
+
+def _meta_tables_payload(
+    db: Session,
+    *,
+    role: str,
+    include_inactive_dictionaries: bool,
+) -> list[dict[str, Any]]:
     table_models = _table_model_map()
+    availability = _table_availability_map(db)
     rows: list[dict[str, Any]] = []
     for table_name in sorted(table_models.keys()):
         model = table_models[table_name]
+        section = _table_section(table_name)
+        is_active = _table_is_active(table_name, availability)
+        if section == "dictionary" and not include_inactive_dictionaries and not is_active:
+            continue
         actions = sorted(_allowed_actions(role, table_name))
         rows.append(
             {
                 "key": table_name,
                 "table": table_name,
                 "label": _table_label(table_name),
-                "section": "main" if table_name in {"requests", "invoices"} else "dictionary",
+                "section": section,
+                "is_active": is_active,
                 "actions": actions,
                 "query_endpoint": f"/api/admin/crud/{table_name}/query",
                 "create_endpoint": f"/api/admin/crud/{table_name}",
@@ -981,8 +1086,80 @@ def list_tables_meta(admin: dict = Depends(get_current_admin)):
                 "columns": _table_columns_meta(table_name, model),
             }
         )
+    return rows
 
-    return {"tables": rows}
+
+class TableAvailabilityUpdatePayload(BaseModel):
+    is_active: bool
+
+
+@router.get("/meta/tables")
+def list_tables_meta(db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+    role = str(admin.get("role") or "").upper()
+    if role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return {"tables": _meta_tables_payload(db, role=role, include_inactive_dictionaries=False)}
+
+
+@router.get("/meta/available-tables")
+def list_available_tables(db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+    role = str(admin.get("role") or "").upper()
+    if role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    availability = _table_availability_map(db)
+    rows = []
+    for item in _meta_tables_payload(db, role=role, include_inactive_dictionaries=True):
+        table_name = str(item.get("table") or "")
+        state = availability.get(table_name)
+        rows.append(
+            {
+                "table": table_name,
+                "label": item.get("label"),
+                "section": item.get("section"),
+                "is_active": bool(item.get("is_active")),
+                "responsible": state.responsible if state is not None else None,
+                "updated_at": _serialize_value(state.updated_at) if state is not None else None,
+            }
+        )
+    return {"rows": rows, "total": len(rows)}
+
+
+@router.patch("/meta/available-tables/{table_name}")
+def update_available_table(
+    table_name: str,
+    payload: TableAvailabilityUpdatePayload,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(get_current_admin),
+):
+    role = str(admin.get("role") or "").upper()
+    if role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    normalized, _ = _resolve_table_model(table_name)
+    row = db.query(TableAvailability).filter(TableAvailability.table_name == normalized).first()
+    responsible = _resolve_responsible(admin)
+    is_active = bool(payload.is_active)
+    if row is None:
+        row = TableAvailability(
+            table_name=normalized,
+            is_active=is_active,
+            responsible=responsible,
+        )
+        db.add(row)
+    else:
+        row.is_active = is_active
+        row.updated_at = datetime.now(timezone.utc)
+        row.responsible = responsible
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "table": normalized,
+        "is_active": bool(row.is_active),
+        "responsible": row.responsible,
+        "updated_at": _serialize_value(row.updated_at),
+    }
 
 
 @router.post("/{table_name}/query")
@@ -998,6 +1175,22 @@ def query_table(
     if normalized == "requests" and _is_lawyer(admin):
         actor_id = _lawyer_actor_id_or_401(admin)
         base_query = base_query.filter(
+            or_(
+                Request.assigned_lawyer_id == actor_id,
+                Request.assigned_lawyer_id.is_(None),
+            )
+        )
+    if normalized == "messages" and _is_lawyer(admin):
+        actor_id = _lawyer_actor_id_or_401(admin)
+        base_query = base_query.join(Request, Request.id == Message.request_id).filter(
+            or_(
+                Request.assigned_lawyer_id == actor_id,
+                Request.assigned_lawyer_id.is_(None),
+            )
+        )
+    if normalized == "attachments" and _is_lawyer(admin):
+        actor_id = _lawyer_actor_id_or_401(admin)
+        base_query = base_query.join(Request, Request.id == Attachment.request_id).filter(
             or_(
                 Request.assigned_lawyer_id == actor_id,
                 Request.assigned_lawyer_id.is_(None),
@@ -1039,6 +1232,12 @@ def get_row(
                 db.commit()
                 db.refresh(req)
                 row = req
+    if normalized == "messages" and isinstance(row, Message):
+        req = _request_for_related_row_or_404(db, row)
+        _ensure_lawyer_can_view_request_or_403(admin, req)
+    if normalized == "attachments" and isinstance(row, Attachment):
+        req = _request_for_related_row_or_404(db, row)
+        _ensure_lawyer_can_view_request_or_403(admin, req)
     return _strip_hidden_fields(normalized, _row_to_dict(row))
 
 
@@ -1051,6 +1250,9 @@ def create_row(
 ):
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "create")
+    responsible = _resolve_responsible(admin)
+    resolved_request_client_id: uuid.UUID | None = None
+    resolved_invoice_client_id: uuid.UUID | None = None
     if normalized == "requests" and _is_lawyer(admin) and isinstance(payload, dict):
         assigned_lawyer_id = payload.get("assigned_lawyer_id")
         if str(assigned_lawyer_id or "").strip():
@@ -1060,8 +1262,28 @@ def create_row(
             raise HTTPException(status_code=403, detail="Юрист не может изменять финансовые поля заявки")
 
     prepared = _prepare_create_payload(normalized, payload)
+    if normalized == "messages":
+        request_uuid = _parse_uuid_or_400(prepared.get("request_id"), "request_id")
+        req = db.get(Request, request_uuid)
+        if req is None:
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+        if _is_lawyer(admin):
+            _ensure_lawyer_can_manage_request_or_403(admin, req)
+            prepared["author_type"] = "LAWYER"
+            prepared["author_name"] = str(admin.get("email") or "").strip() or "Юрист"
+            prepared["immutable"] = False
+        prepared["request_id"] = request_uuid
     if normalized == "requests":
         validate_required_topic_fields_or_400(db, prepared.get("topic_code"), prepared.get("extra_fields"))
+        client = _upsert_client_or_400(
+            db,
+            full_name=prepared.get("client_name"),
+            phone=prepared.get("client_phone"),
+            responsible=responsible,
+        )
+        resolved_request_client_id = client.id
+        prepared["client_name"] = client.full_name
+        prepared["client_phone"] = client.phone
         if not _is_lawyer(admin):
             assigned_raw = prepared.get("assigned_lawyer_id")
             if assigned_raw is None or not str(assigned_raw).strip():
@@ -1072,6 +1294,10 @@ def create_row(
                 prepared["assigned_lawyer_id"] = str(assigned_lawyer.id)
                 if prepared.get("effective_rate") is None:
                     prepared["effective_rate"] = assigned_lawyer.default_rate
+    if normalized == "invoices":
+        req = _request_for_uuid_or_400(db, prepared.get("request_id"))
+        prepared["request_id"] = req.id
+        resolved_invoice_client_id = req.client_id
     prepared = _apply_auto_fields_for_create(db, model, normalized, prepared)
     clean_payload = _sanitize_payload(
         model,
@@ -1092,8 +1318,12 @@ def create_row(
         clean_payload = _apply_topic_status_transitions_fields(db, clean_payload)
     if normalized == "statuses":
         clean_payload = _apply_status_fields(clean_payload)
+    if normalized == "requests":
+        clean_payload["client_id"] = resolved_request_client_id
+    if normalized == "invoices":
+        clean_payload["client_id"] = resolved_invoice_client_id
     if "responsible" in _columns_map(model):
-        clean_payload["responsible"] = _resolve_responsible(admin)
+        clean_payload["responsible"] = responsible
     row = model(**clean_payload)
 
     try:
@@ -1121,6 +1351,7 @@ def update_row(
 ):
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "update")
+    responsible = _resolve_responsible(admin)
     if normalized == "requests" and _is_lawyer(admin) and isinstance(payload, dict):
         if "assigned_lawyer_id" in payload:
             raise HTTPException(status_code=403, detail='Назначение доступно только через действие "Взять в работу"')
@@ -1154,6 +1385,26 @@ def update_row(
         clean_payload = _apply_topic_status_transitions_fields(db, clean_payload)
     if normalized == "statuses":
         clean_payload = _apply_status_fields(clean_payload)
+    if normalized == "requests" and isinstance(row, Request):
+        if {"client_name", "client_phone"}.intersection(set(clean_payload.keys())) or row.client_id is None:
+            client = _upsert_client_or_400(
+                db,
+                full_name=clean_payload.get("client_name", row.client_name),
+                phone=clean_payload.get("client_phone", row.client_phone),
+                responsible=responsible,
+            )
+            clean_payload["client_id"] = client.id
+            clean_payload["client_name"] = client.full_name
+            clean_payload["client_phone"] = client.phone
+    if normalized == "invoices":
+        if "request_id" in clean_payload:
+            req = _request_for_uuid_or_400(db, clean_payload.get("request_id"))
+            clean_payload["request_id"] = req.id
+            clean_payload["client_id"] = req.client_id
+        elif getattr(row, "client_id", None) is None:
+            req = db.get(Request, getattr(row, "request_id", None))
+            if req is not None:
+                clean_payload["client_id"] = req.client_id
     if normalized == "requests" and not _is_lawyer(admin) and "assigned_lawyer_id" in clean_payload:
         assigned_raw = clean_payload.get("assigned_lawyer_id")
         if assigned_raw is None or not str(assigned_raw).strip():
@@ -1163,6 +1414,8 @@ def update_row(
             clean_payload["assigned_lawyer_id"] = str(assigned_lawyer.id)
             if isinstance(row, Request) and row.effective_rate is None and "effective_rate" not in clean_payload:
                 clean_payload["effective_rate"] = assigned_lawyer.default_rate
+    if "responsible" in _columns_map(model):
+        clean_payload["responsible"] = responsible
     before = _row_to_dict(row)
     if normalized == "topic_status_transitions":
         next_from = str(clean_payload.get("from_status", before.get("from_status") or "")).strip()
@@ -1185,7 +1438,7 @@ def update_row(
                 from_status=before_status,
                 to_status=after_status,
                 admin=admin,
-                responsible=_resolve_responsible(admin),
+                responsible=responsible,
             )
             mark_unread_for_client(row, EVENT_STATUS)
             apply_status_change_effects(
@@ -1194,7 +1447,7 @@ def update_row(
                 from_status=before_status,
                 to_status=after_status,
                 admin=admin,
-                responsible=_resolve_responsible(admin),
+                responsible=responsible,
             )
             notify_request_event(
                 db,
@@ -1203,7 +1456,7 @@ def update_row(
                 actor_role=_actor_role(admin),
                 actor_admin_user_id=admin.get("sub"),
                 body=(f"{before_status} -> {after_status}" + (f"\n{billing_note}" if billing_note else "")),
-                responsible=_resolve_responsible(admin),
+                responsible=responsible,
             )
     for key, value in clean_payload.items():
         setattr(row, key, value)

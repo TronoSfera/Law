@@ -80,6 +80,8 @@ class MigrationTests(unittest.TestCase):
     def test_upgrade_head_creates_expected_tables(self):
         expected = {
             "admin_users",
+            "clients",
+            "table_availability",
             "topics",
             "statuses",
             "form_fields",
@@ -106,11 +108,13 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0014_security_audit_log")
+        self.assertEqual(version, "0016_table_availability")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
             "admin_users",
+            "clients",
+            "table_availability",
             "topics",
             "statuses",
             "form_fields",
@@ -171,6 +175,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_requests_contains_financial_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("requests")}
+        self.assertIn("client_id", columns)
         self.assertIn("effective_rate", columns)
         self.assertIn("invoice_amount", columns)
         self.assertIn("paid_at", columns)
@@ -178,6 +183,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_invoices_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("invoices")}
+        self.assertIn("client_id", columns)
         self.assertIn("request_id", columns)
         self.assertIn("invoice_number", columns)
         self.assertIn("status", columns)
@@ -194,3 +200,11 @@ class MigrationTests(unittest.TestCase):
         columns = {column["name"] for column in self.inspector.get_columns("statuses")}
         self.assertIn("kind", columns)
         self.assertIn("invoice_template", columns)
+
+    def test_clients_contains_core_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("clients")}
+        self.assertIn("id", columns)
+        self.assertIn("full_name", columns)
+        self.assertIn("phone", columns)
+        self.assertIn("created_at", columns)
+        self.assertIn("responsible", columns)

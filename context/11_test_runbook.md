@@ -1,7 +1,7 @@
 # Runbook Проверок (Тесты и Валидация по Плану)
 
 ## Назначение
-Этот файл фиксирует, где находятся проверки для каждого пункта `P01-P27` и как их запускать.
+Этот файл фиксирует, где находятся проверки для каждого пункта `P01-P39` и как их запускать.
 Использовать перед переводом пункта в статус `сделано`.
 
 ## Базовые команды
@@ -22,10 +22,19 @@ docker compose exec -T backend python -m compileall app tests alembic
 docker compose build frontend
 docker compose run --rm --no-deps --entrypoint sh frontend -lc "apk add --no-cache nodejs npm >/dev/null && npx --yes esbuild /usr/share/nginx/html/admin.jsx --loader:.jsx=jsx --bundle --outfile=/tmp/admin.bundle.js"
 ```
-5. Браузерный E2E (Playwright) для ролевых UI-флоу (PUBLIC / LAWYER / ADMIN):
+5. Браузерный E2E (Playwright) для ролевых UI-флоу (PUBLIC / LAWYER / ADMIN) через фиксированный образ `law-e2e-playwright:1.58.2`:
 ```bash
-docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft.com/playwright:v1.58.2-jammy sh -lc "npm install --silent && E2E_BASE_URL=http://frontend E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD='AdminPass-123!' E2E_LAWYER_EMAIL=ivan@mail.ru E2E_LAWYER_PASSWORD='LawyerPass-123!' npx playwright test --config=playwright.config.js"
+docker compose build e2e
+docker compose run --rm --no-deps e2e playwright --version
+docker compose run --rm --no-deps \
+  -e E2E_BASE_URL=http://frontend \
+  -e E2E_ADMIN_EMAIL=admin@example.com \
+  -e E2E_ADMIN_PASSWORD='admin123' \
+  -e E2E_LAWYER_EMAIL=ivan@mail.ru \
+  -e E2E_LAWYER_PASSWORD='LawyerPass-123!' \
+  e2e playwright test --config=playwright.config.js
 ```
+Примечание: образ `e2e` собирается один раз и переиспользуется, браузеры/Playwright не скачиваются при каждом запуске.
 
 ## Матрица проверок по задачам
 | ID | Что проверяем | Где тесты | Как запускать |
@@ -56,7 +65,19 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 | P24 | Ставки юриста и ставка заявки | `tests/test_rates.py` + интеграционные в `tests/test_admin_universal_crud.py` | `docker compose exec -T backend python -m unittest tests.test_rates tests.test_admin_universal_crud -v`; проверка что public API не отдает поля ставок/процентов |
 | P25 | Billing-статус и шаблон счета | `tests/test_billing_flow.py`, `tests/test_invoices.py` + e2e статусных переходов | `docker compose exec -T backend python -m unittest tests.test_billing_flow tests.test_invoices tests.test_admin_universal_crud -v`; валидация автогенерации счета при billing-статусе и фиксации оплаты только при ADMIN->`Оплачено` (в т.ч. множественные оплаты в одной заявке) |
 | P26 | Security audit S3/ПДн | `tests/test_security_audit.py` + `tests/test_uploads_s3.py` + `tests/test_migrations.py` | `docker compose exec -T backend python -m unittest tests.test_security_audit tests.test_uploads_s3 tests.test_migrations -v`; проверить события allow/deny в `security_audit_log` и применимость миграции `0014_security_audit_log` |
-| P27 | Итоговые E2E критические сценарии | набор `tests/test_*.py` + новые E2E-тесты | базовые команды 1-3 + полный прогон |
+| P27 | Итоговые E2E критические сценарии | набор `tests/test_*.py` + новые E2E-тесты | базовые команды 1-3 + прогон Playwright через сервис `e2e` (образ `law-e2e-playwright:1.58.2`) |
+| P28 | Все таблицы БД в справочниках (+ `clients`, если добавляется) | `tests/test_admin_universal_crud.py`, `tests/test_migrations.py`, UI e2e admin dictionaries | миграции + `python -m unittest tests.test_admin_universal_crud tests.test_migrations -v` + e2e admin |
+| P29 | Единая модальная форма заявки + тема обращения + удаление рекомендаций | `e2e/tests/public_client_flow.spec.js` + UI smoke лендинга | прогон Playwright через `docker compose run --rm --no-deps e2e ...` + ручная проверка текста/полей на лендинге |
+| P30 | Отдельная страница работы с заявкой клиента | новые e2e для client workspace route + `tests/test_public_cabinet.py` | добавить e2e route-flow + прогон `test_public_cabinet` |
+| P31 | Вход клиента через phone+OTP модалку | новые e2e OTP modal flow + `tests/test_otp_rate_limit.py`, `tests/test_public_requests.py` | e2e + backend OTP тесты |
+| P32 | Переключение между заявками клиента | новые e2e multi-request flow + `tests/test_public_cabinet.py` | e2e multi-request + backend regression |
+| P33 | Чат в отдельном сервисе | `tests/test_public_cabinet.py`, `tests/test_admin_universal_crud.py` (chat service cases) + UI smoke (`client.js`, `admin.jsx`) | `docker compose run --rm backend python -m unittest tests.test_public_cabinet tests.test_admin_universal_crud -v` + фронт-сборка `admin.jsx` |
+| P34 | Ненавязчивые цитаты в блоке «Первая консультация» | UI e2e/smoke лендинга | визуальная регрессия лендинга + Playwright public smoke |
+| P35 | Предпросмотр документов | `tests/test_uploads_s3.py` (`test_public_attachment_object_preview_returns_inline_response`) + Playwright (`e2e/tests/public_client_flow.spec.js`, `e2e/tests/lawyer_role_flow.spec.js`) | `docker compose run --rm backend python -m unittest tests.test_uploads_s3 -v` + Playwright UI-прогон preview в клиенте и во вкладке работы с заявкой юриста/админа через сервис `e2e` |
+| P36 | Навигация в админку и редиректы | `e2e/tests/admin_entry_flow.spec.js` + redirect checks | Playwright `admin_entry_flow` + `curl -I -H 'Host: localhost:8081' http://localhost:8081/admin` (ожидается `302` и `Location: /admin.html`) + `curl -I http://localhost:8081/admin.html` |
+| P37 | Единые bootstrap-креды админа | `tests/test_admin_auth.py` + auth smoke (`/api/admin/auth/login`) + docs consistency check | `docker compose run --rm backend python -m unittest tests.test_admin_auth -v` + UI/API login smoke с `admin@example.com` / `admin123` |
+| P38 | Конструктор маршрутов статусов (темы) | `tests/test_admin_universal_crud.py`, `tests/test_worker_maintenance.py` + новый e2e `e2e/tests/admin_status_designer_flow.spec.js` | backend: валидация графа переходов/SLA/требуемых документов; UI: создание/редактирование ветвлений, возвратов, терминальных переходов |
+| P39 | Канбан заявок для LAWYER/ADMIN | `tests/test_admin_universal_crud.py`, `tests/test_dashboard_finance.py` + новые e2e `e2e/tests/lawyer_kanban_flow.spec.js`, `e2e/tests/admin_kanban_flow.spec.js` | Проверить группировку статусов, ролевой scope карточек, перемещение по допустимым переходам, отображение дедлайнов SLA и индикаторов новых сообщений/файлов |
 
 ## Ролевое покрытие (PUBLIC / LAWYER / ADMIN)
 ### PUBLIC (клиент)
@@ -68,7 +89,7 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 - Публичные счета и PDF в кабинете: `tests/test_invoices.py`.
 
 ### LAWYER (юрист)
-- UI e2e: `e2e/tests/lawyer_role_flow.spec.js` (вход, claim неназначенной заявки, чтение обновлений, смена статуса).
+- UI e2e: `e2e/tests/lawyer_role_flow.spec.js` (вход, claim неназначенной заявки, новая вкладка работы с заявкой, чтение обновлений, смена статуса).
 - Дашборд юриста (свои, неназначенные, непрочитанные): `tests/test_dashboard_finance.py`.
 - Видимость заявок: свои + неназначенные; запрет доступа к чужим: `tests/test_admin_universal_crud.py`.
 - Claim неназначенной заявки, запрет takeover, запрет назначения через CRUD: `tests/test_admin_universal_crud.py`.
@@ -79,6 +100,8 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 
 ### ADMIN (администратор)
 - UI e2e: `e2e/tests/admin_role_flow.spec.js` (вход, справочники, создание пользователя/темы, создание и оплата счета).
+- UI e2e entry/redirect smoke: `e2e/tests/admin_entry_flow.spec.js` (нет CTA админки на лендинге, вход через `/admin`).
+- Bootstrap-auth: `tests/test_admin_auth.py` (автосоздание bootstrap-admin и негативные кейсы логина).
 - CRUD пользователей/юристов (пароли, роли, профильная тема, аватар): `tests/test_admin_universal_crud.py`, `tests/test_uploads_s3.py`.
 - Темы и флоу статусов (включая ветвление), SLA-переходы: `tests/test_admin_universal_crud.py`, `tests/test_worker_maintenance.py`.
 - Шаблоны обязательных/дозапрашиваемых данных: `tests/test_admin_universal_crud.py`, `tests/test_public_requests.py`.
@@ -94,6 +117,9 @@ docker run --rm --network law_default -v "$PWD:/work" -w /work/e2e mcr.microsoft
 5. Для изменений `admin.jsx` выполнить сборку `admin.jsx` через Docker Compose.
 6. После успешной проверки обновить статус пункта в `context/10_development_execution_plan.md`.
 
-## Последний регрессионный прогон
-- `python -m unittest discover -s tests -p 'test_*.py' -v` — `94 tests OK`.
-- `Playwright UI roles` (`e2e/tests/admin_role_flow.spec.js`, `e2e/tests/lawyer_role_flow.spec.js`, `e2e/tests/public_client_flow.spec.js`) — `3 passed`.
+## Последние подтвержденные прогоны
+- `docker compose run --rm backend python -m unittest -v tests.test_admin_auth` — `3 passed`.
+- `docker compose run --rm backend python -m unittest discover -s tests -p 'test_*.py' -v` — `105 passed`.
+- `docker compose run --rm backend python -m compileall app tests alembic` — успешно.
+- `docker compose run --rm --no-deps -e E2E_BASE_URL=http://frontend e2e playwright test tests/admin_entry_flow.spec.js --config=playwright.config.js` — `1 passed`.
+- `docker compose run --rm --no-deps -e E2E_BASE_URL=http://frontend -e E2E_ADMIN_EMAIL=admin@example.com -e E2E_ADMIN_PASSWORD=admin123 -e E2E_LAWYER_EMAIL=ivan@mail.ru -e E2E_LAWYER_PASSWORD='LawyerPass-123!' e2e playwright test --config=playwright.config.js` — `4 passed` (рольовые e2e: `admin_entry_flow`, `admin_role_flow`, `lawyer_role_flow`, `public_client_flow`).

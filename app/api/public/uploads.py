@@ -48,9 +48,22 @@ def _ensure_public_request_access_or_403(request: Request, session: dict) -> Non
     purpose = str(session.get("purpose") or "").strip().upper()
     if purpose != "VIEW_REQUEST":
         raise HTTPException(status_code=403, detail="Нет доступа к заявке")
-    track_from_session = str(session.get("sub") or "").strip()
-    if not track_from_session or track_from_session != str(request.track_number):
+    subject = str(session.get("sub") or "").strip()
+    if not subject:
         raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+
+    normalized_track = str(subject).strip().upper()
+    if normalized_track == str(request.track_number or "").strip().upper():
+        return
+
+    def _normalize_phone(value: str | None) -> str:
+        raw = str(value or "").strip()
+        allowed = {"+", "(", ")", "-", " "}
+        return "".join(ch for ch in raw if ch.isdigit() or ch in allowed).strip()
+
+    if _normalize_phone(subject) and _normalize_phone(subject) == _normalize_phone(request.client_phone):
+        return
+    raise HTTPException(status_code=403, detail="Нет доступа к заявке")
 
 
 def _load_attachment_with_access_or_4xx(attachment_id: str, db: Session, session: dict) -> Attachment:

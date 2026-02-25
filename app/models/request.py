@@ -1,6 +1,8 @@
 from datetime import datetime
+import uuid
 
 from sqlalchemy import Boolean, DateTime, Integer, JSON, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.session import Base
 from app.models.common import UUIDMixin, TimestampMixin
@@ -8,6 +10,7 @@ from app.models.common import UUIDMixin, TimestampMixin
 class Request(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "requests"
     track_number: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     client_name: Mapped[str] = mapped_column(String(200), nullable=False)
     client_phone: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     topic_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)

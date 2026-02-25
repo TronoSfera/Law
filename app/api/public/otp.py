@@ -136,12 +136,18 @@ def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail='Поле "client_phone" обязательно для CREATE_REQUEST')
     else:
         track_number = _normalize_track(payload.track_number)
-        if not track_number:
-            raise HTTPException(status_code=400, detail='Поле "track_number" обязательно для VIEW_REQUEST')
-        request_row = db.query(RequestModel).filter(RequestModel.track_number == track_number).first()
-        if request_row is None:
-            raise HTTPException(status_code=404, detail="Заявка не найдена")
-        phone = _normalize_phone(request_row.client_phone)
+        phone = _normalize_phone(payload.client_phone)
+        if track_number:
+            request_row = db.query(RequestModel).filter(RequestModel.track_number == track_number).first()
+            if request_row is None:
+                raise HTTPException(status_code=404, detail="Заявка не найдена")
+            phone = _normalize_phone(request_row.client_phone)
+        elif phone:
+            has_requests = db.query(RequestModel.id).filter(RequestModel.client_phone == phone).first()
+            if has_requests is None:
+                raise HTTPException(status_code=404, detail="Заявки по номеру телефона не найдены")
+        else:
+            raise HTTPException(status_code=400, detail='Для VIEW_REQUEST укажите "track_number" или "client_phone"')
         if not phone:
             raise HTTPException(status_code=400, detail="У заявки отсутствует номер телефона")
 
@@ -201,8 +207,9 @@ def verify_otp(payload: OtpVerify, request: Request, response: Response, db: Ses
             raise HTTPException(status_code=400, detail='Поле "client_phone" обязательно для CREATE_REQUEST')
     else:
         track_number = _normalize_track(payload.track_number)
-        if not track_number:
-            raise HTTPException(status_code=400, detail='Поле "track_number" обязательно для VIEW_REQUEST')
+        phone = _normalize_phone(payload.client_phone)
+        if not track_number and not phone:
+            raise HTTPException(status_code=400, detail='Для VIEW_REQUEST укажите "track_number" или "client_phone"')
 
     _rate_limit_or_429(
         "verify",
@@ -212,11 +219,10 @@ def verify_otp(payload: OtpVerify, request: Request, response: Response, db: Ses
         track_number=track_number,
     )
 
-    query = db.query(OtpSession).filter(
-        OtpSession.purpose == purpose,
-        OtpSession.track_number == track_number,
-    )
-    if phone is not None:
+    query = db.query(OtpSession).filter(OtpSession.purpose == purpose)
+    if track_number is not None and track_number != "":
+        query = query.filter(OtpSession.track_number == track_number)
+    if phone is not None and phone != "":
         query = query.filter(OtpSession.phone == phone)
 
     row = query.order_by(OtpSession.created_at.desc()).first()
@@ -239,7 +245,15 @@ def verify_otp(payload: OtpVerify, request: Request, response: Response, db: Ses
         db.commit()
         raise HTTPException(status_code=400, detail="Неверный OTP-код")
 
-    subject = row.phone if purpose == OTP_CREATE_PURPOSE else str(row.track_number or "")
+    if purpose == OTP_CREATE_PURPOSE:
+        subject = str(row.phone or "")
+    else:
+        if phone:
+            subject = str(row.phone or "")
+        elif track_number:
+            subject = str(row.track_number or "")
+        else:
+            subject = str(row.phone or row.track_number or "")
     if not subject:
         raise HTTPException(status_code=400, detail="Некорректная OTP-сессия")
 

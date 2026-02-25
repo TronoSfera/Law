@@ -200,6 +200,37 @@ class PublicCabinetTests(unittest.TestCase):
             self.assertTrue(req.lawyer_has_unread_updates)
             self.assertEqual(req.lawyer_unread_event_type, "MESSAGE")
 
+    def test_public_chat_service_endpoints_work_for_authorized_client(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-CHAT-001",
+                client_name="Клиент Чат",
+                client_phone="+79997770000",
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка chat service",
+                extra_fields={},
+            )
+            db.add(req)
+            db.commit()
+
+        cookies = self._public_cookies("TRK-CHAT-001")
+        created = self.client.post(
+            "/api/public/chat/requests/TRK-CHAT-001/messages",
+            cookies=cookies,
+            json={"body": "Сообщение через выделенный сервис"},
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["author_type"], "CLIENT")
+
+        listed = self.client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=cookies)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(len(listed.json()), 1)
+        self.assertIn("выделенный сервис", listed.json()[0]["body"])
+
+        denied = self.client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
+        self.assertEqual(denied.status_code, 403)
+
     def test_public_cabinet_respects_track_access(self):
         with self.SessionLocal() as db:
             req = Request(

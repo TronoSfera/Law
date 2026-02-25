@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Аудиторы корпоративной безопасности</title>
   <meta name="description" content="Юридический консалтинг и судебное сопровождение для сложных бизнес-ситуаций.">
-  <link rel="stylesheet" href="/landing.css" integrity="sha384-f2MyL8409LTp2ap3kS1Yf2FMNVyeypb/qY1jl7WtZpImICXE/fpZCqZZT6keMp50" crossorigin="anonymous">
+  <link rel="stylesheet" href="/landing.css">
 </head>
 <body>
   <header class="topbar">
@@ -15,8 +15,7 @@
         <a href="#practices">Компетенции</a>
         <a href="#approach">Подход</a>
         <a href="#expert">Эксперт</a>
-        <a href="#cabinet">Кабинет клиента</a>
-        <a href="/admin" class="btn btn-ghost">Админ-панель</a>
+        <button class="btn btn-ghost" type="button" data-open-access>Мои заявки</button>
         <button class="btn btn-ghost" type="button" data-open-modal>Оставить заявку</button>
       </nav>
     </div>
@@ -32,6 +31,7 @@
         </p>
         <div class="hero-actions">
           <button class="btn btn-primary" type="button" data-open-modal>Записаться на консультацию</button>
+          <button class="btn btn-ghost" type="button" data-open-access>Работа с заявкой</button>
           <a class="btn btn-ghost" href="#practices">Смотреть практики</a>
         </div>
       </div>
@@ -52,6 +52,10 @@
             <b>29 млрд ₽</b>
             <span>объем восстановленных прав</span>
           </div>
+        </div>
+        <div class="consultation-quote" aria-live="polite">
+          <p id="quote-text">Загрузка данных...</p>
+          <div class="quote-meta" id="quote-meta"></div>
         </div>
       </aside>
     </section>
@@ -113,10 +117,9 @@
             <p>Сопровождаем исполнение решения, фиксируем сроки и контрольные точки, отчитываемся в понятном бизнес-формате.</p>
           </div>
         </article>
-        <article class="quote">
-          <small>Публичные цитаты</small>
-          <p id="quote-text">Загрузка данных...</p>
-          <div class="quote-meta" id="quote-meta"></div>
+        <article class="approach-note">
+          <small>Принцип работы</small>
+          <p>Каждую заявку ведем как проект: фиксируем цель, измеряем прогресс и заранее обозначаем ограничения по срокам и рискам.</p>
         </article>
       </div>
     </section>
@@ -144,81 +147,8 @@
       </article>
     </section>
 
-    <section id="cabinet">
-      <div class="section-head">
-        <div>
-          <h2>Кабинет клиента</h2>
-          <p class="subtitle">Введите номер заявки, подтвердите доступ по OTP и отслеживайте статус, переписку и файлы в одном окне.</p>
-        </div>
-      </div>
-      <div class="cabinet-layout">
-        <article class="cabinet-card">
-          <h3>Доступ по номеру заявки</h3>
-          <div class="field">
-            <label for="cabinet-track">Номер заявки</label>
-            <input id="cabinet-track" type="text" placeholder="TRK-XXXXXXXXXX">
-          </div>
-          <div class="form-foot">
-            <button class="btn btn-primary" id="cabinet-open" type="button">Открыть кабинет</button>
-            <p class="status" id="cabinet-status"></p>
-          </div>
-          <div id="cabinet-summary" hidden>
-            <div class="cabinet-meta">
-              <div class="meta-row">
-                <small>Статус</small>
-                <b id="cabinet-request-status">-</b>
-              </div>
-              <div class="meta-row">
-                <small>Тема</small>
-                <b id="cabinet-request-topic">-</b>
-              </div>
-              <div class="meta-row">
-                <small>Создана</small>
-                <b id="cabinet-request-created">-</b>
-              </div>
-              <div class="meta-row">
-                <small>Обновлена</small>
-                <b id="cabinet-request-updated">-</b>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article class="cabinet-card">
-          <h3>Чат с юристом</h3>
-          <ul class="simple-list" id="cabinet-messages"></ul>
-          <form class="chat-form" id="cabinet-chat-form">
-            <textarea id="cabinet-chat-body" placeholder="Введите сообщение" disabled></textarea>
-            <button class="btn btn-ghost" type="submit" id="cabinet-chat-send" disabled>Отправить сообщение</button>
-          </form>
-        </article>
-
-        <article class="cabinet-card">
-          <h3>Файлы по заявке</h3>
-          <ul class="simple-list" id="cabinet-files"></ul>
-          <div class="file-row">
-            <input id="cabinet-file-input" type="file" disabled>
-            <button class="btn btn-ghost" id="cabinet-file-upload" type="button" disabled>Загрузить файл</button>
-          </div>
-        </article>
-
-        <article class="cabinet-card">
-          <h3>Счета и оплата</h3>
-          <ul class="simple-list" id="cabinet-invoices"></ul>
-        </article>
-
-        <article class="cabinet-card">
-          <h3>История изменений</h3>
-          <ul class="simple-list" id="cabinet-timeline"></ul>
-        </article>
-      </div>
-    </section>
-
     <section class="cta-band">
-      <p>
-        Если вы пришли на сайт по рекомендации, укажите имя рекомендателя при отправке заявки.
-        Это поможет быстрее подготовиться к консультации и учесть контекст вашей ситуации.
-      </p>
+      <p>Создайте заявку и получите номер обращения. По нему вы сможете отслеживать статус, чат и документы в отдельной странице клиента.</p>
       <button class="btn btn-primary" type="button" data-open-modal>Создать заявку</button>
     </section>
   </main>
@@ -246,12 +176,14 @@
           <input id="phone" name="phone" type="tel" required placeholder="+7 (900) 000-00-00">
         </div>
         <div class="field full">
-          <label for="description">Описание задачи</label>
-          <textarea id="description" name="description" placeholder="Кратко опишите ситуацию"></textarea>
+          <label for="topic">Тема обращения</label>
+          <select id="topic" name="topic" required>
+            <option value="">Выберите тему</option>
+          </select>
         </div>
         <div class="field full">
-          <label for="referral">Кто вас порекомендовал</label>
-          <input id="referral" name="referral" type="text" placeholder="Имя рекомендателя">
+          <label for="description">Описание задачи</label>
+          <textarea id="description" name="description" placeholder="Кратко опишите ситуацию"></textarea>
         </div>
         <div class="form-foot field full">
           <button class="btn btn-primary" type="submit">Отправить заявку</button>
@@ -261,6 +193,33 @@
     </div>
   </div>
 
-  <script src="/landing.js" integrity="sha384-MfqV2MU/1TCgCqbg3o7JA2fTo0ZGtICVl5jvDOtDtS52TkjRf3kyrXnPpU8zaSPm" crossorigin="anonymous"></script>
+  <div class="modal-backdrop" id="access-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="access-title">
+      <div class="modal-head">
+        <div>
+          <h3 id="access-title">Вход в страницу заявок</h3>
+          <p>Введите номер телефона, получите OTP и перейдите к своим заявкам.</p>
+        </div>
+        <button class="close" type="button" data-close-access aria-label="Закрыть">×</button>
+      </div>
+      <form id="access-form" class="form">
+        <div class="field full">
+          <label for="access-phone">Телефон</label>
+          <input id="access-phone" name="access-phone" type="tel" required placeholder="+7 (900) 000-00-00">
+        </div>
+        <div class="field full">
+          <label for="access-code">Одноразовый пароль (OTP)</label>
+          <input id="access-code" name="access-code" type="text" inputmode="numeric" pattern="[0-9]{4,8}" placeholder="Введите код из SMS">
+        </div>
+        <div class="form-foot field full">
+          <button class="btn btn-ghost" type="button" id="access-send-otp">Получить одноразовый пароль</button>
+          <button class="btn btn-primary" type="submit">Перейти</button>
+          <p class="status" id="access-status"></p>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/landing.js"></script>
 </body>
 </html>

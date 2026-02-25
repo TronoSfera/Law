@@ -20,7 +20,10 @@ from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.request import Request
+from app.models.status import Status
+from app.models.status_history import StatusHistory
 from app.models.topic_data_template import TopicDataTemplate
+from app.models.topic_status_transition import TopicStatusTransition
 from app.services.notifications import (
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     mark_admin_notifications_read,
@@ -314,6 +317,174 @@ def get_request(request_id: str, db: Session = Depends(get_db), admin=Depends(re
         "lawyer_unread_event_type": req.lawyer_unread_event_type,
         "created_at": req.created_at.isoformat() if req.created_at else None,
         "updated_at": req.updated_at.isoformat() if req.updated_at else None,
+    }
+
+
+@router.get("/{request_id}/status-route")
+def get_request_status_route(
+    request_id: str,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER")),
+):
+    request_uuid = _request_uuid_or_400(request_id)
+    req = db.get(Request, request_uuid)
+    if not req:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_lawyer_can_view_request_or_403(admin, req)
+
+    topic_code = str(req.topic_code or "").strip()
+    current_status = str(req.status_code or "").strip()
+
+    transitions: list[TopicStatusTransition] = []
+    if topic_code:
+        transitions = (
+            db.query(TopicStatusTransition)
+            .filter(
+                TopicStatusTransition.topic_code == topic_code,
+                TopicStatusTransition.enabled.is_(True),
+            )
+            .order_by(
+                TopicStatusTransition.sort_order.asc(),
+                TopicStatusTransition.from_status.asc(),
+                TopicStatusTransition.to_status.asc(),
+            )
+            .all()
+        )
+
+    history_rows = (
+        db.query(StatusHistory)
+        .filter(StatusHistory.request_id == req.id)
+        .order_by(StatusHistory.created_at.asc())
+        .all()
+    )
+
+    known_codes: set[str] = set()
+    if current_status:
+        known_codes.add(current_status)
+    for row in history_rows:
+        from_code = str(row.from_status or "").strip()
+        to_code = str(row.to_status or "").strip()
+        if from_code:
+            known_codes.add(from_code)
+        if to_code:
+            known_codes.add(to_code)
+    for row in transitions:
+        from_code = str(row.from_status or "").strip()
+        to_code = str(row.to_status or "").strip()
+        if from_code:
+            known_codes.add(from_code)
+        if to_code:
+            known_codes.add(to_code)
+
+    statuses_map: dict[str, dict[str, str]] = {}
+    if known_codes:
+        status_rows = db.query(Status).filter(Status.code.in_(list(known_codes))).all()
+        statuses_map = {
+            str(row.code): {
+                "name": str(row.name or row.code),
+                "kind": str(row.kind or "DEFAULT"),
+            }
+            for row in status_rows
+        }
+
+    sequence_from_history: list[str] = []
+    if history_rows:
+        first_from = str(history_rows[0].from_status or "").strip()
+        if first_from:
+            sequence_from_history.append(first_from)
+        for row in history_rows:
+            to_code = str(row.to_status or "").strip()
+            if to_code:
+                sequence_from_history.append(to_code)
+    elif current_status:
+        sequence_from_history.append(current_status)
+
+    ordered_codes: list[str] = []
+    seen_codes: set[str] = set()
+
+    def add_code(code: str) -> None:
+        normalized = str(code or "").strip()
+        if not normalized or normalized in seen_codes:
+            return
+        seen_codes.add(normalized)
+        ordered_codes.append(normalized)
+
+    for code in sequence_from_history:
+        add_code(code)
+
+    for row in transitions:
+        add_code(str(row.from_status or ""))
+        add_code(str(row.to_status or ""))
+
+    add_code(current_status)
+
+    transition_by_to_status: dict[str, dict[str, str | int | None]] = {}
+    for row in transitions:
+        to_code = str(row.to_status or "").strip()
+        if not to_code:
+            continue
+        current = transition_by_to_status.get(to_code)
+        if current is None or int(row.sort_order or 0) < int(current.get("sort_order") or 0):
+            transition_by_to_status[to_code] = {
+                "from_status": str(row.from_status or "").strip() or None,
+                "sla_hours": row.sla_hours,
+                "sort_order": int(row.sort_order or 0),
+            }
+
+    changed_at_by_status: dict[str, str] = {}
+    for row in history_rows:
+        to_code = str(row.to_status or "").strip()
+        if to_code and row.created_at:
+            changed_at_by_status[to_code] = row.created_at.isoformat()
+
+    visited_codes = {code for code in sequence_from_history if code}
+    current_index = ordered_codes.index(current_status) if current_status in ordered_codes else -1
+
+    def status_name(code: str) -> str:
+        meta = statuses_map.get(code) or {}
+        return str(meta.get("name") or code)
+
+    nodes: list[dict[str, str | int | None]] = []
+    for index, code in enumerate(ordered_codes):
+        meta = statuses_map.get(code) or {}
+        transition_meta = transition_by_to_status.get(code) or {}
+        state = "pending"
+        if code == current_status:
+            state = "current"
+        elif code in visited_codes or (current_index >= 0 and index < current_index):
+            state = "completed"
+
+        note_parts: list[str] = []
+        from_status = transition_meta.get("from_status")
+        if from_status:
+            note_parts.append(f"Переход из статуса «{status_name(str(from_status))}»")
+        sla_hours = transition_meta.get("sla_hours")
+        if sla_hours is not None:
+            note_parts.append(f"SLA: {sla_hours} ч")
+        kind = str(meta.get("kind") or "DEFAULT")
+        if kind == "INVOICE":
+            note_parts.append("Этап выставления счета")
+        elif kind == "PAID":
+            note_parts.append("Этап подтверждения оплаты")
+
+        nodes.append(
+            {
+                "code": code,
+                "name": status_name(code),
+                "kind": kind,
+                "state": state,
+                "sla_hours": sla_hours,
+                "changed_at": changed_at_by_status.get(code),
+                "note": " • ".join(note_parts),
+            }
+        )
+
+    return {
+        "request_id": str(req.id),
+        "track_number": req.track_number,
+        "topic_code": req.topic_code,
+        "current_status": current_status or None,
+        "nodes": nodes,
     }
 
 

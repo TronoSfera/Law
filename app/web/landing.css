@@ -158,6 +158,8 @@
       padding: 1.3rem;
       position: relative;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .panel::before {
@@ -213,6 +215,21 @@
       font-size: 0.78rem;
       color: #a7b3c5;
       line-height: 1.35;
+    }
+
+    .consultation-quote {
+      margin-top: auto;
+      padding-top: 0.78rem;
+      border-top: 1px dashed rgba(207, 217, 231, 0.24);
+      opacity: 0.92;
+    }
+
+    .consultation-quote p {
+      margin: 0;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      color: #c6d4e8;
+      min-height: 2.8rem;
     }
 
     section { padding: 1.3rem 0 2.2rem; }
@@ -313,14 +330,25 @@
     .timeline h3 { margin: 0 0 0.35rem; font-size: 1rem; }
     .timeline p { margin: 0; color: var(--muted); line-height: 1.55; }
 
-    .quote {
+    .approach-note {
       border: 1px solid #4b5b71;
       border-radius: 16px;
       background: linear-gradient(160deg, #1e2b3c, #1a2432);
       padding: 1rem;
+      align-self: start;
     }
 
-    .quote p {
+    .approach-note small {
+      display: block;
+      margin-bottom: 0.52rem;
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #9cb2cb;
+      font-weight: 700;
+    }
+
+    .approach-note p {
       margin: 0;
       min-height: 5.3rem;
       line-height: 1.6;
@@ -478,7 +506,7 @@
       font-weight: 700;
     }
 
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       border-radius: 12px;
       border: 1px solid #3b4b5f;
@@ -492,6 +520,15 @@
     textarea {
       min-height: 108px;
       resize: vertical;
+    }
+
+    select {
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, #cfd9e7 50%), linear-gradient(135deg, #cfd9e7 50%, transparent 50%);
+      background-position: calc(100% - 18px) calc(1em + 2px), calc(100% - 12px) calc(1em + 2px);
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      padding-right: 2rem;
     }
 
     .form-foot {

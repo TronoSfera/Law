@@ -21,6 +21,7 @@ from app.main import app
 from app.core.config import settings
 from app.core.security import create_jwt, decode_jwt
 from app.db.session import get_db
+from app.models.client import Client
 from app.models.notification import Notification
 from app.models.otp_session import OtpSession
 from app.models.request import Request
@@ -36,6 +37,7 @@ class PublicRequestCreateTests(unittest.TestCase):
             poolclass=StaticPool,
         )
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
+        Client.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
         Notification.__table__.create(bind=cls.engine)
         OtpSession.__table__.create(bind=cls.engine)
@@ -47,6 +49,7 @@ class PublicRequestCreateTests(unittest.TestCase):
         OtpSession.__table__.drop(bind=cls.engine)
         TopicRequiredField.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
+        Client.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
 
     def setUp(self):
@@ -55,6 +58,7 @@ class PublicRequestCreateTests(unittest.TestCase):
             db.execute(delete(OtpSession))
             db.execute(delete(TopicRequiredField))
             db.execute(delete(Request))
+            db.execute(delete(Client))
             db.commit()
 
         def override_get_db():
@@ -114,12 +118,16 @@ class PublicRequestCreateTests(unittest.TestCase):
             self.assertIsNotNone(created)
             self.assertEqual(created.client_name, payload["client_name"])
             self.assertEqual(created.client_phone, payload["client_phone"])
+            self.assertIsNotNone(created.client_id)
             self.assertEqual(created.topic_code, payload["topic_code"])
             self.assertEqual(created.description, payload["description"])
             self.assertEqual(created.extra_fields, payload["extra_fields"])
             self.assertEqual(created.status_code, "NEW")
             self.assertEqual(created.track_number, body["track_number"])
             self.assertEqual(created.responsible, "Клиент")
+            client = db.get(Client, created.client_id)
+            self.assertIsNotNone(client)
+            self.assertEqual(client.phone, payload["client_phone"])
 
         # After creation, cookie is switched to VIEW_REQUEST for this track.
         read = self.client.get(f"/api/public/requests/{body['track_number']}")
@@ -169,6 +177,73 @@ class PublicRequestCreateTests(unittest.TestCase):
 
         denied_other_track = self.client.get("/api/public/requests/TRK-OTHER")
         self.assertEqual(denied_other_track.status_code, 403)
+
+    def test_view_request_can_use_phone_otp_and_switch_between_client_requests(self):
+        phone = "+79996660077"
+        with self.SessionLocal() as db:
+            client = Client(full_name="Клиент Мульти", phone=phone, responsible="seed")
+            db.add(client)
+            db.flush()
+            db.add_all(
+                [
+                    Request(
+                        track_number="TRK-MULTI-1",
+                        client_id=client.id,
+                        client_name=client.full_name,
+                        client_phone=client.phone,
+                        topic_code="consulting",
+                        status_code="NEW",
+                        description="Первая",
+                        extra_fields={},
+                    ),
+                    Request(
+                        track_number="TRK-MULTI-2",
+                        client_id=client.id,
+                        client_name=client.full_name,
+                        client_phone=client.phone,
+                        topic_code="consulting",
+                        status_code="IN_PROGRESS",
+                        description="Вторая",
+                        extra_fields={},
+                    ),
+                    Request(
+                        track_number="TRK-FOREIGN-1",
+                        client_name="Другой клиент",
+                        client_phone="+79990009999",
+                        topic_code="consulting",
+                        status_code="NEW",
+                        description="Чужая",
+                        extra_fields={},
+                    ),
+                ]
+            )
+            db.commit()
+
+        with patch("app.api.public.otp._generate_code", return_value="111111"):
+            sent = self.client.post(
+                "/api/public/otp/send",
+                json={"purpose": "VIEW_REQUEST", "client_phone": phone},
+            )
+            self.assertEqual(sent.status_code, 200)
+
+        verified = self.client.post(
+            "/api/public/otp/verify",
+            json={"purpose": "VIEW_REQUEST", "client_phone": phone, "code": "111111"},
+        )
+        self.assertEqual(verified.status_code, 200)
+
+        list_resp = self.client.get("/api/public/requests/my")
+        self.assertEqual(list_resp.status_code, 200)
+        rows = list_resp.json().get("rows") or []
+        tracks = {row["track_number"] for row in rows}
+        self.assertEqual(tracks, {"TRK-MULTI-1", "TRK-MULTI-2"})
+
+        opened = self.client.get("/api/public/requests/TRK-MULTI-2")
+        self.assertEqual(opened.status_code, 200)
+        self.assertEqual(opened.json()["track_number"], "TRK-MULTI-2")
+
+        denied = self.client.get("/api/public/requests/TRK-FOREIGN-1")
+        self.assertEqual(denied.status_code, 403)
 
     def test_open_request_marks_client_updates_as_read(self):
         with self.SessionLocal() as db:
@@ -274,3 +349,38 @@ class PublicRequestCreateTests(unittest.TestCase):
         self.assertIn(f"{settings.PUBLIC_COOKIE_NAME}=", cookie_header)
         self.assertIn(f"Max-Age={settings.PUBLIC_JWT_TTL_DAYS * 24 * 3600}", cookie_header)
         self.assertIn("httponly", cookie_header.lower())
+
+    def test_verify_view_otp_by_phone_sets_view_session_subject_as_phone(self):
+        phone = "+79998887766"
+        with self.SessionLocal() as db:
+            db.add(
+                Request(
+                    track_number="TRK-VIEW-PHONE-1",
+                    client_name="Телефонный клиент",
+                    client_phone=phone,
+                    topic_code="consulting",
+                    status_code="NEW",
+                    description="Проверка",
+                    extra_fields={},
+                )
+            )
+            db.commit()
+
+        with patch("app.api.public.otp._generate_code", return_value="222222"):
+            sent = self.client.post(
+                "/api/public/otp/send",
+                json={"purpose": "VIEW_REQUEST", "client_phone": phone},
+            )
+            self.assertEqual(sent.status_code, 200)
+
+        verified = self.client.post(
+            "/api/public/otp/verify",
+            json={"purpose": "VIEW_REQUEST", "client_phone": phone, "code": "222222"},
+        )
+        self.assertEqual(verified.status_code, 200)
+
+        token = verified.cookies.get(settings.PUBLIC_COOKIE_NAME)
+        self.assertTrue(token)
+        payload = decode_jwt(token, settings.PUBLIC_JWT_SECRET)
+        self.assertEqual(payload.get("sub"), phone)
+        self.assertEqual(payload.get("purpose"), "VIEW_REQUEST")

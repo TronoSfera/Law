@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300
     OTP_SEND_RATE_LIMIT: int = 8
     OTP_VERIFY_RATE_LIMIT: int = 20
+    ADMIN_BOOTSTRAP_ENABLED: bool = True
+    ADMIN_BOOTSTRAP_EMAIL: str = "admin@example.com"
+    ADMIN_BOOTSTRAP_PASSWORD: str = "admin123"
+    ADMIN_BOOTSTRAP_NAME: str = "Администратор системы"
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -14,21 +14,22 @@ from app.core.security import create_jwt
 from app.db.session import get_db
 from app.models.admin_user import AdminUser
 from app.models.attachment import Attachment
+from app.models.client import Client
 from app.models.invoice import Invoice
 from app.models.message import Message
 from app.models.request import Request
 from app.models.status_history import StatusHistory
+from app.models.topic import Topic
 from app.services.invoice_crypto import decrypt_requisites
 from app.services.invoice_pdf import build_invoice_pdf_bytes
+from app.services.chat_service import create_client_message, list_messages_for_request
 from app.services.notifications import (
-    EVENT_MESSAGE as NOTIFICATION_EVENT_MESSAGE,
     get_client_notification,
     list_client_notifications,
     mark_client_notifications_read,
-    notify_request_event,
     serialize_notification,
 )
-from app.services.request_read_markers import EVENT_MESSAGE, clear_unread_for_client, mark_unread_for_lawyer
+from app.services.request_read_markers import clear_unread_for_client
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.schemas.public import (
     PublicAttachmentRead,
@@ -52,16 +53,20 @@ INVOICE_STATUS_LABELS = {
 
 
 def _normalize_phone(raw: str | None) -> str:
-    return str(raw or "").strip()
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    allowed = {"+", "(", ")", "-", " "}
+    return "".join(ch for ch in value if ch.isdigit() or ch in allowed).strip()
 
 
 def _normalize_track(raw: str | None) -> str:
     return str(raw or "").strip().upper()
 
 
-def _set_view_cookie(response: Response, track_number: str) -> None:
+def _set_view_cookie(response: Response, subject: str) -> None:
     token = create_jwt(
-        {"sub": track_number, "purpose": OTP_VIEW_PURPOSE},
+        {"sub": subject, "purpose": OTP_VIEW_PURPOSE},
         settings.PUBLIC_JWT_SECRET,
         timedelta(days=settings.PUBLIC_JWT_TTL_DAYS),
     )
@@ -82,20 +87,58 @@ def _require_create_session_or_403(session: dict, client_phone: str) -> None:
         raise HTTPException(status_code=403, detail="Требуется подтверждение телефона через OTP")
 
 
-def _require_view_session_for_track_or_403(session: dict, track_number: str) -> None:
+def _require_view_session_or_403(session: dict) -> str:
     purpose = str(session.get("purpose") or "").strip().upper()
-    sub = _normalize_track(session.get("sub"))
-    if purpose != OTP_VIEW_PURPOSE or not sub or sub != _normalize_track(track_number):
+    subject = str(session.get("sub") or "").strip()
+    if purpose != OTP_VIEW_PURPOSE or not subject:
         raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+    return subject
+
+
+def _ensure_view_access_or_403(session: dict, req: Request) -> None:
+    subject = _require_view_session_or_403(session)
+    if _normalize_track(subject) == _normalize_track(req.track_number):
+        return
+    if _normalize_phone(subject) and _normalize_phone(subject) == _normalize_phone(req.client_phone):
+        return
+    raise HTTPException(status_code=403, detail="Нет доступа к заявке")
 
 
 def _request_for_track_or_404(db: Session, session: dict, track_number: str) -> Request:
     normalized_track = _normalize_track(track_number)
-    _require_view_session_for_track_or_403(session, normalized_track)
+    subject = _require_view_session_or_403(session)
+    subject_track = _normalize_track(subject)
+    if subject_track.startswith("TRK-") and subject_track != normalized_track:
+        raise HTTPException(status_code=403, detail="Нет доступа к заявке")
     req = db.query(Request).filter(Request.track_number == normalized_track).first()
     if req is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_view_access_or_403(session, req)
     return req
+
+
+def _upsert_client_by_phone(db: Session, *, full_name: str, phone: str) -> Client:
+    normalized_phone = _normalize_phone(phone)
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail='Поле "client_phone" обязательно')
+    normalized_name = str(full_name or "").strip() or "Клиент"
+
+    client = db.query(Client).filter(Client.phone == normalized_phone).first()
+    if client is None:
+        client = Client(
+            full_name=normalized_name,
+            phone=normalized_phone,
+            responsible="Клиент",
+        )
+        db.add(client)
+        db.flush()
+        return client
+    if client.full_name != normalized_name:
+        client.full_name = normalized_name
+        client.responsible = "Клиент"
+        db.add(client)
+        db.flush()
+    return client
 
 
 def _to_iso(value) -> str | None:
@@ -127,12 +170,14 @@ def create_request(
 ):
     _require_create_session_or_403(session, payload.client_phone)
     validate_required_topic_fields_or_400(db, payload.topic_code, payload.extra_fields)
+    client = _upsert_client_by_phone(db, full_name=payload.client_name, phone=payload.client_phone)
 
     track = f"TRK-{uuid4().hex[:10].upper()}"
     row = Request(
         track_number=track,
-        client_name=payload.client_name,
-        client_phone=payload.client_phone,
+        client_id=client.id,
+        client_name=client.full_name,
+        client_phone=client.phone,
         topic_code=payload.topic_code,
         description=payload.description,
         extra_fields=payload.extra_fields,
@@ -142,8 +187,53 @@ def create_request(
     db.commit()
     db.refresh(row)
 
-    _set_view_cookie(response, track)
+    _set_view_cookie(response, client.phone)
     return PublicRequestCreated(request_id=row.id, track_number=row.track_number, otp_required=False)
+
+
+@router.get("/topics")
+def list_public_topics(db: Session = Depends(get_db)):
+    rows = (
+        db.query(Topic)
+        .filter(Topic.enabled.is_(True))
+        .order_by(Topic.sort_order.asc(), Topic.name.asc(), Topic.code.asc())
+        .all()
+    )
+    return [{"code": row.code, "name": row.name} for row in rows]
+
+
+@router.get("/my")
+def list_my_requests(
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    subject = _require_view_session_or_403(session)
+    normalized_track = _normalize_track(subject)
+    normalized_phone = _normalize_phone(subject)
+
+    query = db.query(Request)
+    if normalized_track.startswith("TRK-"):
+        query = query.filter(Request.track_number == normalized_track)
+    else:
+        query = query.filter(Request.client_phone == normalized_phone)
+
+    rows = query.order_by(Request.updated_at.desc(), Request.created_at.desc(), Request.id.desc()).all()
+    return {
+        "rows": [
+            {
+                "id": str(row.id),
+                "track_number": row.track_number,
+                "topic_code": row.topic_code,
+                "status_code": row.status_code,
+                "client_has_unread_updates": bool(row.client_has_unread_updates),
+                "client_unread_event_type": row.client_unread_event_type,
+                "created_at": _to_iso(row.created_at),
+                "updated_at": _to_iso(row.updated_at),
+            }
+            for row in rows
+        ],
+        "total": len(rows),
+    }
 
 
 @router.get("/{track_number}")
@@ -167,6 +257,7 @@ def get_request_by_track(
 
     return {
         "id": str(req.id),
+        "client_id": str(req.client_id) if req.client_id else None,
         "track_number": req.track_number,
         "client_name": req.client_name,
         "client_phone": req.client_phone,
@@ -191,12 +282,7 @@ def list_messages_by_track(
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, session, track_number)
-    rows = (
-        db.query(Message)
-        .filter(Message.request_id == req.id)
-        .order_by(Message.created_at.asc(), Message.id.asc())
-        .all()
-    )
+    rows = list_messages_for_request(db, req.id)
     return [
         PublicMessageRead(
             id=row.id,
@@ -219,31 +305,7 @@ def create_message_by_track(
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, session, track_number)
-    body = str(payload.body or "").strip()
-    if not body:
-        raise HTTPException(status_code=400, detail='Поле "body" обязательно')
-
-    row = Message(
-        request_id=req.id,
-        author_type="CLIENT",
-        author_name=req.client_name,
-        body=body,
-        responsible="Клиент",
-    )
-    mark_unread_for_lawyer(req, EVENT_MESSAGE)
-    req.responsible = "Клиент"
-    notify_request_event(
-        db,
-        request=req,
-        event_type=NOTIFICATION_EVENT_MESSAGE,
-        actor_role="CLIENT",
-        body=body,
-        responsible="Клиент",
-    )
-    db.add(row)
-    db.add(req)
-    db.commit()
-    db.refresh(row)
+    row = create_client_message(db, request=req, body=payload.body)
 
     return PublicMessageRead(
         id=row.id,

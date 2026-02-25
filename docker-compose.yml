@@ -7,6 +7,21 @@ services:
     depends_on: [backend]
     ports: ["8081:80"]
 
+  e2e:
+    build:
+      context: .
+      dockerfile: e2e/Dockerfile
+    image: law-e2e-playwright:1.58.2
+    container_name: law-e2e
+    working_dir: /src/e2e
+    depends_on: [frontend]
+    volumes:
+      - .:/src
+      - /src/e2e/node_modules
+    environment:
+      NODE_PATH: /opt/e2e/node_modules
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
   backend:
     build: .
     container_name: law-backend

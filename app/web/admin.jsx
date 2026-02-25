@@ -151,6 +151,29 @@
     };
   }
 
+  function createRequestModalState() {
+    return {
+      loading: false,
+      requestId: null,
+      trackNumber: "",
+      requestData: null,
+      statusRouteNodes: [],
+      messages: [],
+      attachments: [],
+      messageDraft: "",
+      selectedFile: null,
+      fileUploading: false,
+    };
+  }
+
+  function resolveAdminRoute(search) {
+    const params = new URLSearchParams(String(search || ""));
+    const section = String(params.get("section") || "").trim();
+    const view = String(params.get("view") || "").trim();
+    const requestId = String(params.get("requestId") || "").trim();
+    return { section, view, requestId };
+  }
+
   function humanizeKey(value) {
     const text = String(value || "")
       .replace(/[_-]+/g, " ")
@@ -224,6 +247,42 @@
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("ru-RU");
   }
 
+  function fmtDateOnly(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? String(value)
+      : date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+
+  function fmtTimeOnly(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? String(value)
+      : date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function fmtAmount(value) {
+    if (value === null || value === undefined || value === "") return "-";
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    return numeric.toLocaleString("ru-RU");
+  }
+
+  function fmtBytes(value) {
+    const size = Number(value || 0);
+    if (!Number.isFinite(size) || size <= 0) return "0 Б";
+    const units = ["Б", "КБ", "МБ", "ГБ"];
+    let index = 0;
+    let normalized = size;
+    while (normalized >= 1024 && index < units.length - 1) {
+      normalized /= 1024;
+      index += 1;
+    }
+    return normalized.toLocaleString("ru-RU", { maximumFractionDigits: index === 0 ? 0 : 1 }) + " " + units[index];
+  }
+
   function userInitials(name, email) {
     const source = String(name || "").trim();
     if (source) {
@@ -254,6 +313,21 @@
     return raw;
   }
 
+  function resolveAdminObjectSrc(s3Key, accessToken) {
+    const key = String(s3Key || "").trim();
+    if (!key || !accessToken) return "";
+    return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken);
+  }
+
+  function detectAttachmentPreviewKind(fileName, mimeType) {
+    const name = String(fileName || "").toLowerCase();
+    const mime = String(mimeType || "").toLowerCase();
+    if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(name)) return "image";
+    if (mime.startsWith("video/") || /\.(mp4|webm|ogg|mov|m4v)$/.test(name)) return "video";
+    if (mime === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
+    return "none";
+  }
+
   function buildUniversalQuery(filters, sort, limit, offset) {
     return {
       filters: filters || [],
@@ -263,7 +337,7 @@
   }
 
   function canAccessSection(role, section) {
-    if (section === "quotes" || section === "config") return role === "ADMIN";
+    if (section === "quotes" || section === "config" || section === "availableTables") return role === "ADMIN";
     return true;
   }
 
@@ -514,8 +588,13 @@
   }
 
   function IconButton({ icon, tooltip, onClick, tone }) {
+    const handleClick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof onClick === "function") onClick(event);
+    };
     return (
-      <button className={"icon-btn" + (tone ? " " + tone : "")} type="button" data-tooltip={tooltip} onClick={onClick} aria-label={tooltip}>
+      <button className={"icon-btn" + (tone ? " " + tone : "")} type="button" data-tooltip={tooltip} onClick={handleClick} aria-label={tooltip}>
         {icon}
       </button>
     );
@@ -737,25 +816,309 @@
     );
   }
 
-  function RequestModal({ open, jsonText, onClose }) {
-    if (!open) return null;
+  function AttachmentPreviewModal({ open, title, url, fileName, mimeType, onClose }) {
+    if (!open || !url) return null;
+    const kind = detectAttachmentPreviewKind(fileName, mimeType);
     return (
-      <Overlay open={open} id="request-overlay" onClose={(event) => event.target.id === "request-overlay" && onClose()}>
-        <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <Overlay open={open} id="request-file-preview-overlay" onClose={(event) => event.target.id === "request-file-preview-overlay" && onClose()}>
+        <div className="modal request-preview-modal" onClick={(event) => event.stopPropagation()}>
           <div className="modal-head">
-            <div>
-              <h3>Детали заявки</h3>
-              <p className="muted" style={{ marginTop: "0.35rem" }}>
-                Подробная карточка заявки.
-              </p>
-            </div>
+            <h3>{title || fileName || "Предпросмотр файла"}</h3>
             <button className="close" type="button" onClick={onClose}>
               ×
             </button>
           </div>
-          <div className="json">{jsonText}</div>
+          <div className="request-preview-body">
+            {kind === "image" ? <img className="request-preview-image" src={url} alt={fileName || "attachment"} /> : null}
+            {kind === "video" ? <video className="request-preview-video" src={url} controls preload="metadata" /> : null}
+            {kind === "pdf" ? <iframe className="request-preview-frame" src={url} title={fileName || "preview"} /> : null}
+            {kind === "none" ? <p className="request-preview-note">Для этого типа файла доступно только открытие или скачивание.</p> : null}
+            <a className="btn secondary btn-sm request-preview-download" href={url} target="_blank" rel="noreferrer">
+              Открыть / скачать
+            </a>
+          </div>
         </div>
       </Overlay>
+    );
+  }
+
+  function RequestWorkspace({
+    loading,
+    trackNumber,
+    requestData,
+    statusRouteNodes,
+    messages,
+    attachments,
+    messageDraft,
+    selectedFile,
+    fileUploading,
+    status,
+    onBack,
+    onRefresh,
+    onMessageChange,
+    onSendMessage,
+    onFileSelect,
+    onUploadFile,
+  }) {
+    const [preview, setPreview] = useState({ open: false, url: "", fileName: "", mimeType: "" });
+    const fileInputRef = useRef(null);
+
+    const openPreview = (item) => {
+      if (!item?.download_url) return;
+      setPreview({
+        open: true,
+        url: String(item.download_url),
+        fileName: String(item.file_name || ""),
+        mimeType: String(item.mime_type || ""),
+      });
+    };
+
+    const closePreview = () => setPreview({ open: false, url: "", fileName: "", mimeType: "" });
+
+    const row = requestData && typeof requestData === "object" ? requestData : null;
+    const summaryFields = [
+      { key: "track", label: "Номер заявки", value: row?.track_number || trackNumber || "-", code: true },
+      { key: "status", label: "Статус", value: row ? statusLabel(row.status_code) : "-" },
+      { key: "topic", label: "Тема", value: row?.topic_code || "-" },
+      { key: "client", label: "Клиент", value: row?.client_name || "-" },
+      { key: "phone", label: "Телефон", value: row?.client_phone || "-" },
+      { key: "lawyer", label: "Назначенный юрист", value: row?.assigned_lawyer_id || "-" },
+      { key: "rate", label: "Ставка (фикс.)", value: fmtAmount(row?.effective_rate) },
+      { key: "invoice", label: "Сумма счета", value: fmtAmount(row?.invoice_amount) },
+      { key: "paid", label: "Дата оплаты", value: fmtDate(row?.paid_at) },
+      { key: "size", label: "Размер вложений", value: fmtBytes(row?.total_attachments_bytes) },
+      { key: "created", label: "Создана", value: fmtDate(row?.created_at) },
+      { key: "updated", label: "Обновлена", value: fmtDate(row?.updated_at) },
+    ];
+
+    const extraFields = row?.extra_fields && typeof row.extra_fields === "object" && !Array.isArray(row.extra_fields) ? Object.entries(row.extra_fields) : [];
+    const chatTimelineItems = [];
+    let previousDate = "";
+    (messages || []).forEach((item, index) => {
+      const dateLabel = fmtDateOnly(item?.created_at);
+      const normalizedDate = dateLabel && dateLabel !== "-" ? dateLabel : "Без даты";
+      if (normalizedDate !== previousDate) {
+        chatTimelineItems.push({ type: "date", key: "date-" + normalizedDate + "-" + index, label: normalizedDate });
+        previousDate = normalizedDate;
+      }
+      chatTimelineItems.push({ type: "message", key: "msg-" + String(item?.id || index), payload: item });
+    });
+
+    const routeNodes =
+      Array.isArray(statusRouteNodes) && statusRouteNodes.length
+        ? statusRouteNodes
+        : row?.status_code
+          ? [{ code: row.status_code, name: statusLabel(row.status_code), state: "current", note: "Текущий этап обработки заявки" }]
+          : [];
+
+    return (
+      <div className="block">
+        <div className="request-workspace-head">
+          <div>
+            <h3>{trackNumber ? "Работа с заявкой " + trackNumber : "Работа с заявкой"}</h3>
+            <p className="breadcrumbs">
+              <b>Заявки</b> {" -> "} <b>{trackNumber ? "Заявка " + trackNumber : "Карточка заявки"}</b>
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+            <button className="btn secondary btn-sm" type="button" onClick={onBack}>
+              Назад к заявкам
+            </button>
+            <button className="btn secondary btn-sm" type="button" onClick={onRefresh} disabled={loading || fileUploading}>
+              Обновить
+            </button>
+          </div>
+        </div>
+        <div className="request-workspace-layout">
+          <div className="request-main-column">
+            <div className="block">
+              <h3>Карточка</h3>
+              {loading ? (
+                <p className="muted">Загрузка...</p>
+              ) : row ? (
+                <>
+                  <div className="request-card-grid">
+                    {summaryFields.map((field) => (
+                      <div className="request-field" key={field.key}>
+                        <span className="request-field-label">{field.label}</span>
+                        <span className="request-field-value">{field.code ? <code>{field.value}</code> : field.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="request-description-block">
+                    <span className="request-field-label">Описание проблемы</span>
+                    <p>{row.description ? String(row.description) : "Описание не заполнено"}</p>
+                  </div>
+                  <div className="request-extra-block">
+                    <span className="request-field-label">Дополнительные данные</span>
+                    {extraFields.length ? (
+                      <ul className="simple-list request-extra-list">
+                        {extraFields.map(([key, value]) => (
+                          <li key={key}>
+                            <b>{humanizeKey(key)}:</b> {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted">Дополнительные данные не заполнены</p>
+                    )}
+                  </div>
+                  <div className="request-status-route">
+                    <h4>Маршрут статусов</h4>
+                    {routeNodes.length ? (
+                      <ol className="request-route-list" id="request-status-route">
+                        {routeNodes.map((node, index) => {
+                          const state = String(node?.state || "pending");
+                          const name = String(node?.name || statusLabel(node?.code));
+                          const note = String(node?.note || "").trim();
+                          const changedAt = node?.changed_at ? fmtDate(node.changed_at) : "";
+                          const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending");
+                          return (
+                            <li className={className} key={(node?.code || "node") + "-" + index}>
+                              <span className="route-dot" />
+                              <div className="route-body">
+                                <b>{name}</b>
+                                {note ? <p>{note}</p> : null}
+                                {changedAt && state !== "pending" ? <div className="muted route-time">Изменен: {changedAt}</div> : null}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    ) : (
+                      <p className="muted">Маршрут статусов для темы не настроен</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="muted">Нет данных по заявке</p>
+              )}
+            </div>
+
+            <div className="block">
+              <div className="request-attachments-head">
+                <h3>Вложения</h3>
+                <button className="btn secondary btn-sm" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading || fileUploading}>
+                  Добавить
+                </button>
+              </div>
+              <ul className="simple-list request-modal-list" id="request-modal-files">
+                {attachments.length ? (
+                  attachments.map((item) => (
+                    <li key={String(item.id)}>
+                      <div>{item.file_name || "Файл"}</div>
+                      <div className="muted request-modal-item-meta">
+                        {String(item.mime_type || "application/octet-stream") + " • " + fmtBytes(item.size_bytes) + " • " + fmtDate(item.created_at)}
+                      </div>
+                      <div className="request-file-actions">
+                        {item.download_url && detectAttachmentPreviewKind(item.file_name, item.mime_type) !== "none" ? (
+                          <button
+                            className="btn secondary btn-sm"
+                            type="button"
+                            onClick={() => openPreview(item)}
+                            aria-label={"Предпросмотр: " + String(item.file_name || "файл")}
+                          >
+                            Предпросмотр
+                          </button>
+                        ) : null}
+                        {item.download_url ? (
+                          <a className="btn secondary btn-sm request-file-link" href={item.download_url} target="_blank" rel="noreferrer">
+                            Открыть / скачать
+                          </a>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))
+                ) : (
+                  <li className="muted">Вложений нет</li>
+                )}
+              </ul>
+              <div className="request-upload-row">
+                <input
+                  id="request-modal-file-input"
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={onFileSelect}
+                  disabled={loading || fileUploading}
+                  style={{ position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
+                />
+                <button
+                  className="btn secondary"
+                  id="request-modal-file-upload"
+                  type="button"
+                  onClick={onUploadFile}
+                  disabled={loading || fileUploading || !selectedFile}
+                >
+                  {fileUploading ? "Загрузка..." : "Загрузить файл"}
+                </button>
+                {selectedFile ? <span className="muted">{selectedFile.name}</span> : <span className="muted">Файл не выбран</span>}
+              </div>
+            </div>
+          </div>
+
+          <div className="block request-chat-block">
+            <h3>Сообщения</h3>
+            <ul className="simple-list request-modal-list request-chat-list" id="request-modal-messages">
+              {chatTimelineItems.length ? (
+                chatTimelineItems.map((entry) =>
+                  entry.type === "date" ? (
+                    <li key={entry.key} className="chat-date-divider">
+                      <span>{entry.label}</span>
+                    </li>
+                  ) : (
+                    <li
+                      key={entry.key}
+                      className={
+                        "chat-message " +
+                        (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing")
+                      }
+                    >
+                      <div className="chat-message-author">{String(entry.payload?.author_name || entry.payload?.author_type || "Система")}</div>
+                      <div className="chat-message-bubble">
+                        <p className="chat-message-text">{String(entry.payload?.body || "")}</p>
+                        <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
+                      </div>
+                    </li>
+                  )
+                )
+              ) : (
+                <li className="muted">Сообщений нет</li>
+              )}
+            </ul>
+            <form className="stack" onSubmit={onSendMessage}>
+              <div className="field">
+                <label htmlFor="request-modal-message-body">Новое сообщение</label>
+                <textarea
+                  id="request-modal-message-body"
+                  placeholder="Введите сообщение для клиента"
+                  value={messageDraft}
+                  onChange={onMessageChange}
+                  disabled={loading || fileUploading}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button
+                  className="btn"
+                  id="request-modal-message-send"
+                  type="submit"
+                  disabled={loading || fileUploading || !String(messageDraft || "").trim()}
+                >
+                  Отправить
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <StatusLine status={status} />
+        <AttachmentPreviewModal
+          open={preview.open}
+          title="Предпросмотр файла"
+          url={preview.url}
+          fileName={preview.fileName}
+          mimeType={preview.mimeType}
+          onClose={closePreview}
+        />
+      </div>
     );
   }
 
@@ -766,6 +1129,7 @@
       const value = form[field.key] ?? "";
       const options = typeof field.options === "function" ? field.options() : [];
       const id = "record-field-" + field.key;
+      const disabled = Boolean(field.readOnly);
 
       if (field.type === "textarea" || field.type === "json") {
         return (
@@ -775,12 +1139,13 @@
             onChange={(event) => onChange(field.key, event.target.value)}
             placeholder={field.placeholder || ""}
             required={Boolean(field.required)}
+            disabled={disabled}
           />
         );
       }
       if (field.type === "boolean") {
         return (
-          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)}>
+          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)} disabled={disabled}>
             <option value="true">Да</option>
             <option value="false">Нет</option>
           </select>
@@ -788,7 +1153,7 @@
       }
       if (field.type === "reference" || field.type === "enum") {
         return (
-          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)}>
+          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)} disabled={disabled}>
             {field.optional ? <option value="">-</option> : null}
             {options.map((option) => (
               <option value={String(option.value)} key={String(option.value)}>
@@ -808,8 +1173,9 @@
               onChange={(event) => onChange(field.key, event.target.value)}
               placeholder={field.placeholder || ""}
               required={Boolean(field.required)}
+              disabled={disabled}
             />
-            <label className="btn secondary btn-sm" style={{ whiteSpace: "nowrap" }}>
+            <label className="btn secondary btn-sm" style={{ whiteSpace: "nowrap", opacity: disabled ? 0.6 : 1, pointerEvents: disabled ? "none" : "auto" }}>
               Загрузить
               <input
                 type="file"
@@ -820,6 +1186,7 @@
                   if (file && onUploadField) onUploadField(field, file);
                   event.target.value = "";
                 }}
+                disabled={disabled}
               />
             </label>
           </div>
@@ -834,6 +1201,7 @@
           onChange={(event) => onChange(field.key, event.target.value)}
           placeholder={field.placeholder || ""}
           required={Boolean(field.required)}
+          disabled={disabled}
         />
       );
     };
@@ -877,10 +1245,14 @@
   }
 
   function App() {
+    const routeInfo = useMemo(() => resolveAdminRoute(window.location.search), []);
+    const isRequestWorkspaceRoute = routeInfo.view === "request" && Boolean(routeInfo.requestId);
+    const initialSection = isRequestWorkspaceRoute ? "requestWorkspace" : routeInfo.section || "dashboard";
+
     const [token, setToken] = useState("");
     const [role, setRole] = useState("");
     const [email, setEmail] = useState("");
-    const [activeSection, setActiveSection] = useState("dashboard");
+    const [activeSection, setActiveSection] = useState(initialSection);
 
     const [dashboardData, setDashboardData] = useState({
       scope: "",
@@ -902,6 +1274,7 @@
       statusTransitions: createTableState(),
       users: createTableState(),
       userTopics: createTableState(),
+      availableTables: createTableState(),
     });
     const [tableCatalog, setTableCatalog] = useState([]);
 
@@ -915,7 +1288,7 @@
 
     const [statusMap, setStatusMap] = useState({});
 
-    const [requestModal, setRequestModal] = useState({ open: false, jsonText: "" });
+    const [requestModal, setRequestModal] = useState(createRequestModalState());
     const [recordModal, setRecordModal] = useState({
       open: false,
       tableKey: null,
@@ -946,6 +1319,8 @@
     });
 
     const tablesRef = useRef(tables);
+    const requestOpenGuardRef = useRef({ requestId: "", ts: 0 });
+    const initialRouteHandledRef = useRef(false);
     useEffect(() => {
       tablesRef.current = tables;
     }, [tables]);
@@ -1256,10 +1631,6 @@
             { key: "extra_fields", label: "Дополнительные поля (JSON)", type: "json", optional: true, defaultValue: "{}" },
             { key: "assigned_lawyer_id", label: "Назначенный юрист (ID)", type: "text", optional: true },
             { key: "effective_rate", label: "Ставка (фикс.)", type: "number", optional: true },
-            { key: "invoice_amount", label: "Сумма счета", type: "number", optional: true },
-            { key: "paid_at", label: "Дата оплаты (ISO)", type: "text", optional: true, placeholder: "2026-02-23T12:00:00+03:00" },
-            { key: "paid_by_admin_id", label: "Оплату подтвердил (ID)", type: "text", optional: true },
-            { key: "total_attachments_bytes", label: "Размер вложений (байт)", type: "number", optional: true, defaultValue: "0" },
           ];
         }
         if (tableKey === "invoices") {
@@ -1571,18 +1942,35 @@
       async (resetOffset, tokenOverride, keyOverride) => {
         const currentKey = keyOverride || configActiveKey;
         if (!currentKey) {
-          setStatus("config", "Выберите справочник", "");
           return false;
         }
-        setStatus("config", "Загрузка...", "");
-        const ok = await loadTable(currentKey, { resetOffset: Boolean(resetOffset) }, tokenOverride);
-        if (ok) {
-          setStatus("config", "Справочник обновлен", "ok");
-        } else {
-          setStatus("config", "Не удалось обновить справочник", "error");
+        return loadTable(currentKey, { resetOffset: Boolean(resetOffset) }, tokenOverride);
+      },
+      [configActiveKey, loadTable]
+    );
+
+    const loadAvailableTables = useCallback(
+      async (tokenOverride) => {
+        setStatus("availableTables", "Загрузка...", "");
+        try {
+          const data = await api("/api/admin/crud/meta/available-tables", {}, tokenOverride);
+          const rows = Array.isArray(data.rows) ? data.rows : [];
+          setTableState("availableTables", {
+            filters: [],
+            sort: null,
+            offset: 0,
+            total: rows.length,
+            showAll: true,
+            rows,
+          });
+          setStatus("availableTables", "Список обновлен", "ok");
+          return true;
+        } catch (error) {
+          setStatus("availableTables", "Ошибка: " + error.message, "error");
+          return false;
         }
       },
-      [configActiveKey, loadTable, setStatus]
+      [api, setStatus, setTableState]
     );
 
     const loadDashboard = useCallback(
@@ -1650,9 +2038,10 @@
         if (section === "invoices") return loadTable("invoices", {}, tokenOverride);
         if (section === "quotes" && canAccessSection(role, "quotes")) return loadTable("quotes", {}, tokenOverride);
         if (section === "config" && canAccessSection(role, "config")) return loadCurrentConfigTable(false, tokenOverride);
+        if (section === "availableTables" && canAccessSection(role, "availableTables")) return loadAvailableTables(tokenOverride);
         if (section === "meta") return loadMeta(tokenOverride);
       },
-      [loadCurrentConfigTable, loadDashboard, loadMeta, loadTable, role, token]
+      [loadAvailableTables, loadCurrentConfigTable, loadDashboard, loadMeta, loadTable, role, token]
     );
 
     const bootstrapReferenceData = useCallback(
@@ -1719,18 +2108,190 @@
       [api]
     );
 
-    const openRequestDetails = useCallback(
-      async (requestId) => {
-        setRequestModal({ open: true, jsonText: "Загрузка..." });
+    const updateAvailableTableState = useCallback(
+      async (tableName, isActive) => {
+        const name = String(tableName || "").trim();
+        if (!name) return;
         try {
-          const row = await api("/api/admin/crud/requests/" + requestId);
-          setRequestModal({ open: true, jsonText: JSON.stringify(localizeRequestDetails(row), null, 2) });
+          setStatus("availableTables", "Сохранение...", "");
+          await api("/api/admin/crud/meta/available-tables/" + encodeURIComponent(name), {
+            method: "PATCH",
+            body: { is_active: Boolean(isActive) },
+          });
+          await Promise.all([loadAvailableTables(), bootstrapReferenceData(token, role)]);
+          setStatus("availableTables", "Сохранено", "ok");
         } catch (error) {
-          setRequestModal({ open: true, jsonText: "Ошибка: " + error.message });
+          setStatus("availableTables", "Ошибка: " + error.message, "error");
         }
       },
-      [api]
+      [api, bootstrapReferenceData, loadAvailableTables, role, setStatus, token]
     );
+
+    const loadRequestModalData = useCallback(
+      async (requestId, options) => {
+        const opts = options || {};
+        const showLoading = opts.showLoading !== false;
+        if (!requestId) return;
+
+        if (showLoading) {
+          setRequestModal((prev) => ({
+            ...prev,
+            loading: true,
+            requestId,
+            requestData: null,
+            statusRouteNodes: [],
+          }));
+        }
+
+        const requestFilter = [{ field: "request_id", op: "=", value: String(requestId) }];
+        try {
+          const [row, messagesData, attachmentsData, statusRouteData] = await Promise.all([
+            api("/api/admin/crud/requests/" + requestId),
+            api("/api/admin/chat/requests/" + requestId + "/messages"),
+            api("/api/admin/crud/attachments/query", {
+              method: "POST",
+              body: buildUniversalQuery(requestFilter, [{ field: "created_at", dir: "asc" }], 500, 0),
+            }),
+            api("/api/admin/requests/" + requestId + "/status-route").catch(() => ({ nodes: [] })),
+          ]);
+          const attachments = (attachmentsData.rows || []).map((item) => ({
+            ...item,
+            download_url: resolveAdminObjectSrc(item.s3_key, token),
+          }));
+          setRequestModal((prev) => ({
+            ...prev,
+            loading: false,
+            requestId: row.id || requestId,
+            trackNumber: String(row.track_number || ""),
+            requestData: row,
+            statusRouteNodes: Array.isArray(statusRouteData?.nodes) ? statusRouteData.nodes : [],
+            messages: messagesData.rows || [],
+            attachments,
+            fileUploading: false,
+          }));
+          if (showLoading) setStatus("requestModal", "", "");
+        } catch (error) {
+          setRequestModal((prev) => ({
+            ...prev,
+            loading: false,
+            requestId,
+            requestData: null,
+            statusRouteNodes: [],
+            messages: [],
+            attachments: [],
+            fileUploading: false,
+          }));
+          setStatus("requestModal", "Ошибка: " + error.message, "error");
+        }
+      },
+      [api, setStatus, token]
+    );
+
+    const openRequestDetails = useCallback(
+      (requestId) => {
+        if (!requestId) return;
+        const normalizedRequestId = String(requestId);
+        const now = Date.now();
+        const prev = requestOpenGuardRef.current;
+        if (prev.requestId === normalizedRequestId && now - prev.ts < 900) return;
+        requestOpenGuardRef.current = { requestId: normalizedRequestId, ts: now };
+        const url = "/admin.html?view=request&requestId=" + encodeURIComponent(String(requestId));
+        const newTab = window.open(url, "_blank");
+        if (newTab) {
+          try {
+            newTab.opener = null;
+          } catch (_) {
+            // no-op for browsers that restrict this assignment
+          }
+          return;
+        }
+        window.location.assign(url);
+      },
+      []
+    );
+
+    const refreshRequestModal = useCallback(async () => {
+      if (!requestModal.requestId) return;
+      await loadRequestModalData(requestModal.requestId, { showLoading: true });
+    }, [loadRequestModalData, requestModal.requestId]);
+
+    const updateRequestModalMessageDraft = useCallback((event) => {
+      const value = event.target.value;
+      setRequestModal((prev) => ({ ...prev, messageDraft: value }));
+    }, []);
+
+    const submitRequestModalMessage = useCallback(
+      async (event) => {
+        event.preventDefault();
+        const requestId = requestModal.requestId;
+        const body = String(requestModal.messageDraft || "").trim();
+        if (!requestId || !body) return;
+        try {
+          setStatus("requestModal", "Отправка сообщения...", "");
+          await api("/api/admin/chat/requests/" + requestId + "/messages", {
+            method: "POST",
+            body: {
+              body,
+            },
+          });
+          setRequestModal((prev) => ({ ...prev, messageDraft: "" }));
+          setStatus("requestModal", "Сообщение отправлено", "ok");
+          await loadRequestModalData(requestId, { showLoading: false });
+        } catch (error) {
+          setStatus("requestModal", "Ошибка отправки: " + error.message, "error");
+        }
+      },
+      [api, email, loadRequestModalData, requestModal.messageDraft, requestModal.requestId, role, setStatus]
+    );
+
+    const updateRequestModalFile = useCallback((event) => {
+      const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+      setRequestModal((prev) => ({ ...prev, selectedFile: file }));
+    }, []);
+
+    const uploadRequestModalFile = useCallback(async () => {
+      const requestId = requestModal.requestId;
+      const file = requestModal.selectedFile;
+      if (!requestId || !file) return;
+      try {
+        setRequestModal((prev) => ({ ...prev, fileUploading: true }));
+        setStatus("requestModal", "Загрузка файла...", "");
+        const mimeType = String(file.type || "application/octet-stream");
+        const init = await api("/api/admin/uploads/init", {
+          method: "POST",
+          body: {
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "REQUEST_ATTACHMENT",
+            request_id: requestId,
+          },
+        });
+        const putResp = await fetch(init.presigned_url, {
+          method: "PUT",
+          headers: { "Content-Type": mimeType },
+          body: file,
+        });
+        if (!putResp.ok) throw new Error("Не удалось загрузить файл в хранилище");
+        await api("/api/admin/uploads/complete", {
+          method: "POST",
+          body: {
+            key: init.key,
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "REQUEST_ATTACHMENT",
+            request_id: requestId,
+          },
+        });
+        setRequestModal((prev) => ({ ...prev, selectedFile: null, fileUploading: false }));
+        setStatus("requestModal", "Файл загружен", "ok");
+        await loadRequestModalData(requestId, { showLoading: false });
+      } catch (error) {
+        setRequestModal((prev) => ({ ...prev, fileUploading: false }));
+        setStatus("requestModal", "Ошибка загрузки: " + error.message, "error");
+      }
+    }, [api, loadRequestModalData, requestModal.requestId, requestModal.selectedFile, setStatus]);
 
     const openCreateRecordModal = useCallback(
       (tableKey) => {
@@ -1942,17 +2503,11 @@
     );
 
     const openInvoiceRequest = useCallback(
-      async (row) => {
+      (row) => {
         if (!row || !row.request_id) return;
-        try {
-          setActiveSection("requests");
-          await loadTable("requests", {});
-          await openRequestDetails(row.request_id);
-        } catch (_) {
-          // Ignore navigation errors and keep current state.
-        }
+        openRequestDetails(row.request_id);
       },
-      [loadTable, openRequestDetails]
+      [openRequestDetails]
     );
 
     const downloadInvoicePdf = useCallback(
@@ -1991,6 +2546,19 @@
       },
       [setStatus, token]
     );
+
+    const resetAdminRoute = useCallback(() => {
+      const nextUrl = "/admin.html";
+      if (window.location.pathname !== nextUrl || window.location.search) {
+        window.history.replaceState(null, "", nextUrl);
+      }
+    }, []);
+
+    const goBackFromRequestWorkspace = useCallback(() => {
+      resetAdminRoute();
+      setActiveSection("requests");
+      refreshSection("requests");
+    }, [refreshSection, resetAdminRoute]);
 
     const openReassignModal = useCallback(
       (row) => {
@@ -2269,11 +2837,12 @@
 
     const selectConfigNode = useCallback(
       (tableKey) => {
+        resetAdminRoute();
         setConfigActiveKey(tableKey);
         setActiveSection("config");
         loadCurrentConfigTable(false, undefined, tableKey);
       },
-      [loadCurrentConfigTable]
+      [loadCurrentConfigTable, resetAdminRoute]
     );
 
     const refreshAll = useCallback(() => {
@@ -2283,10 +2852,11 @@
     const activateSection = useCallback(
       (section) => {
         const nextSection = canAccessSection(role, section) ? section : "dashboard";
+        resetAdminRoute();
         setActiveSection(nextSection);
         refreshSection(nextSection);
       },
-      [refreshSection, role]
+      [refreshSection, resetAdminRoute, role]
     );
 
     const logout = useCallback(() => {
@@ -2295,7 +2865,7 @@
       setRole("");
       setEmail("");
       setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
-      setRequestModal({ open: false, jsonText: "" });
+      setRequestModal(createRequestModalState());
       setFilterModal({ open: false, tableKey: null, field: "", op: "=", rawValue: "", editIndex: null });
       setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
       setDashboardData({ scope: "", cards: [], byStatus: {}, lawyerLoads: [], myUnreadByEvent: {} });
@@ -2315,6 +2885,7 @@
         statusTransitions: createTableState(),
         users: createTableState(),
         userTopics: createTableState(),
+        availableTables: createTableState(),
       });
       setDictionaries({
         topics: [],
@@ -2388,6 +2959,29 @@
     }, [bootstrapReferenceData, loadDashboard, role, token]);
 
     useEffect(() => {
+      if (!token || !role) return;
+      if (initialRouteHandledRef.current) return;
+      initialRouteHandledRef.current = true;
+      if (isRequestWorkspaceRoute && routeInfo.requestId) {
+        setActiveSection("requestWorkspace");
+        loadRequestModalData(routeInfo.requestId, { showLoading: true });
+        resetAdminRoute();
+        return;
+      }
+      if (routeInfo.section) {
+        if (canAccessSection(role, routeInfo.section)) {
+          setActiveSection(routeInfo.section);
+          refreshSection(routeInfo.section, token);
+          resetAdminRoute();
+        } else {
+          setActiveSection("dashboard");
+          refreshSection("dashboard", token);
+          resetAdminRoute();
+        }
+      }
+    }, [isRequestWorkspaceRoute, loadRequestModalData, refreshSection, resetAdminRoute, role, routeInfo.requestId, routeInfo.section, token]);
+
+    useEffect(() => {
       if (!dictionaryTableItems.length) {
         if (configActiveKey) setConfigActiveKey("");
         return;
@@ -2396,7 +2990,7 @@
       if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
     }, [configActiveKey, dictionaryTableItems]);
 
-    const anyOverlayOpen = requestModal.open || recordModal.open || filterModal.open || reassignModal.open;
+    const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open;
     useEffect(() => {
       document.body.classList.toggle("modal-open", anyOverlayOpen);
       return () => document.body.classList.remove("modal-open");
@@ -2405,7 +2999,6 @@
     useEffect(() => {
       const onEsc = (event) => {
         if (event.key !== "Escape") return;
-        setRequestModal((prev) => ({ ...prev, open: false }));
         setRecordModal((prev) => ({ ...prev, open: false }));
         setFilterModal((prev) => ({ ...prev, open: false }));
         setReassignModal((prev) => ({ ...prev, open: false }));
@@ -2685,6 +3278,33 @@
               <StatusLine status={getStatus("requests")} />
             </Section>
 
+            <Section active={activeSection === "requestWorkspace"} id="section-request-workspace">
+              <div className="section-head">
+                <div>
+                  <h2>Карточка заявки</h2>
+                  <p className="muted">Рабочая вкладка юриста/администратора по заявке.</p>
+                </div>
+              </div>
+              <RequestWorkspace
+                loading={requestModal.loading}
+                trackNumber={requestModal.trackNumber}
+                requestData={requestModal.requestData}
+                statusRouteNodes={requestModal.statusRouteNodes}
+                messages={requestModal.messages || []}
+                attachments={requestModal.attachments || []}
+                messageDraft={requestModal.messageDraft || ""}
+                selectedFile={requestModal.selectedFile}
+                fileUploading={Boolean(requestModal.fileUploading)}
+                status={getStatus("requestModal")}
+                onBack={goBackFromRequestWorkspace}
+                onRefresh={refreshRequestModal}
+                onMessageChange={updateRequestModalMessageDraft}
+                onSendMessage={submitRequestModalMessage}
+                onFileSelect={updateRequestModalFile}
+                onUploadFile={uploadRequestModalFile}
+              />
+            </Section>
+
             <Section active={activeSection === "invoices"} id="section-invoices">
               <div className="section-head">
                 <div>
@@ -2829,6 +3449,7 @@
               <div className="section-head">
                 <div>
                   <h2>Справочники</h2>
+                  <p className="breadcrumbs">{"Справочники -> " + (configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран")}</p>
                   <p className="muted">Выберите справочник в дереве слева.</p>
                 </div>
                 <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
@@ -3256,7 +3877,53 @@
                   </div>
                 </div>
               </div>
-              <StatusLine status={getStatus("config")} />
+            </Section>
+
+            <Section active={activeSection === "availableTables"} id="section-available-tables">
+              <div className="section-head">
+                <div>
+                  <h2>Доступность таблиц</h2>
+                  <p className="muted">Скрытая служебная вкладка. Доступ только для администратора по прямой ссылке.</p>
+                </div>
+                <button className="btn secondary" type="button" onClick={() => loadAvailableTables()}>
+                  Обновить
+                </button>
+              </div>
+              <DataTable
+                headers={[
+                  { key: "label", label: "Таблица" },
+                  { key: "table", label: "Код" },
+                  { key: "section", label: "Раздел" },
+                  { key: "is_active", label: "Активна" },
+                  { key: "updated_at", label: "Обновлена" },
+                  { key: "responsible", label: "Ответственный" },
+                  { key: "actions", label: "Действия" },
+                ]}
+                rows={tables.availableTables.rows}
+                emptyColspan={7}
+                renderRow={(row) => (
+                  <tr key={String(row.table || row.label)}>
+                    <td>{row.label || "-"}</td>
+                    <td>
+                      <code>{row.table || "-"}</code>
+                    </td>
+                    <td>{row.section || "-"}</td>
+                    <td>{boolLabel(Boolean(row.is_active))}</td>
+                    <td>{fmtDate(row.updated_at)}</td>
+                    <td>{row.responsible || "-"}</td>
+                    <td>
+                      <div className="table-actions">
+                        <IconButton
+                          icon={row.is_active ? "⏸" : "▶"}
+                          tooltip={row.is_active ? "Деактивировать таблицу" : "Активировать таблицу"}
+                          onClick={() => updateAvailableTableState(row.table, !Boolean(row.is_active))}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              />
+              <StatusLine status={getStatus("availableTables")} />
             </Section>
 
             <Section active={activeSection === "meta"} id="section-meta">
@@ -3287,8 +3954,6 @@
             </Section>
           </main>
         </div>
-
-        <RequestModal open={requestModal.open} jsonText={requestModal.jsonText} onClose={() => setRequestModal((prev) => ({ ...prev, open: false }))} />
 
         <RecordModal
           open={recordModal.open}
