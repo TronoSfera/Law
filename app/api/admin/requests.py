@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import case, or_, update
@@ -33,11 +33,86 @@ from app.services.request_read_markers import EVENT_STATUS, clear_unread_for_law
 from app.services.request_status import actor_admin_uuid, apply_status_change_effects
 from app.services.status_flow import transition_allowed_for_topic
 from app.services.request_templates import validate_required_topic_fields_or_400
+from app.services.status_transition_requirements import normalize_string_list, validate_transition_requirements_or_400
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.universal_query import apply_universal_query
 
 router = APIRouter()
 REQUEST_FINANCIAL_FIELDS = {"effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"}
+KANBAN_GROUP_LABELS = {
+    "NEW": "Новые",
+    "IN_PROGRESS": "В работе",
+    "WAITING": "Ожидание",
+    "DONE": "Завершены",
+}
+
+
+def _status_meta_or_default(meta_map: dict[str, dict[str, object]], status_code: str) -> dict[str, object]:
+    return meta_map.get(status_code) or {"name": status_code, "kind": "DEFAULT", "is_terminal": False}
+
+
+def _kanban_group_for_status(status_code: str, status_meta: dict[str, object]) -> str:
+    code = str(status_code or "").strip().upper()
+    kind = str(status_meta.get("kind") or "DEFAULT").upper()
+    name = str(status_meta.get("name") or "").upper()
+    is_terminal = bool(status_meta.get("is_terminal"))
+
+    if is_terminal:
+        return "DONE"
+    if kind == "PAID":
+        return "DONE"
+    if code.startswith("NEW") or "НОВ" in name:
+        return "NEW"
+    waiting_tokens = ("WAIT", "PEND", "HOLD", "SUSPEND", "BLOCK")
+    waiting_ru_tokens = ("ОЖИД", "ПАУЗ", "СОГЛАС", "ОПЛАТ", "СУД")
+    if kind == "INVOICE":
+        return "WAITING"
+    if any(token in code for token in waiting_tokens) or any(token in name for token in waiting_ru_tokens):
+        return "WAITING"
+    done_tokens = ("CLOSE", "RESOLV", "REJECT", "DONE", "PAID")
+    done_ru_tokens = ("ЗАВЕРШ", "ЗАКРЫ", "РЕШЕН", "ОТКЛОН", "ОПЛАЧ")
+    if any(token in code for token in done_tokens) or any(token in name for token in done_ru_tokens):
+        return "DONE"
+    return "IN_PROGRESS"
+
+
+def _parse_datetime_safe(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _extract_case_deadline(extra_fields: object) -> datetime | None:
+    if not isinstance(extra_fields, dict):
+        return None
+    deadline_keys = (
+        "deadline_at",
+        "deadline",
+        "due_date",
+        "due_at",
+        "case_deadline",
+        "court_date",
+        "hearing_date",
+        "next_action_deadline",
+    )
+    for key in deadline_keys:
+        parsed = _parse_datetime_safe(extra_fields.get(key))
+        if parsed:
+            return parsed
+    return None
 
 
 def _request_uuid_or_400(request_id: str) -> UUID:
@@ -140,6 +215,216 @@ def query_requests(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depe
     }
 
 
+@router.get("/kanban")
+def get_requests_kanban(
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER")),
+    limit: int = Query(default=400, ge=1, le=1000),
+):
+    role = str(admin.get("role") or "").upper()
+    actor = str(admin.get("sub") or "").strip()
+
+    base_query = db.query(Request)
+    if role == "LAWYER":
+        if not actor:
+            raise HTTPException(status_code=401, detail="Некорректный токен")
+        base_query = base_query.filter(
+            or_(
+                Request.assigned_lawyer_id == actor,
+                Request.assigned_lawyer_id.is_(None),
+            )
+        )
+
+    request_rows: list[Request] = (
+        base_query
+        .order_by(Request.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    total = int(base_query.count() or 0)
+
+    request_id_to_row = {str(row.id): row for row in request_rows}
+    request_ids = [row.id for row in request_rows]
+    request_ids_str = list(request_id_to_row.keys())
+
+    topic_codes = {str(row.topic_code or "").strip() for row in request_rows if str(row.topic_code or "").strip()}
+    status_codes = {str(row.status_code or "").strip() for row in request_rows if str(row.status_code or "").strip()}
+
+    transition_rows: list[TopicStatusTransition] = []
+    if topic_codes:
+        transition_rows = (
+            db.query(TopicStatusTransition)
+            .filter(
+                TopicStatusTransition.enabled.is_(True),
+                TopicStatusTransition.topic_code.in_(list(topic_codes)),
+            )
+            .order_by(
+                TopicStatusTransition.topic_code.asc(),
+                TopicStatusTransition.from_status.asc(),
+                TopicStatusTransition.sort_order.asc(),
+                TopicStatusTransition.to_status.asc(),
+            )
+            .all()
+        )
+        for row in transition_rows:
+            from_code = str(row.from_status or "").strip()
+            to_code = str(row.to_status or "").strip()
+            if from_code:
+                status_codes.add(from_code)
+            if to_code:
+                status_codes.add(to_code)
+
+    status_meta_map: dict[str, dict[str, object]] = {}
+    if status_codes:
+        status_rows = db.query(Status).filter(Status.code.in_(list(status_codes))).all()
+        status_meta_map = {
+            str(row.code): {
+                "name": str(row.name or row.code),
+                "kind": str(row.kind or "DEFAULT"),
+                "is_terminal": bool(row.is_terminal),
+                "sort_order": int(row.sort_order or 0),
+            }
+            for row in status_rows
+        }
+
+    assigned_ids = {str(row.assigned_lawyer_id or "").strip() for row in request_rows if str(row.assigned_lawyer_id or "").strip()}
+    lawyer_name_map: dict[str, str] = {}
+    if assigned_ids:
+        valid_lawyer_ids: list[UUID] = []
+        for raw in assigned_ids:
+            try:
+                valid_lawyer_ids.append(UUID(raw))
+            except ValueError:
+                continue
+        if valid_lawyer_ids:
+            lawyer_rows = db.query(AdminUser).filter(AdminUser.id.in_(valid_lawyer_ids)).all()
+            lawyer_name_map = {
+                str(row.id): str(row.name or row.email or row.id)
+                for row in lawyer_rows
+            }
+
+    history_rows: list[StatusHistory] = []
+    if request_ids:
+        history_rows = (
+            db.query(StatusHistory)
+            .filter(StatusHistory.request_id.in_(request_ids))
+            .order_by(StatusHistory.request_id.asc(), StatusHistory.created_at.desc())
+            .all()
+        )
+
+    current_status_changed_at: dict[str, datetime] = {}
+    previous_status_by_request: dict[str, str] = {}
+    for row in history_rows:
+        request_id = str(row.request_id)
+        request_row = request_id_to_row.get(request_id)
+        if request_row is None:
+            continue
+        current_status = str(request_row.status_code or "").strip()
+        to_status = str(row.to_status or "").strip()
+        if not current_status or to_status != current_status:
+            continue
+        if request_id not in current_status_changed_at and row.created_at:
+            current_status_changed_at[request_id] = row.created_at
+            previous_status_by_request[request_id] = str(row.from_status or "").strip()
+
+    transitions_by_key: dict[tuple[str, str], list[TopicStatusTransition]] = {}
+    transitions_to_key: dict[tuple[str, str], list[TopicStatusTransition]] = {}
+    for row in transition_rows:
+        topic_code = str(row.topic_code or "").strip()
+        from_status = str(row.from_status or "").strip()
+        to_status = str(row.to_status or "").strip()
+        if not topic_code or not from_status or not to_status:
+            continue
+        transitions_by_key.setdefault((topic_code, from_status), []).append(row)
+        transitions_to_key.setdefault((topic_code, to_status), []).append(row)
+
+    items: list[dict[str, object]] = []
+    group_totals = {key: 0 for key in KANBAN_GROUP_LABELS.keys()}
+    for row in request_rows:
+        request_id = str(row.id)
+        topic_code = str(row.topic_code or "").strip()
+        status_code = str(row.status_code or "").strip()
+        status_meta = _status_meta_or_default(status_meta_map, status_code)
+        status_group = _kanban_group_for_status(status_code, status_meta)
+        group_totals[status_group] = int(group_totals.get(status_group, 0)) + 1
+
+        available_transitions = []
+        for transition in transitions_by_key.get((topic_code, status_code), []):
+            to_status = str(transition.to_status or "").strip()
+            if not to_status:
+                continue
+            to_meta = _status_meta_or_default(status_meta_map, to_status)
+            available_transitions.append(
+                {
+                    "to_status": to_status,
+                    "to_status_name": str(to_meta.get("name") or to_status),
+                    "target_group": _kanban_group_for_status(to_status, to_meta),
+                    "sla_hours": transition.sla_hours,
+                }
+            )
+
+        case_deadline = _extract_case_deadline(row.extra_fields)
+        entered_at = current_status_changed_at.get(request_id) or row.created_at
+        previous_status = previous_status_by_request.get(request_id)
+        transition_candidates = transitions_to_key.get((topic_code, status_code), [])
+        matched_transition = None
+        if previous_status:
+            for transition in transition_candidates:
+                if str(transition.from_status or "").strip() == previous_status:
+                    matched_transition = transition
+                    break
+        if matched_transition is None and transition_candidates:
+            matched_transition = transition_candidates[0]
+
+        sla_deadline = None
+        if entered_at and matched_transition and matched_transition.sla_hours is not None:
+            sla_deadline = entered_at + timedelta(hours=int(matched_transition.sla_hours))
+
+        assigned_id = str(row.assigned_lawyer_id or "").strip() or None
+        items.append(
+            {
+                "id": request_id,
+                "track_number": row.track_number,
+                "client_name": row.client_name,
+                "client_phone": row.client_phone,
+                "topic_code": row.topic_code,
+                "status_code": status_code,
+                "status_name": str(status_meta.get("name") or status_code),
+                "status_group": status_group,
+                "assigned_lawyer_id": assigned_id,
+                "assigned_lawyer_name": lawyer_name_map.get(assigned_id or "", assigned_id),
+                "description": row.description,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                "lawyer_has_unread_updates": bool(row.lawyer_has_unread_updates),
+                "lawyer_unread_event_type": row.lawyer_unread_event_type,
+                "client_has_unread_updates": bool(row.client_has_unread_updates),
+                "client_unread_event_type": row.client_unread_event_type,
+                "case_deadline_at": case_deadline.isoformat() if case_deadline else None,
+                "sla_deadline_at": sla_deadline.isoformat() if sla_deadline else None,
+                "available_transitions": available_transitions,
+            }
+        )
+
+    columns = [
+        {
+            "key": key,
+            "label": label,
+            "total": int(group_totals.get(key, 0)),
+        }
+        for key, label in KANBAN_GROUP_LABELS.items()
+    ]
+
+    return {
+        "scope": role,
+        "rows": items,
+        "columns": columns,
+        "total": total,
+        "limit": int(limit),
+        "truncated": bool(total > len(items)),
+    }
+
+
 @router.post("", status_code=201)
 def create_request(payload: RequestAdminCreate, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER"))):
     actor_role = str(admin.get("role") or "").upper()
@@ -227,6 +512,13 @@ def update_request(
             next_status,
         ):
             raise HTTPException(status_code=400, detail="Переход статуса не разрешен для выбранной темы")
+        validate_transition_requirements_or_400(
+            db,
+            row,
+            from_status=old_status,
+            to_status=next_status,
+            extra_fields_override=row.extra_fields if isinstance(row.extra_fields, dict) else None,
+        )
         billing_note = apply_billing_transition_effects(
             db,
             req=row,
@@ -418,7 +710,7 @@ def get_request_status_route(
 
     add_code(current_status)
 
-    transition_by_to_status: dict[str, dict[str, str | int | None]] = {}
+    transition_by_to_status: dict[str, dict[str, object]] = {}
     for row in transitions:
         to_code = str(row.to_status or "").strip()
         if not to_code:
@@ -428,6 +720,8 @@ def get_request_status_route(
             transition_by_to_status[to_code] = {
                 "from_status": str(row.from_status or "").strip() or None,
                 "sla_hours": row.sla_hours,
+                "required_data_keys": normalize_string_list(row.required_data_keys),
+                "required_mime_types": normalize_string_list(row.required_mime_types),
                 "sort_order": int(row.sort_order or 0),
             }
 
@@ -461,6 +755,12 @@ def get_request_status_route(
         sla_hours = transition_meta.get("sla_hours")
         if sla_hours is not None:
             note_parts.append(f"SLA: {sla_hours} ч")
+        required_data_keys = transition_meta.get("required_data_keys") or []
+        if required_data_keys:
+            note_parts.append("Данные: " + ", ".join(str(item) for item in required_data_keys))
+        required_mime_types = transition_meta.get("required_mime_types") or []
+        if required_mime_types:
+            note_parts.append("Файлы: " + ", ".join(str(item) for item in required_mime_types))
         kind = str(meta.get("kind") or "DEFAULT")
         if kind == "INVOICE":
             note_parts.append("Этап выставления счета")
@@ -474,6 +774,8 @@ def get_request_status_route(
                 "kind": kind,
                 "state": state,
                 "sla_hours": sla_hours,
+                "required_data_keys": required_data_keys,
+                "required_mime_types": required_mime_types,
                 "changed_at": changed_at_by_status.get(code),
                 "note": " • ".join(note_parts),
             }

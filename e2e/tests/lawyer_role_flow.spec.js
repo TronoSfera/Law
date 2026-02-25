@@ -44,20 +44,23 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await claimBtn.click();
   await expect(page.locator("#section-requests .status")).toContainText(/Заявка взята в работу|Список обновлен/);
 
-  const requestPagePromise = context.waitForEvent("page");
+  const pagesBeforeOpen = context.pages().length;
   await row.first().getByRole("button", { name: "Открыть заявку" }).click();
-  const requestPage = await requestPagePromise;
-  await requestPage.waitForLoadState("domcontentloaded");
+  await page.waitForTimeout(250);
+  await expect.poll(() => context.pages().length).toBe(pagesBeforeOpen);
+  const requestPage = page;
   await expect(requestPage.getByRole("heading", { name: "Карточка заявки" })).toBeVisible();
   await expect(requestPage.locator("#section-request-workspace .breadcrumbs")).toContainText("Заявки -> Заявка");
   await expect(requestPage.getByRole("button", { name: "Назад к заявкам" })).toBeVisible();
   await expect(requestPage.locator("#request-modal-messages")).toContainText("Сообщение юристу");
+  await requestPage.getByRole("tab", { name: /Файлы/ }).click();
   await expect(requestPage.locator("#request-modal-files")).toContainText(clientFileName);
   const clientFileRow = requestPage.locator("#request-modal-files li").filter({ hasText: clientFileName }).first();
   await clientFileRow.getByRole("button", { name: /Предпросмотр/ }).click();
   await expect(requestPage.locator("#request-file-preview-overlay")).toBeVisible();
   await expect(requestPage.locator("#request-file-preview-overlay .request-preview-frame")).toBeVisible();
   await requestPage.locator("#request-file-preview-overlay .close").click();
+  await requestPage.getByRole("tab", { name: "Чат" }).click();
 
   const lawyerMessage = `Ответ юриста ${Date.now()}`;
   await requestPage.locator("#request-modal-message-body").fill(lawyerMessage);
@@ -66,16 +69,28 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await expect(requestPage.locator("#request-modal-messages")).toContainText(lawyerMessage);
 
   const lawyerFileName = `lawyer-admin-${Date.now()}.pdf`;
-  await requestPage.locator("#request-modal-file-input").setInputFiles({
-    name: lawyerFileName,
-    mimeType: "application/pdf",
-    buffer: Buffer.from("lawyer file from admin modal", "utf-8"),
-  });
-  await requestPage.locator("#request-modal-file-upload").click();
-  await expect(requestPage.locator("#section-request-workspace .status")).toContainText("Файл загружен");
+  const droppedFileName = `lawyer-drop-${Date.now()}.txt`;
+  await requestPage.locator("#request-modal-file-input").setInputFiles([
+    {
+      name: lawyerFileName,
+      mimeType: "application/pdf",
+      buffer: Buffer.from("lawyer file from admin modal", "utf-8"),
+    },
+    {
+      name: droppedFileName,
+      mimeType: "text/plain",
+      buffer: Buffer.from("temporary upload file", "utf-8"),
+    },
+  ]);
+  await expect(requestPage.locator(".pending-file-chip").filter({ hasText: lawyerFileName })).toHaveCount(1);
+  await expect(requestPage.locator(".pending-file-chip").filter({ hasText: droppedFileName })).toHaveCount(1);
+  await requestPage.getByRole("button", { name: new RegExp("Удалить файл " + droppedFileName) }).click();
+  await expect(requestPage.locator(".pending-file-chip").filter({ hasText: droppedFileName })).toHaveCount(0);
+  await requestPage.locator("#request-modal-message-send").click();
+  await expect(requestPage.locator("#section-request-workspace .status")).toContainText(/Файлы отправлены|Сообщение и файлы отправлены/);
+  await requestPage.getByRole("tab", { name: /Файлы/ }).click();
   await expect(requestPage.locator("#request-modal-files")).toContainText(lawyerFileName);
-  await requestPage.close();
-
+  await expect(requestPage.locator("#request-modal-files")).not.toContainText(droppedFileName);
   await page.locator("aside .menu button[data-section='requests']").click();
   await expect(page.locator("#section-requests h2")).toHaveText("Заявки");
   await page.locator("#section-requests").getByRole("button", { name: "Обновить" }).click();

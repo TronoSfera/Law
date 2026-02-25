@@ -108,7 +108,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0016_table_availability")
+        self.assertEqual(version, "0017_transition_requirements")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -158,6 +158,8 @@ class MigrationTests(unittest.TestCase):
     def test_status_transitions_contains_sla_hours_column(self):
         columns = {column["name"] for column in self.inspector.get_columns("topic_status_transitions")}
         self.assertIn("sla_hours", columns)
+        self.assertIn("required_data_keys", columns)
+        self.assertIn("required_mime_types", columns)
 
     def test_notifications_has_recipient_and_read_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("notifications")}

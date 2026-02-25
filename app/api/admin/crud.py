@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import pkgutil
 import uuid
 from datetime import date, datetime, timezone
@@ -52,6 +53,7 @@ from app.services.request_read_markers import (
 from app.services.request_status import apply_status_change_effects
 from app.services.status_flow import transition_allowed_for_topic
 from app.services.request_templates import validate_required_topic_fields_or_400
+from app.services.status_transition_requirements import validate_transition_requirements_or_400
 from app.services.billing_flow import apply_billing_transition_effects, normalize_status_kind_or_400
 from app.services.universal_query import apply_universal_query
 
@@ -399,6 +401,8 @@ def _column_label(table_name: str, column_name: str) -> str:
         "options": "Опции",
         "field_key": "Поле формы",
         "sla_hours": "SLA (часы)",
+        "required_data_keys": "Обязательные данные шага",
+        "required_mime_types": "Обязательные файлы шага",
         "avatar_url": "Аватар",
         "file_name": "Имя файла",
         "mime_type": "MIME-тип",
@@ -742,6 +746,40 @@ def _as_positive_int_or_400(value: Any, field_name: str) -> int:
     return number
 
 
+def _normalize_string_list_or_400(value: Any, field_name: str) -> list[str] | None:
+    if value is None:
+        return None
+
+    source = value
+    if isinstance(source, str):
+        text = source.strip()
+        if not text:
+            return None
+        if text.startswith("["):
+            try:
+                source = json.loads(text)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail=f'Поле "{field_name}" должно быть JSON-массивом строк')
+        else:
+            source = [chunk.strip() for chunk in text.replace("\n", ",").split(",")]
+
+    if not isinstance(source, (list, tuple, set)):
+        raise HTTPException(status_code=400, detail=f'Поле "{field_name}" должно быть массивом строк')
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in source:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        out.append(text)
+    return out
+
+
 def _apply_topic_required_fields_fields(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
     data = dict(payload)
     if "topic_code" in data:
@@ -831,6 +869,10 @@ def _apply_topic_status_transitions_fields(db: Session, payload: dict[str, Any])
             data["sla_hours"] = None
         else:
             data["sla_hours"] = _as_positive_int_or_400(raw, "sla_hours")
+    if "required_data_keys" in data:
+        data["required_data_keys"] = _normalize_string_list_or_400(data.get("required_data_keys"), "required_data_keys")
+    if "required_mime_types" in data:
+        data["required_mime_types"] = _normalize_string_list_or_400(data.get("required_mime_types"), "required_mime_types")
 
     return data
 
@@ -1432,6 +1474,16 @@ def update_row(
                 detail="Переход статуса не разрешен для выбранной темы",
             )
         if before_status != after_status and isinstance(row, Request):
+            extra_fields_override = clean_payload.get("extra_fields")
+            if not isinstance(extra_fields_override, dict):
+                extra_fields_override = row.extra_fields if isinstance(row.extra_fields, dict) else None
+            validate_transition_requirements_or_400(
+                db,
+                row,
+                from_status=before_status,
+                to_status=after_status,
+                extra_fields_override=extra_fields_override,
+            )
             billing_note = apply_billing_transition_effects(
                 db,
                 req=row,

@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Boolean, UniqueConstraint
+from sqlalchemy import String, Integer, Boolean, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -21,4 +21,6 @@ class TopicStatusTransition(Base, UUIDMixin, TimestampMixin):
     to_status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sla_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    required_data_keys: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    required_mime_types: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
