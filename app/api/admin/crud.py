@@ -31,6 +31,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.request import Request
 from app.models.status import Status
+from app.models.status_group import StatusGroup
 from app.models.topic_data_template import TopicDataTemplate
 from app.models.topic_required_field import TopicRequiredField
 from app.models.topic import Topic
@@ -93,6 +94,7 @@ TABLE_ROLE_ACTIONS: dict[str, dict[str, set[str]]] = {
     "quotes": {"ADMIN": set(CRUD_ACTIONS)},
     "topics": {"ADMIN": set(CRUD_ACTIONS)},
     "statuses": {"ADMIN": set(CRUD_ACTIONS)},
+    "status_groups": {"ADMIN": set(CRUD_ACTIONS)},
     "form_fields": {"ADMIN": set(CRUD_ACTIONS)},
     "clients": {"ADMIN": set(CRUD_ACTIONS)},
     "table_availability": {"ADMIN": set(CRUD_ACTIONS)},
@@ -257,6 +259,7 @@ def _table_label(table_name: str) -> str:
         "quotes": "Цитаты",
         "topics": "Темы",
         "statuses": "Статусы",
+        "status_groups": "Группы статусов",
         "form_fields": "Поля формы",
         "clients": "Клиенты",
         "table_availability": "Доступность таблиц",
@@ -359,6 +362,7 @@ def _column_label(table_name: str, column_name: str) -> str:
         "email": "Email",
         "role": "Роль",
         "kind": "Тип",
+        "status_group_id": "Группа",
         "status": "Статус",
         "status_code": "Статус",
         "topic_code": "Тема",
@@ -441,6 +445,126 @@ def _column_label(table_name: str, column_name: str) -> str:
     return _humanize_identifier_ru(normalized_column)
 
 
+def _pluralize_identifier(base: str) -> list[str]:
+    token = _normalize_table_name(base)
+    if not token:
+        return []
+    candidates = [token]
+    if token.endswith("y"):
+        candidates.append(token[:-1] + "ies")
+    candidates.append(token + "s")
+    return list(dict.fromkeys(candidates))
+
+
+def _reference_override(table_name: str, column_name: str) -> tuple[str, str] | None:
+    normalized_table = _normalize_table_name(table_name)
+    normalized_column = _normalize_table_name(column_name)
+    explicit: dict[tuple[str, str], tuple[str, str]] = {
+        ("requests", "assigned_lawyer_id"): ("admin_users", "id"),
+        ("requests", "paid_by_admin_id"): ("admin_users", "id"),
+        ("requests", "topic_code"): ("topics", "code"),
+        ("requests", "status_code"): ("statuses", "code"),
+        ("statuses", "status_group_id"): ("status_groups", "id"),
+        ("topic_required_fields", "topic_code"): ("topics", "code"),
+        ("topic_required_fields", "field_key"): ("form_fields", "key"),
+        ("topic_data_templates", "topic_code"): ("topics", "code"),
+        ("topic_status_transitions", "topic_code"): ("topics", "code"),
+        ("topic_status_transitions", "from_status"): ("statuses", "code"),
+        ("topic_status_transitions", "to_status"): ("statuses", "code"),
+        ("admin_users", "primary_topic_code"): ("topics", "code"),
+        ("admin_user_topics", "admin_user_id"): ("admin_users", "id"),
+        ("admin_user_topics", "topic_code"): ("topics", "code"),
+        ("request_data_requirements", "request_id"): ("requests", "id"),
+        ("request_data_requirements", "topic_template_id"): ("topic_data_templates", "id"),
+        ("request_data_requirements", "created_by_admin_id"): ("admin_users", "id"),
+        ("messages", "request_id"): ("requests", "id"),
+        ("attachments", "request_id"): ("requests", "id"),
+        ("attachments", "message_id"): ("messages", "id"),
+        ("invoices", "request_id"): ("requests", "id"),
+        ("invoices", "client_id"): ("clients", "id"),
+        ("invoices", "issued_by_admin_user_id"): ("admin_users", "id"),
+        ("notifications", "recipient_admin_user_id"): ("admin_users", "id"),
+        ("status_history", "request_id"): ("requests", "id"),
+        ("status_history", "changed_by_admin_id"): ("admin_users", "id"),
+        ("audit_log", "actor_admin_id"): ("admin_users", "id"),
+    }
+    if (normalized_table, normalized_column) in explicit:
+        return explicit[(normalized_table, normalized_column)]
+    return None
+
+
+def _detect_reference_for_column(table_name: str, column_name: str) -> tuple[str, str] | None:
+    override = _reference_override(table_name, column_name)
+    if override is not None:
+        return override
+
+    normalized = _normalize_table_name(column_name)
+    table_models = _table_model_map()
+
+    if normalized.endswith("_id") and normalized not in {"id"}:
+        base = normalized[:-3]
+        for candidate in _pluralize_identifier(base):
+            if candidate in table_models:
+                return candidate, "id"
+        if base.endswith("_admin_user"):
+            return "admin_users", "id"
+        if base.endswith("_lawyer"):
+            return "admin_users", "id"
+
+    if normalized.endswith("_code"):
+        base = normalized[:-5]
+        for candidate in _pluralize_identifier(base):
+            if candidate in table_models:
+                return candidate, "code"
+
+    return None
+
+
+def _reference_label_field(table_name: str, value_field: str) -> str:
+    explicit = {
+        "admin_users": "name",
+        "clients": "full_name",
+        "requests": "track_number",
+        "topics": "name",
+        "statuses": "name",
+        "status_groups": "name",
+        "form_fields": "label",
+        "topic_data_templates": "label",
+        "invoices": "invoice_number",
+        "messages": "body",
+        "attachments": "file_name",
+    }
+    if table_name in explicit:
+        return explicit[table_name]
+
+    _, model = _resolve_table_model(table_name)
+    mapper = sa_inspect(model)
+    hidden = _hidden_response_fields(table_name)
+    blocked = {"id", value_field, "created_at", "updated_at", "responsible"}
+    for column in mapper.columns:
+        name = str(column.key)
+        if name in hidden or name in blocked:
+            continue
+        return name
+    return value_field
+
+
+def _reference_meta_for_column(table_name: str, column_name: str) -> dict[str, str] | None:
+    detected = _detect_reference_for_column(table_name, column_name)
+    if detected is None:
+        return None
+    ref_table, value_field = detected
+    try:
+        label_field = _reference_label_field(ref_table, value_field)
+    except HTTPException:
+        return None
+    return {
+        "table": ref_table,
+        "value_field": value_field,
+        "label_field": label_field,
+    }
+
+
 def _default_sort_for_table(model: type) -> list[dict[str, str]]:
     columns = _columns_map(model)
     if "sort_order" in columns:
@@ -466,20 +590,22 @@ def _table_columns_meta(table_name: str, model: type) -> list[dict[str, Any]]:
         kind = _column_kind(column)
         has_default = column.default is not None or column.server_default is not None or name in primary_keys
         editable = name not in SYSTEM_FIELDS and name not in protected and name not in primary_keys
-        out.append(
-            {
-                "name": name,
-                "label": _column_label(table_name, name),
-                "kind": kind,
-                "nullable": bool(column.nullable),
-                "editable": bool(editable),
-                "sortable": True,
-                "filterable": kind != "json",
-                "required_on_create": not bool(column.nullable) and not bool(has_default) and bool(editable),
-                "has_default": bool(has_default),
-                "is_primary_key": name in primary_keys,
-            }
-        )
+        item = {
+            "name": name,
+            "label": _column_label(table_name, name),
+            "kind": kind,
+            "nullable": bool(column.nullable),
+            "editable": bool(editable),
+            "sortable": True,
+            "filterable": kind != "json",
+            "required_on_create": not bool(column.nullable) and not bool(has_default) and bool(editable),
+            "has_default": bool(has_default),
+            "is_primary_key": name in primary_keys,
+        }
+        reference = _reference_meta_for_column(table_name, name)
+        if reference is not None:
+            item["reference"] = reference
+        out.append(item)
     return out
 
 
@@ -877,10 +1003,20 @@ def _apply_topic_status_transitions_fields(db: Session, payload: dict[str, Any])
     return data
 
 
-def _apply_status_fields(payload: dict[str, Any]) -> dict[str, Any]:
+def _apply_status_fields(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
     data = dict(payload)
     if "kind" in data:
         data["kind"] = normalize_status_kind_or_400(data.get("kind"))
+    if "status_group_id" in data:
+        raw_group = data.get("status_group_id")
+        if raw_group is None or str(raw_group).strip() == "":
+            data["status_group_id"] = None
+        else:
+            group_id = _parse_uuid_or_400(raw_group, "status_group_id")
+            group = db.get(StatusGroup, group_id)
+            if group is None:
+                raise HTTPException(status_code=400, detail="Группа статусов не найдена")
+            data["status_group_id"] = group_id
     if "invoice_template" in data:
         text = str(data.get("invoice_template") or "").strip()
         data["invoice_template"] = text or None
@@ -1359,7 +1495,7 @@ def create_row(
     if normalized == "topic_status_transitions":
         clean_payload = _apply_topic_status_transitions_fields(db, clean_payload)
     if normalized == "statuses":
-        clean_payload = _apply_status_fields(clean_payload)
+        clean_payload = _apply_status_fields(db, clean_payload)
     if normalized == "requests":
         clean_payload["client_id"] = resolved_request_client_id
     if normalized == "invoices":
@@ -1426,7 +1562,7 @@ def update_row(
     if normalized == "topic_status_transitions":
         clean_payload = _apply_topic_status_transitions_fields(db, clean_payload)
     if normalized == "statuses":
-        clean_payload = _apply_status_fields(clean_payload)
+        clean_payload = _apply_status_fields(db, clean_payload)
     if normalized == "requests" and isinstance(row, Request):
         if {"client_name", "client_phone"}.intersection(set(clean_payload.keys())) or row.client_id is None:
             client = _upsert_client_or_400(

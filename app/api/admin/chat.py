@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.db.session import get_db
+from app.models.admin_user import AdminUser
 from app.models.request import Request
 from app.services.chat_service import create_admin_or_lawyer_message, list_messages_for_request, serialize_message
 
@@ -75,12 +76,22 @@ def create_request_message(
     body = str((payload or {}).get("body") or "").strip()
     role = str(admin.get("role") or "").upper()
     actor_name = str(admin.get("email") or "").strip() or ("Юрист" if role == "LAWYER" else "Администратор")
+    actor_admin_user_id = str(admin.get("sub") or "").strip() or None
+    if actor_admin_user_id:
+        try:
+            actor_uuid = UUID(actor_admin_user_id)
+        except ValueError:
+            actor_uuid = None
+        if actor_uuid is not None:
+            actor_user = db.get(AdminUser, actor_uuid)
+            if actor_user is not None:
+                actor_name = str(actor_user.name or actor_user.email or actor_name)
     row = create_admin_or_lawyer_message(
         db,
         request=req,
         body=body,
         actor_role=role,
         actor_name=actor_name,
-        actor_admin_user_id=str(admin.get("sub") or "").strip() or None,
+        actor_admin_user_id=actor_admin_user_id,
     )
     return serialize_message(row)

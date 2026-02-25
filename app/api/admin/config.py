@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from uuid import UUID
 from app.db.session import get_db
 from app.core.deps import require_role
 from app.schemas.universal import UniversalQuery
 from app.schemas.admin import TopicUpsert, StatusUpsert, FormFieldUpsert
 from app.models.topic import Topic
 from app.models.status import Status
+from app.models.status_group import StatusGroup
 from app.models.form_field import FormField
 from app.services.universal_query import apply_universal_query
 
@@ -22,6 +24,7 @@ def _status_row(row: Status):
         "id": str(row.id),
         "code": row.code,
         "name": row.name,
+        "status_group_id": str(row.status_group_id) if row.status_group_id else None,
         "enabled": row.enabled,
         "sort_order": row.sort_order,
         "is_terminal": row.is_terminal,
@@ -100,8 +103,20 @@ def query_statuses(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depe
 
 @router.post("/statuses", status_code=201)
 def create_status(payload: StatusUpsert, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN"))):
+    data = payload.model_dump()
+    raw_group = data.get("status_group_id")
+    if raw_group:
+        try:
+            group_id = UUID(str(raw_group))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Некорректная группа статусов")
+        if db.get(StatusGroup, group_id) is None:
+            raise HTTPException(status_code=400, detail="Группа статусов не найдена")
+        data["status_group_id"] = group_id
+    else:
+        data["status_group_id"] = None
     responsible = str(admin.get("email") or "").strip() or "Администратор системы"
-    row = Status(**payload.model_dump(), responsible=responsible)
+    row = Status(**data, responsible=responsible)
     try:
         db.add(row)
         db.commit()
@@ -117,7 +132,19 @@ def update_status(id: str, payload: StatusUpsert, db: Session = Depends(get_db),
     row = db.query(Status).filter(Status.id == id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Статус не найден")
-    for k, v in payload.model_dump().items():
+    data = payload.model_dump()
+    raw_group = data.get("status_group_id")
+    if raw_group:
+        try:
+            group_id = UUID(str(raw_group))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Некорректная группа статусов")
+        if db.get(StatusGroup, group_id) is None:
+            raise HTTPException(status_code=400, detail="Группа статусов не найдена")
+        data["status_group_id"] = group_id
+    else:
+        data["status_group_id"] = None
+    for k, v in data.items():
         setattr(row, k, v)
     try:
         db.add(row)

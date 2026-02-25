@@ -175,6 +175,12 @@
       color: #dbe6f5;
     }
 
+    .btn.secondary.active-success {
+      border-color: rgba(77, 190, 147, 0.48);
+      background: rgba(77, 190, 147, 0.22);
+      color: #c8f5e4;
+    }
+
     .btn.danger {
       border-color: rgba(255, 127, 127, 0.3);
       background: rgba(255, 127, 127, 0.13);
@@ -259,14 +265,18 @@
     }
 
     .kanban-board {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(260px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: 0.75rem;
-      overflow-x: auto;
+      overflow-x: hidden;
       padding-bottom: 0.25rem;
+      align-items: stretch;
+      align-content: flex-start;
     }
 
     .kanban-column {
+      flex: 1 1 300px;
+      min-width: 260px;
       border: 1px solid var(--line);
       border-radius: 14px;
       background: rgba(255, 255, 255, 0.02);
@@ -321,11 +331,20 @@
       display: flex;
       flex-direction: column;
       gap: 0.45rem;
+      cursor: pointer;
+    }
+
+    .kanban-card.draggable {
       cursor: grab;
     }
 
-    .kanban-card:active {
+    .kanban-card.draggable:active {
       cursor: grabbing;
+    }
+
+    .kanban-card:focus-visible {
+      outline: 2px solid rgba(137, 178, 255, 0.55);
+      outline-offset: 1px;
     }
 
     .kanban-card-head {
@@ -403,9 +422,71 @@
       margin-top: 0.1rem;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 0.45rem;
       flex-wrap: wrap;
+    }
+
+    .kanban-update-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .kanban-update-icon {
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(122, 139, 163, 0.38);
+      background: rgba(111, 133, 160, 0.14);
+      color: #9daec4;
+      font-size: 0.76rem;
+      line-height: 1;
+    }
+
+    .kanban-update-icon.is-unread {
+      border-color: rgba(74, 197, 143, 0.52);
+      background: rgba(74, 197, 143, 0.2);
+      color: #b9f3dd;
+      box-shadow: 0 0 0 2px rgba(74, 197, 143, 0.14);
+    }
+
+    .kanban-deadline-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 120px;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      color: #dde9fa;
+      font-size: 0.75rem;
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .kanban-deadline-chip.tone-ok {
+      border-color: rgba(76, 197, 145, 0.5);
+      background: rgba(76, 197, 145, 0.2);
+      color: #c5f8e3;
+    }
+
+    .kanban-deadline-chip.tone-warn {
+      border-color: rgba(228, 182, 92, 0.52);
+      background: rgba(228, 182, 92, 0.22);
+      color: #f9e0ac;
+    }
+
+    .kanban-deadline-chip.tone-danger {
+      border-color: rgba(255, 98, 98, 0.58);
+      background: rgba(255, 98, 98, 0.24);
+      color: #ffd4d4;
     }
 
     .kanban-transition-select {
@@ -1258,6 +1339,45 @@
       text-align: right;
     }
 
+    .chat-message-files {
+      margin-top: 0.35rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.32rem;
+    }
+
+    .chat-message-file-chip {
+      border: 1px solid rgba(130, 153, 183, 0.45);
+      background: rgba(31, 45, 63, 0.58);
+      color: #d8e6f8;
+      border-radius: 999px;
+      padding: 0.16rem 0.46rem 0.16rem 0.36rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+      cursor: pointer;
+      max-width: 100%;
+      font-size: 0.75rem;
+      line-height: 1.2;
+    }
+
+    .chat-message-file-chip:hover {
+      border-color: rgba(170, 198, 236, 0.65);
+      background: rgba(52, 74, 104, 0.66);
+    }
+
+    .chat-message-file-icon {
+      color: #a9c1df;
+      flex-shrink: 0;
+    }
+
+    .chat-message-file-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 220px;
+    }
+
     .request-chat-list li.chat-date-divider {
       margin: 0.32rem 0 0.24rem;
       padding: 0;
@@ -1381,6 +1501,12 @@
       width: min(980px, 100%);
     }
 
+    .request-preview-head-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
     .request-preview-body {
       width: 100%;
       min-height: 280px;
@@ -1418,8 +1544,15 @@
       margin: 0;
     }
 
-    .request-preview-download {
+    .request-preview-download-icon {
       text-decoration: none;
+    }
+
+    .workspace-head-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      font-size: 0.96rem;
     }
 
     .overlay {
@@ -1500,7 +1633,10 @@
 
     @media (max-width: 1160px) {
       .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .kanban-board { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+      .kanban-column {
+        flex-basis: calc(50% - 0.375rem);
+        min-width: 240px;
+      }
       .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .triple { grid-template-columns: 1fr; }
       .config-layout { grid-template-columns: 1fr; }
@@ -1522,8 +1658,9 @@
       .filters {
         grid-template-columns: 1fr;
       }
-      .kanban-board {
-        grid-template-columns: 1fr;
+      .kanban-column {
+        flex-basis: 100%;
+        min-width: 0;
       }
       .filter-toolbar {
         flex-direction: column;

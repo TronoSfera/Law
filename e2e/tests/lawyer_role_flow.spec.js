@@ -49,9 +49,8 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await page.waitForTimeout(250);
   await expect.poll(() => context.pages().length).toBe(pagesBeforeOpen);
   const requestPage = page;
-  await expect(requestPage.getByRole("heading", { name: "Карточка заявки" })).toBeVisible();
-  await expect(requestPage.locator("#section-request-workspace .breadcrumbs")).toContainText("Заявки -> Заявка");
-  await expect(requestPage.getByRole("button", { name: "Назад к заявкам" })).toBeVisible();
+  await expect(requestPage.getByRole("heading", { name: /Карточка заявки/ })).toBeVisible();
+  await expect(requestPage.getByRole("button", { name: "Назад" })).toBeVisible();
   await expect(requestPage.locator("#request-modal-messages")).toContainText("Сообщение юристу");
   await requestPage.getByRole("tab", { name: /Файлы/ }).click();
   await expect(requestPage.locator("#request-modal-files")).toContainText(clientFileName);

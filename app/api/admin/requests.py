@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -8,7 +9,7 @@ from sqlalchemy import case, or_, update
 
 from app.db.session import get_db
 from app.core.deps import require_role
-from app.schemas.universal import UniversalQuery
+from app.schemas.universal import FilterClause, Page, UniversalQuery
 from app.schemas.admin import (
     RequestAdminCreate,
     RequestAdminPatch,
@@ -21,6 +22,7 @@ from app.models.audit_log import AuditLog
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.request import Request
 from app.models.status import Status
+from app.models.status_group import StatusGroup
 from app.models.status_history import StatusHistory
 from app.models.topic_data_template import TopicDataTemplate
 from app.models.topic_status_transition import TopicStatusTransition
@@ -39,41 +41,50 @@ from app.services.universal_query import apply_universal_query
 
 router = APIRouter()
 REQUEST_FINANCIAL_FIELDS = {"effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"}
-KANBAN_GROUP_LABELS = {
-    "NEW": "Новые",
-    "IN_PROGRESS": "В работе",
-    "WAITING": "Ожидание",
-    "DONE": "Завершены",
-}
+ALLOWED_KANBAN_FILTER_FIELDS = {"assigned_lawyer_id", "client_name", "status_code", "created_at", "topic_code", "overdue"}
+ALLOWED_KANBAN_SORT_MODES = {"created_newest", "lawyer", "deadline"}
+FALLBACK_KANBAN_GROUPS = [
+    ("fallback_new", "Новые", 10),
+    ("fallback_in_progress", "В работе", 20),
+    ("fallback_waiting", "Ожидание", 30),
+    ("fallback_done", "Завершены", 40),
+]
 
 
 def _status_meta_or_default(meta_map: dict[str, dict[str, object]], status_code: str) -> dict[str, object]:
-    return meta_map.get(status_code) or {"name": status_code, "kind": "DEFAULT", "is_terminal": False}
+    return meta_map.get(status_code) or {
+        "name": status_code,
+        "kind": "DEFAULT",
+        "is_terminal": False,
+        "status_group_id": None,
+        "status_group_name": None,
+        "status_group_order": None,
+    }
 
 
-def _kanban_group_for_status(status_code: str, status_meta: dict[str, object]) -> str:
+def _fallback_group_for_status(status_code: str, status_meta: dict[str, object]) -> tuple[str, str, int]:
     code = str(status_code or "").strip().upper()
     kind = str(status_meta.get("kind") or "DEFAULT").upper()
     name = str(status_meta.get("name") or "").upper()
     is_terminal = bool(status_meta.get("is_terminal"))
 
     if is_terminal:
-        return "DONE"
+        return FALLBACK_KANBAN_GROUPS[3]
     if kind == "PAID":
-        return "DONE"
+        return FALLBACK_KANBAN_GROUPS[3]
     if code.startswith("NEW") or "НОВ" in name:
-        return "NEW"
+        return FALLBACK_KANBAN_GROUPS[0]
     waiting_tokens = ("WAIT", "PEND", "HOLD", "SUSPEND", "BLOCK")
     waiting_ru_tokens = ("ОЖИД", "ПАУЗ", "СОГЛАС", "ОПЛАТ", "СУД")
     if kind == "INVOICE":
-        return "WAITING"
+        return FALLBACK_KANBAN_GROUPS[2]
     if any(token in code for token in waiting_tokens) or any(token in name for token in waiting_ru_tokens):
-        return "WAITING"
+        return FALLBACK_KANBAN_GROUPS[2]
     done_tokens = ("CLOSE", "RESOLV", "REJECT", "DONE", "PAID")
     done_ru_tokens = ("ЗАВЕРШ", "ЗАКРЫ", "РЕШЕН", "ОТКЛОН", "ОПЛАЧ")
     if any(token in code for token in done_tokens) or any(token in name for token in done_ru_tokens):
-        return "DONE"
-    return "IN_PROGRESS"
+        return FALLBACK_KANBAN_GROUPS[3]
+    return FALLBACK_KANBAN_GROUPS[1]
 
 
 def _parse_datetime_safe(value: object) -> datetime | None:
@@ -113,6 +124,101 @@ def _extract_case_deadline(extra_fields: object) -> datetime | None:
         if parsed:
             return parsed
     return None
+
+
+def _coerce_kanban_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise HTTPException(status_code=400, detail='Поле "overdue" должно быть boolean')
+
+
+def _parse_kanban_filters_or_400(raw_filters: str | None) -> tuple[list[FilterClause], list[tuple[str, bool]]]:
+    if not raw_filters:
+        return [], []
+    try:
+        parsed = json.loads(raw_filters)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Некорректный JSON фильтров канбана") from exc
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=400, detail="Фильтры канбана должны быть массивом")
+
+    universal_filters: list[FilterClause] = []
+    overdue_filters: list[tuple[str, bool]] = []
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail=f"Фильтр #{index + 1} должен быть объектом")
+        field = str(item.get("field") or "").strip()
+        op = str(item.get("op") or "").strip()
+        value = item.get("value")
+        if field not in ALLOWED_KANBAN_FILTER_FIELDS:
+            raise HTTPException(status_code=400, detail=f'Недоступное поле фильтра: "{field}"')
+        if op not in {"=", "!=", ">", "<", ">=", "<=", "~"}:
+            raise HTTPException(status_code=400, detail=f'Недопустимый оператор фильтра: "{op}"')
+        if field == "overdue":
+            if op not in {"=", "!="}:
+                raise HTTPException(status_code=400, detail='Для поля "overdue" доступны только операторы "=" и "!="')
+            overdue_filters.append((op, _coerce_kanban_bool(value)))
+            continue
+        universal_filters.append(FilterClause(field=field, op=op, value=value))
+    return universal_filters, overdue_filters
+
+
+def _apply_overdue_filters(items: list[dict[str, object]], overdue_filters: list[tuple[str, bool]]) -> list[dict[str, object]]:
+    if not overdue_filters:
+        return items
+    now = datetime.now(timezone.utc)
+    out: list[dict[str, object]] = []
+    for item in items:
+        raw_deadline = item.get("sla_deadline_at") or item.get("case_deadline_at")
+        deadline_at = _parse_datetime_safe(raw_deadline)
+        is_overdue = bool(deadline_at and deadline_at <= now)
+        ok = True
+        for op, expected in overdue_filters:
+            if op == "=":
+                ok = ok and (is_overdue == expected)
+            elif op == "!=":
+                ok = ok and (is_overdue != expected)
+            if not ok:
+                break
+        if ok:
+            out.append(item)
+    return out
+
+
+def _sort_kanban_items(items: list[dict[str, object]], sort_mode: str) -> list[dict[str, object]]:
+    mode = sort_mode if sort_mode in ALLOWED_KANBAN_SORT_MODES else "created_newest"
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    if mode == "lawyer":
+        return sorted(
+            items,
+            key=lambda row: (
+                1 if not str(row.get("assigned_lawyer_name") or "").strip() else 0,
+                str(row.get("assigned_lawyer_name") or "").lower(),
+                -int((_parse_datetime_safe(row.get("created_at")) or epoch).timestamp()),
+            ),
+        )
+
+    if mode == "deadline":
+        far_future = datetime(9999, 12, 31, tzinfo=timezone.utc)
+        return sorted(
+            items,
+            key=lambda row: (
+                _parse_datetime_safe(row.get("sla_deadline_at") or row.get("case_deadline_at")) or far_future,
+                -int((_parse_datetime_safe(row.get("created_at")) or epoch).timestamp()),
+            ),
+        )
+
+    return sorted(
+        items,
+        key=lambda row: _parse_datetime_safe(row.get("created_at")) or epoch,
+        reverse=True,
+    )
 
 
 def _request_uuid_or_400(request_id: str) -> UUID:
@@ -220,6 +326,8 @@ def get_requests_kanban(
     db: Session = Depends(get_db),
     admin=Depends(require_role("ADMIN", "LAWYER")),
     limit: int = Query(default=400, ge=1, le=1000),
+    filters: str | None = Query(default=None),
+    sort_mode: str = Query(default="created_newest"),
 ):
     role = str(admin.get("role") or "").upper()
     actor = str(admin.get("sub") or "").strip()
@@ -235,18 +343,23 @@ def get_requests_kanban(
             )
         )
 
-    request_rows: list[Request] = (
-        base_query
-        .order_by(Request.created_at.desc())
-        .limit(limit)
-        .all()
-    )
-    total = int(base_query.count() or 0)
+    normalized_sort_mode = sort_mode if sort_mode in ALLOWED_KANBAN_SORT_MODES else "created_newest"
+    query_filters, overdue_filters = _parse_kanban_filters_or_400(filters)
+    if query_filters:
+        base_query = apply_universal_query(
+            base_query,
+            Request,
+            UniversalQuery(
+                filters=query_filters,
+                sort=[],
+                page=Page(limit=limit, offset=0),
+            ),
+        )
+
+    request_rows: list[Request] = base_query.all()
 
     request_id_to_row = {str(row.id): row for row in request_rows}
     request_ids = [row.id for row in request_rows]
-    request_ids_str = list(request_id_to_row.keys())
-
     topic_codes = {str(row.topic_code or "").strip() for row in request_rows if str(row.topic_code or "").strip()}
     status_codes = {str(row.status_code or "").strip() for row in request_rows if str(row.status_code or "").strip()}
 
@@ -276,15 +389,23 @@ def get_requests_kanban(
 
     status_meta_map: dict[str, dict[str, object]] = {}
     if status_codes:
-        status_rows = db.query(Status).filter(Status.code.in_(list(status_codes))).all()
+        status_rows = (
+            db.query(Status, StatusGroup)
+            .outerjoin(StatusGroup, StatusGroup.id == Status.status_group_id)
+            .filter(Status.code.in_(list(status_codes)))
+            .all()
+        )
         status_meta_map = {
-            str(row.code): {
-                "name": str(row.name or row.code),
-                "kind": str(row.kind or "DEFAULT"),
-                "is_terminal": bool(row.is_terminal),
-                "sort_order": int(row.sort_order or 0),
+            str(status_row.code): {
+                "name": str(status_row.name or status_row.code),
+                "kind": str(status_row.kind or "DEFAULT"),
+                "is_terminal": bool(status_row.is_terminal),
+                "sort_order": int(status_row.sort_order or 0),
+                "status_group_id": str(status_row.status_group_id) if status_row.status_group_id else None,
+                "status_group_name": (str(group_row.name) if group_row is not None and group_row.name else None),
+                "status_group_order": (int(group_row.sort_order or 0) if group_row is not None else None),
             }
-            for row in status_rows
+            for status_row, group_row in status_rows
         }
 
     assigned_ids = {str(row.assigned_lawyer_id or "").strip() for row in request_rows if str(row.assigned_lawyer_id or "").strip()}
@@ -338,27 +459,61 @@ def get_requests_kanban(
         transitions_by_key.setdefault((topic_code, from_status), []).append(row)
         transitions_to_key.setdefault((topic_code, to_status), []).append(row)
 
+    status_groups_rows = db.query(StatusGroup).order_by(StatusGroup.sort_order.asc(), StatusGroup.name.asc()).all()
+    columns_catalog = [
+        {
+            "key": str(group.id),
+            "label": str(group.name),
+            "sort_order": int(group.sort_order or 0),
+        }
+        for group in status_groups_rows
+    ]
+    columns_by_key = {row["key"]: row for row in columns_catalog}
+
     items: list[dict[str, object]] = []
-    group_totals = {key: 0 for key in KANBAN_GROUP_LABELS.keys()}
+    group_totals: dict[str, int] = {row["key"]: 0 for row in columns_catalog}
     for row in request_rows:
         request_id = str(row.id)
         topic_code = str(row.topic_code or "").strip()
         status_code = str(row.status_code or "").strip()
         status_meta = _status_meta_or_default(status_meta_map, status_code)
-        status_group = _kanban_group_for_status(status_code, status_meta)
-        group_totals[status_group] = int(group_totals.get(status_group, 0)) + 1
-
+        status_group = str(status_meta.get("status_group_id") or "").strip()
+        status_group_name = str(status_meta.get("status_group_name") or "").strip()
+        status_group_order = status_meta.get("status_group_order")
+        if not status_group:
+            fallback_key, fallback_label, fallback_order = _fallback_group_for_status(status_code, status_meta)
+            status_group = fallback_key
+            status_group_name = fallback_label
+            status_group_order = fallback_order
+            if fallback_key not in columns_by_key:
+                columns_by_key[fallback_key] = {"key": fallback_key, "label": fallback_label, "sort_order": fallback_order}
+                columns_catalog.append(columns_by_key[fallback_key])
+        elif status_group not in columns_by_key:
+            columns_by_key[status_group] = {
+                "key": status_group,
+                "label": status_group_name or status_group,
+                "sort_order": int(status_group_order or 999),
+            }
+            columns_catalog.append(columns_by_key[status_group])
         available_transitions = []
         for transition in transitions_by_key.get((topic_code, status_code), []):
             to_status = str(transition.to_status or "").strip()
             if not to_status:
                 continue
             to_meta = _status_meta_or_default(status_meta_map, to_status)
+            target_group = str(to_meta.get("status_group_id") or "").strip()
+            if not target_group:
+                target_group, fallback_label, fallback_order = _fallback_group_for_status(to_status, to_meta)
+                if target_group not in columns_by_key:
+                    columns_by_key[target_group] = {"key": target_group, "label": fallback_label, "sort_order": fallback_order}
+                    columns_catalog.append(columns_by_key[target_group])
+                if target_group not in group_totals:
+                    group_totals[target_group] = 0
             available_transitions.append(
                 {
                     "to_status": to_status,
                     "to_status_name": str(to_meta.get("name") or to_status),
-                    "target_group": _kanban_group_for_status(to_status, to_meta),
+                    "target_group": target_group,
                     "sla_hours": transition.sla_hours,
                 }
             )
@@ -391,6 +546,8 @@ def get_requests_kanban(
                 "status_code": status_code,
                 "status_name": str(status_meta.get("name") or status_code),
                 "status_group": status_group,
+                "status_group_name": status_group_name or None,
+                "status_group_order": int(status_group_order or 0) if status_group_order is not None else None,
                 "assigned_lawyer_id": assigned_id,
                 "assigned_lawyer_name": lawyer_name_map.get(assigned_id or "", assigned_id),
                 "description": row.description,
@@ -406,14 +563,37 @@ def get_requests_kanban(
             }
         )
 
-    columns = [
-        {
-            "key": key,
-            "label": label,
-            "total": int(group_totals.get(key, 0)),
-        }
-        for key, label in KANBAN_GROUP_LABELS.items()
-    ]
+    items = _apply_overdue_filters(items, overdue_filters)
+    items = _sort_kanban_items(items, normalized_sort_mode)
+    total = len(items)
+    if total > limit:
+        items = items[:limit]
+
+    for row in items:
+        key = str(row.get("status_group") or "").strip()
+        if not key:
+            continue
+        group_totals[key] = int(group_totals.get(key, 0)) + 1
+
+    columns = []
+    for item in sorted(
+        columns_catalog,
+        key=lambda row: (
+            int(row.get("sort_order") or 0),
+            str(row.get("label") or "").lower(),
+        ),
+    ):
+        key = str(item.get("key") or "")
+        if not key:
+            continue
+        columns.append(
+            {
+                "key": key,
+                "label": str(item.get("label") or key),
+                "sort_order": int(item.get("sort_order") or 0),
+                "total": int(group_totals.get(key, 0)),
+            }
+        )
 
     return {
         "scope": role,
@@ -421,6 +601,7 @@ def get_requests_kanban(
         "columns": columns,
         "total": total,
         "limit": int(limit),
+        "sort_mode": normalized_sort_mode,
         "truncated": bool(total > len(items)),
     }
 

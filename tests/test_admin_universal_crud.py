@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,7 @@ from app.models.table_availability import TableAvailability
 from app.models.quote import Quote
 from app.models.request import Request
 from app.models.status import Status
+from app.models.status_group import StatusGroup
 from app.models.status_history import StatusHistory
 from app.models.topic_data_template import TopicDataTemplate
 from app.models.topic import Topic
@@ -55,6 +57,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
         Quote.__table__.create(bind=cls.engine)
         FormField.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
+        StatusGroup.__table__.create(bind=cls.engine)
         Status.__table__.create(bind=cls.engine)
         Message.__table__.create(bind=cls.engine)
         Attachment.__table__.create(bind=cls.engine)
@@ -84,6 +87,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
         Attachment.__table__.drop(bind=cls.engine)
         Message.__table__.drop(bind=cls.engine)
         Status.__table__.drop(bind=cls.engine)
+        StatusGroup.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
         FormField.__table__.drop(bind=cls.engine)
         Quote.__table__.drop(bind=cls.engine)
@@ -98,6 +102,7 @@ class AdminUniversalCrudTests(unittest.TestCase):
             db.execute(delete(Attachment))
             db.execute(delete(Message))
             db.execute(delete(Request))
+            db.execute(delete(StatusGroup))
             db.execute(delete(Client))
             db.execute(delete(Status))
             db.execute(delete(FormField))
@@ -174,6 +179,54 @@ class AdminUniversalCrudTests(unittest.TestCase):
             actions = [row.action for row in db.query(AuditLog).filter(AuditLog.entity == "quotes", AuditLog.entity_id == quote_id).all()]
         self.assertEqual(set(actions), {"CREATE", "UPDATE", "DELETE"})
 
+    def test_status_can_be_bound_to_status_group_via_crud(self):
+        headers = self._auth_headers("ADMIN")
+
+        created_group = self.client.post(
+            "/api/admin/crud/status_groups",
+            headers=headers,
+            json={"name": "Этапы рассмотрения", "sort_order": 15},
+        )
+        self.assertEqual(created_group.status_code, 201)
+        group_id = created_group.json()["id"]
+        UUID(group_id)
+
+        created_status = self.client.post(
+            "/api/admin/crud/statuses",
+            headers=headers,
+            json={
+                "code": "GROUPED_STATUS",
+                "name": "Статус с группой",
+                "status_group_id": group_id,
+                "kind": "DEFAULT",
+                "enabled": True,
+                "sort_order": 11,
+                "is_terminal": False,
+            },
+        )
+        self.assertEqual(created_status.status_code, 201)
+        status_id = created_status.json()["id"]
+        self.assertEqual(created_status.json()["status_group_id"], group_id)
+
+        got_status = self.client.get(f"/api/admin/crud/statuses/{status_id}", headers=headers)
+        self.assertEqual(got_status.status_code, 200)
+        self.assertEqual(got_status.json()["status_group_id"], group_id)
+
+        bad_status = self.client.post(
+            "/api/admin/crud/statuses",
+            headers=headers,
+            json={
+                "code": "GROUPED_STATUS_BAD",
+                "name": "Статус с невалидной группой",
+                "status_group_id": str(uuid4()),
+                "kind": "DEFAULT",
+                "enabled": True,
+                "sort_order": 12,
+                "is_terminal": False,
+            },
+        )
+        self.assertEqual(bad_status.status_code, 400)
+
     def test_admin_table_catalog_lists_db_tables_for_dynamic_references(self):
         admin_headers = self._auth_headers("ADMIN")
         response = self.client.get("/api/admin/crud/meta/tables", headers=admin_headers)
@@ -188,17 +241,30 @@ class AdminUniversalCrudTests(unittest.TestCase):
         self.assertIn("clients", by_table)
         self.assertIn("quotes", by_table)
         self.assertIn("statuses", by_table)
+        self.assertIn("status_groups", by_table)
 
         self.assertEqual(by_table["requests"]["section"], "main")
         self.assertEqual(by_table["invoices"]["section"], "main")
         self.assertEqual(by_table["quotes"]["section"], "dictionary")
         self.assertTrue(by_table["quotes"]["default_sort"])
         self.assertEqual(by_table["quotes"]["label"], "Цитаты")
+        self.assertEqual(by_table["status_groups"]["label"], "Группы статусов")
         self.assertEqual(by_table["request_data_requirements"]["label"], "Требования данных заявки")
         quotes_columns = {col["name"]: col for col in (by_table["quotes"].get("columns") or [])}
         self.assertEqual(quotes_columns["author"]["label"], "Автор")
         self.assertEqual(quotes_columns["sort_order"]["label"], "Порядок")
         self.assertTrue(all(str(col.get("label") or "").strip() for col in (by_table["quotes"].get("columns") or [])))
+        statuses_columns = {col["name"]: col for col in (by_table["statuses"].get("columns") or [])}
+        self.assertEqual(statuses_columns["status_group_id"]["reference"]["table"], "status_groups")
+        self.assertEqual(statuses_columns["status_group_id"]["reference"]["label_field"], "name")
+        requests_columns = {col["name"]: col for col in (by_table["requests"].get("columns") or [])}
+        self.assertEqual(requests_columns["assigned_lawyer_id"]["reference"]["table"], "admin_users")
+        self.assertEqual(requests_columns["assigned_lawyer_id"]["reference"]["label_field"], "name")
+        invoices_columns = {col["name"]: col for col in (by_table["invoices"].get("columns") or [])}
+        self.assertEqual(invoices_columns["request_id"]["reference"]["table"], "requests")
+        self.assertEqual(invoices_columns["request_id"]["reference"]["label_field"], "track_number")
+        self.assertEqual(invoices_columns["client_id"]["reference"]["table"], "clients")
+        self.assertEqual(invoices_columns["client_id"]["reference"]["label_field"], "full_name")
         for table_name, table_meta in by_table.items():
             if table_name in {"requests", "invoices"}:
                 expected_section = "main"
@@ -1202,12 +1268,50 @@ class AdminUniversalCrudTests(unittest.TestCase):
 
     def test_requests_kanban_returns_grouped_cards_and_role_scope(self):
         with self.SessionLocal() as db:
+            group_new = StatusGroup(name="Новые", sort_order=10)
+            group_progress = StatusGroup(name="В работе", sort_order=20)
+            group_waiting = StatusGroup(name="Ожидание", sort_order=30)
+            group_done = StatusGroup(name="Завершены", sort_order=40)
+            db.add_all([group_new, group_progress, group_waiting, group_done])
+            db.flush()
             db.add_all(
                 [
-                    Status(code="NEW", name="Новая", enabled=True, sort_order=1, is_terminal=False, kind="DEFAULT"),
-                    Status(code="IN_PROGRESS", name="В работе", enabled=True, sort_order=2, is_terminal=False, kind="DEFAULT"),
-                    Status(code="WAITING_CLIENT", name="Ожидание клиента", enabled=True, sort_order=3, is_terminal=False, kind="DEFAULT"),
-                    Status(code="CLOSED", name="Закрыта", enabled=True, sort_order=4, is_terminal=True, kind="DEFAULT"),
+                    Status(
+                        code="NEW",
+                        name="Новая",
+                        enabled=True,
+                        sort_order=1,
+                        is_terminal=False,
+                        kind="DEFAULT",
+                        status_group_id=group_new.id,
+                    ),
+                    Status(
+                        code="IN_PROGRESS",
+                        name="В работе",
+                        enabled=True,
+                        sort_order=2,
+                        is_terminal=False,
+                        kind="DEFAULT",
+                        status_group_id=group_progress.id,
+                    ),
+                    Status(
+                        code="WAITING_CLIENT",
+                        name="Ожидание клиента",
+                        enabled=True,
+                        sort_order=3,
+                        is_terminal=False,
+                        kind="DEFAULT",
+                        status_group_id=group_waiting.id,
+                    ),
+                    Status(
+                        code="CLOSED",
+                        name="Закрыта",
+                        enabled=True,
+                        sort_order=4,
+                        is_terminal=True,
+                        kind="DEFAULT",
+                        status_group_id=group_done.id,
+                    ),
                 ]
             )
             db.add(Topic(code="civil-law", name="Гражданское право", enabled=True, sort_order=1))
@@ -1287,10 +1391,21 @@ class AdminUniversalCrudTests(unittest.TestCase):
                 extra_fields={},
                 assigned_lawyer_id=str(lawyer_other.id),
             )
-            db.add_all([request_new, request_progress, request_waiting])
+            request_overdue = Request(
+                track_number="TRK-KANBAN-OVERDUE",
+                client_name="Клиент 4",
+                client_phone="+79990000004",
+                topic_code="civil-law",
+                status_code="IN_PROGRESS",
+                description="Просроченная заявка",
+                extra_fields={},
+                assigned_lawyer_id=str(lawyer_main.id),
+            )
+            db.add_all([request_new, request_progress, request_waiting, request_overdue])
             db.flush()
 
             entered_progress_at = datetime.now(timezone.utc) - timedelta(hours=2)
+            entered_overdue_at = datetime.now(timezone.utc) - timedelta(hours=30)
             db.add(
                 StatusHistory(
                     request_id=request_progress.id,
@@ -1301,31 +1416,46 @@ class AdminUniversalCrudTests(unittest.TestCase):
                     created_at=entered_progress_at,
                 )
             )
+            db.add(
+                StatusHistory(
+                    request_id=request_overdue.id,
+                    from_status="NEW",
+                    to_status="IN_PROGRESS",
+                    changed_by_admin_id=None,
+                    comment="overdue",
+                    created_at=entered_overdue_at,
+                )
+            )
             db.commit()
 
             request_new_id = str(request_new.id)
             request_progress_id = str(request_progress.id)
             request_waiting_id = str(request_waiting.id)
+            request_overdue_id = str(request_overdue.id)
             lawyer_main_id = str(lawyer_main.id)
+            group_new_id = str(group_new.id)
+            group_progress_id = str(group_progress.id)
 
         admin_headers = self._auth_headers("ADMIN", email="root@example.com")
         admin_response = self.client.get("/api/admin/requests/kanban?limit=100", headers=admin_headers)
         self.assertEqual(admin_response.status_code, 200)
         admin_payload = admin_response.json()
         self.assertEqual(admin_payload["scope"], "ADMIN")
-        self.assertEqual(admin_payload["total"], 3)
+        self.assertEqual(admin_payload["total"], 4)
         rows = {item["id"]: item for item in (admin_payload.get("rows") or [])}
         self.assertIn(request_new_id, rows)
         self.assertIn(request_progress_id, rows)
         self.assertIn(request_waiting_id, rows)
-        self.assertEqual(rows[request_new_id]["status_group"], "NEW")
-        self.assertEqual(rows[request_progress_id]["status_group"], "IN_PROGRESS")
+        self.assertIn(request_overdue_id, rows)
+        self.assertEqual(rows[request_new_id]["status_group"], group_new_id)
+        self.assertEqual(rows[request_progress_id]["status_group"], group_progress_id)
         self.assertEqual(rows[request_progress_id]["assigned_lawyer_id"], lawyer_main_id)
         transitions = rows[request_progress_id].get("available_transitions") or []
         self.assertTrue(any(item.get("to_status") == "WAITING_CLIENT" for item in transitions))
         self.assertEqual(rows[request_progress_id]["case_deadline_at"], "2031-01-01T10:00:00+00:00")
         self.assertIsNotNone(rows[request_progress_id]["sla_deadline_at"])
         self.assertFalse(bool(admin_payload.get("truncated")))
+        self.assertEqual([item.get("label") for item in (admin_payload.get("columns") or [])][:4], ["Новые", "В работе", "Ожидание", "Завершены"])
 
         lawyer_headers = self._auth_headers("LAWYER", email="lawyer.kanban@example.com", sub=lawyer_main_id)
         lawyer_response = self.client.get("/api/admin/requests/kanban?limit=100", headers=lawyer_headers)
@@ -1335,8 +1465,43 @@ class AdminUniversalCrudTests(unittest.TestCase):
         lawyer_rows = {item["id"]: item for item in (lawyer_payload.get("rows") or [])}
         self.assertIn(request_new_id, lawyer_rows)
         self.assertIn(request_progress_id, lawyer_rows)
+        self.assertIn(request_overdue_id, lawyer_rows)
         self.assertNotIn(request_waiting_id, lawyer_rows)
-        self.assertEqual(lawyer_payload["total"], 2)
+        self.assertEqual(lawyer_payload["total"], 3)
+
+        filtered_by_lawyer = self.client.get(
+            "/api/admin/requests/kanban",
+            headers=admin_headers,
+            params={
+                "limit": 100,
+                "filters": json.dumps([{"field": "assigned_lawyer_id", "op": "=", "value": lawyer_main_id}]),
+            },
+        )
+        self.assertEqual(filtered_by_lawyer.status_code, 200)
+        filtered_rows = {item["id"] for item in (filtered_by_lawyer.json().get("rows") or [])}
+        self.assertEqual(filtered_rows, {request_progress_id, request_overdue_id})
+
+        filtered_overdue = self.client.get(
+            "/api/admin/requests/kanban",
+            headers=admin_headers,
+            params={
+                "limit": 100,
+                "filters": json.dumps([{"field": "overdue", "op": "=", "value": True}]),
+            },
+        )
+        self.assertEqual(filtered_overdue.status_code, 200)
+        overdue_rows = {item["id"] for item in (filtered_overdue.json().get("rows") or [])}
+        self.assertEqual(overdue_rows, {request_overdue_id})
+
+        sorted_by_deadline = self.client.get(
+            "/api/admin/requests/kanban",
+            headers=admin_headers,
+            params={"limit": 100, "sort_mode": "deadline"},
+        )
+        self.assertEqual(sorted_by_deadline.status_code, 200)
+        sorted_rows = sorted_by_deadline.json().get("rows") or []
+        self.assertTrue(sorted_rows)
+        self.assertEqual(sorted_rows[0]["id"], request_overdue_id)
 
     def test_lawyer_can_claim_unassigned_request_and_takeover_is_forbidden(self):
         with self.SessionLocal() as db:

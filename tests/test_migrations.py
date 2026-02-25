@@ -84,6 +84,7 @@ class MigrationTests(unittest.TestCase):
             "table_availability",
             "topics",
             "statuses",
+            "status_groups",
             "form_fields",
             "topic_required_fields",
             "topic_data_templates",
@@ -108,7 +109,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0017_transition_requirements")
+        self.assertEqual(version, "0018_status_groups")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -117,6 +118,7 @@ class MigrationTests(unittest.TestCase):
             "table_availability",
             "topics",
             "statuses",
+            "status_groups",
             "form_fields",
             "topic_required_fields",
             "topic_data_templates",
@@ -202,6 +204,15 @@ class MigrationTests(unittest.TestCase):
         columns = {column["name"] for column in self.inspector.get_columns("statuses")}
         self.assertIn("kind", columns)
         self.assertIn("invoice_template", columns)
+        self.assertIn("status_group_id", columns)
+
+    def test_status_groups_contains_core_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("status_groups")}
+        self.assertIn("id", columns)
+        self.assertIn("name", columns)
+        self.assertIn("sort_order", columns)
+        self.assertIn("created_at", columns)
+        self.assertIn("responsible", columns)
 
     def test_clients_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("clients")}

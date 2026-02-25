@@ -127,6 +127,7 @@
   };
   const TABLE_KEY_ALIASES = {
     form_fields: "formFields",
+    status_groups: "statusGroups",
     topic_required_fields: "topicRequiredFields",
     topic_data_templates: "topicDataTemplates",
     topic_status_transitions: "statusTransitions",
@@ -278,18 +279,35 @@
       : date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   }
 
+  function fmtKanbanDate(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const yy = String(date.getFullYear()).slice(-2);
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mi = String(date.getMinutes()).padStart(2, "0");
+    return dd + ":" + mm + ":" + yy + " " + hh + ":" + mi;
+  }
+
+  function resolveDeadlineTone(value) {
+    if (!value) return "ok";
+    const time = new Date(value).getTime();
+    if (!Number.isFinite(time)) return "ok";
+    const delta = time - Date.now();
+    const fourDaysMs = 4 * 24 * 60 * 60 * 1000;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    if (delta > fourDaysMs) return "ok";
+    if (delta > oneDayMs) return "warn";
+    return "danger";
+  }
+
   function fmtAmount(value) {
     if (value === null || value === undefined || value === "") return "-";
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return String(value);
     return numeric.toLocaleString("ru-RU");
-  }
-
-  function isPastDeadline(value) {
-    if (!value) return false;
-    const time = new Date(value).getTime();
-    if (!Number.isFinite(time)) return false;
-    return time < Date.now();
   }
 
   function fmtBytes(value) {
@@ -323,6 +341,15 @@
   function listPreview(value, emptyLabel) {
     const items = normalizeStringList(value);
     return items.length ? items.join(", ") : emptyLabel;
+  }
+
+  function normalizeReferenceMeta(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const table = String(raw.table || "").trim();
+    const valueField = String(raw.value_field || "id").trim() || "id";
+    const labelField = String(raw.label_field || valueField).trim() || valueField;
+    if (!table) return null;
+    return { table, value_field: valueField, label_field: labelField };
   }
 
   function userInitials(name, email) {
@@ -877,7 +904,97 @@
     );
   }
 
+  function KanbanSortModal({ open, value, status, onChange, onClose, onSubmit }) {
+    if (!open) return null;
+    return (
+      <Overlay open={open} id="kanban-sort-overlay" onClose={(event) => event.target.id === "kanban-sort-overlay" && onClose()}>
+        <div className="modal" style={{ width: "min(520px, 100%)" }} onClick={(event) => event.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3>Сортировка канбана</h3>
+              <p className="muted" style={{ marginTop: "0.35rem" }}>
+                Выберите способ сортировки карточек.
+              </p>
+            </div>
+            <button className="close" type="button" onClick={onClose}>
+              ×
+            </button>
+          </div>
+          <form className="stack" onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="kanban-sort-mode">Тип сортировки</label>
+              <select id="kanban-sort-mode" value={value} onChange={onChange}>
+                <option value="created_newest">Дата заявки (новые сверху)</option>
+                <option value="lawyer">Юрист</option>
+                <option value="deadline">Дедлайн</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+              <button className="btn" type="submit">
+                Ок
+              </button>
+              <button className="btn secondary" type="button" onClick={onClose}>
+                Отмена
+              </button>
+            </div>
+            <StatusLine status={status} />
+          </form>
+        </div>
+      </Overlay>
+    );
+  }
+
   function AttachmentPreviewModal({ open, title, url, fileName, mimeType, onClose }) {
+    const [resolvedUrl, setResolvedUrl] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+
+    useEffect(() => {
+      if (!open || !url) {
+        setResolvedUrl("");
+        setLoading(false);
+        setError("");
+        return;
+      }
+      const kind = detectAttachmentPreviewKind(fileName, mimeType);
+      if (kind === "none") {
+        setResolvedUrl("");
+        setLoading(false);
+        setError("");
+        return;
+      }
+
+      let cancelled = false;
+      let objectUrl = "";
+      setLoading(true);
+      setError("");
+      setResolvedUrl("");
+
+      (async () => {
+        try {
+          const response = await fetch(url, { credentials: "same-origin" });
+          if (!response.ok) throw new Error("Не удалось загрузить файл для предпросмотра");
+          const blob = await response.blob();
+          objectUrl = URL.createObjectURL(blob);
+          if (cancelled) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+          }
+          setResolvedUrl(objectUrl);
+          setLoading(false);
+        } catch (err) {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : "Не удалось открыть предпросмотр");
+          setLoading(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+    }, [fileName, mimeType, open, url]);
+
     if (!open || !url) return null;
     const kind = detectAttachmentPreviewKind(fileName, mimeType);
     return (
@@ -885,18 +1002,40 @@
         <div className="modal request-preview-modal" onClick={(event) => event.stopPropagation()}>
           <div className="modal-head">
             <h3>{title || fileName || "Предпросмотр файла"}</h3>
-            <button className="close" type="button" onClick={onClose}>
-              ×
-            </button>
+            <div className="request-preview-head-actions">
+              <a
+                className="icon-btn file-action-btn request-preview-download-icon"
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Скачать файл"
+                data-tooltip="Скачать"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path
+                    d="M12 3a1 1 0 0 1 1 1v8.17l2.58-2.58a1 1 0 1 1 1.42 1.42l-4.3 4.3a1 1 0 0 1-1.4 0l-4.3-4.3a1 1 0 0 1 1.42-1.42L11 12.17V4a1 1 0 0 1 1-1zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </a>
+              <button className="close" type="button" onClick={onClose}>
+                ×
+              </button>
+            </div>
           </div>
           <div className="request-preview-body">
-            {kind === "image" ? <img className="request-preview-image" src={url} alt={fileName || "attachment"} /> : null}
-            {kind === "video" ? <video className="request-preview-video" src={url} controls preload="metadata" /> : null}
-            {kind === "pdf" ? <iframe className="request-preview-frame" src={url} title={fileName || "preview"} /> : null}
+            {loading ? <p className="request-preview-note">Загрузка предпросмотра...</p> : null}
+            {error ? <p className="request-preview-note">{error}</p> : null}
+            {!loading && !error && kind === "image" && resolvedUrl ? (
+              <img className="request-preview-image" src={resolvedUrl} alt={fileName || "attachment"} />
+            ) : null}
+            {!loading && !error && kind === "video" && resolvedUrl ? (
+              <video className="request-preview-video" src={resolvedUrl} controls preload="metadata" />
+            ) : null}
+            {!loading && !error && kind === "pdf" && resolvedUrl ? (
+              <iframe className="request-preview-frame" src={resolvedUrl} title={fileName || "preview"} />
+            ) : null}
             {kind === "none" ? <p className="request-preview-note">Для этого типа файла доступно только открытие или скачивание.</p> : null}
-            <a className="btn secondary btn-sm request-preview-download" href={url} target="_blank" rel="noreferrer">
-              Открыть / скачать
-            </a>
           </div>
         </div>
       </Overlay>
@@ -909,7 +1048,14 @@
     rows,
     role,
     actorId,
+    filters,
     onRefresh,
+    onOpenFilter,
+    onRemoveFilter,
+    onEditFilter,
+    getFilterChipLabel,
+    onOpenSort,
+    sortActive,
     onOpenRequest,
     onClaimRequest,
     onMoveRequest,
@@ -928,9 +1074,6 @@
         const group = String(row?.status_group || fallbackStatusGroup(row?.status_code));
         if (!map[group]) map[group] = [];
         map[group].push(row);
-      });
-      Object.keys(map).forEach((key) => {
-        map[key].sort((a, b) => String(b?.created_at || "").localeCompare(String(a?.created_at || "")));
       });
       return map;
     }, [rows, safeColumns]);
@@ -960,12 +1103,24 @@
         <div className="section-head">
           <div>
             <h2>Канбан заявок</h2>
-            <p className="muted">Группы статусов для разных флоу тем: новые, работа, ожидание, завершение.</p>
+            <p className="muted">Группировка по группам статусов и серверная фильтрация карточек.</p>
           </div>
-          <button className="btn secondary" type="button" onClick={onRefresh} disabled={loading}>
-            Обновить
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button className={"btn secondary" + (sortActive ? " active-success" : "")} type="button" onClick={onOpenSort}>
+              Сортировка
+            </button>
+            <button className="btn secondary" type="button" onClick={onRefresh} disabled={loading}>
+              Обновить
+            </button>
+          </div>
         </div>
+        <FilterToolbar
+          filters={filters || []}
+          onOpen={onOpenFilter}
+          onRemove={onRemoveFilter}
+          onEdit={onEditFilter}
+          getChipLabel={getFilterChipLabel}
+        />
         <div className="kanban-board" id="kanban-board">
           {safeColumns.map((column) => {
             const key = String(column.key || "");
@@ -1000,12 +1155,35 @@
                         (!isUnassigned && String(row.assigned_lawyer_id || "").trim() === String(actorId || "").trim());
                       const transitionOptions = Array.isArray(row.available_transitions) ? row.available_transitions : [];
                       const deadline = row.sla_deadline_at || row.case_deadline_at || "";
+                      const deadlineTone = resolveDeadlineTone(deadline);
+                      const unreadTypes = new Set();
+                      if (role === "LAWYER") {
+                        if (row.lawyer_has_unread_updates && row.lawyer_unread_event_type) unreadTypes.add(String(row.lawyer_unread_event_type).toUpperCase());
+                      } else {
+                        if (row.client_has_unread_updates && row.client_unread_event_type) unreadTypes.add(String(row.client_unread_event_type).toUpperCase());
+                        if (row.lawyer_has_unread_updates && row.lawyer_unread_event_type) unreadTypes.add(String(row.lawyer_unread_event_type).toUpperCase());
+                      }
+                      const hasUnreadMessage = unreadTypes.has("MESSAGE");
+                      const hasUnreadAttachment = unreadTypes.has("ATTACHMENT");
                       return (
                         <article
                           key={requestId}
-                          className="kanban-card"
+                          className={"kanban-card" + (canMove ? " draggable" : "")}
                           draggable={canMove}
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => onOpenRequest(requestId, event)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onOpenRequest(requestId, event);
+                            }
+                          }}
                           onDragStart={(event) => {
+                            if (!canMove) {
+                              event.preventDefault();
+                              return;
+                            }
                             setDraggingId(requestId);
                             event.dataTransfer.effectAllowed = "move";
                             event.dataTransfer.setData("text/plain", requestId);
@@ -1024,27 +1202,28 @@
                           <p className="kanban-card-desc">{String(row.description || "Описание не заполнено")}</p>
                           <div className="kanban-card-meta">
                             <span>{row.client_name || "-"}</span>
-                            <span>{fmtDate(row.created_at)}</span>
+                            <span>{fmtKanbanDate(row.created_at)}</span>
                           </div>
                           <div className="kanban-card-meta">
                             <span>{row.topic_code || "-"}</span>
                             <span>{row.assigned_lawyer_name || (isUnassigned ? "Не назначено" : row.assigned_lawyer_id || "-")}</span>
                           </div>
                           <div className="kanban-card-meta">
-                            <span>
-                              {role === "LAWYER"
-                                ? row.lawyer_has_unread_updates
-                                  ? "Есть новые обновления"
-                                  : "Обновлений нет"
-                                : row.client_has_unread_updates || row.lawyer_has_unread_updates
-                                  ? "Есть непрочитанные обновления"
-                                  : "Обновлений нет"}
-                            </span>
-                            <span className={deadline && isPastDeadline(deadline) ? "danger-text" : ""}>
-                              {deadline ? "Дедлайн: " + fmtDate(deadline) : "Дедлайн: -"}
-                            </span>
+                            <div className="kanban-update-icons">
+                              <span className={"kanban-update-icon" + (hasUnreadMessage ? " is-unread" : "")} title="Непрочитанные сообщения">
+                                💬
+                              </span>
+                              <span className={"kanban-update-icon" + (hasUnreadAttachment ? " is-unread" : "")} title="Непрочитанные файлы">
+                                📎
+                              </span>
+                            </div>
+                            <span className={"kanban-deadline-chip tone-" + deadlineTone}>{deadline ? fmtKanbanDate(deadline) : "—"}</span>
                           </div>
-                          <div className="kanban-card-actions">
+                          <div
+                            className="kanban-card-actions"
+                            onClick={(event) => event.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
+                          >
                             {canClaim ? (
                               <button className="btn secondary btn-sm" type="button" onClick={() => onClaimRequest(requestId)}>
                                 Взять в работу
@@ -1054,6 +1233,7 @@
                               <select
                                 className="kanban-transition-select"
                                 defaultValue=""
+                                onClick={(event) => event.stopPropagation()}
                                 onChange={(event) => {
                                   const targetStatus = String(event.target.value || "");
                                   if (!targetStatus) return;
@@ -1069,7 +1249,6 @@
                                 ))}
                               </select>
                             ) : null}
-                            <IconButton icon="👁" tooltip="Открыть заявку" onClick={(event) => onOpenRequest(requestId, event)} />
                           </div>
                         </article>
                       );
@@ -1098,8 +1277,6 @@
     selectedFiles,
     fileUploading,
     status,
-    onBack,
-    onRefresh,
     onMessageChange,
     onSendMessage,
     onFilesSelect,
@@ -1140,13 +1317,14 @@
     };
 
     const row = requestData && typeof requestData === "object" ? requestData : null;
+    const totalFilesBytes = (attachments || []).reduce((acc, item) => acc + Number(item?.size_bytes || 0), 0);
     const summaryFields = [
       { key: "track", label: "Номер заявки", value: row?.track_number || trackNumber || "-", code: true },
       { key: "status", label: "Статус", value: row ? statusLabel(row.status_code) : "-" },
       { key: "topic", label: "Тема", value: row?.topic_code || "-" },
       { key: "client", label: "Клиент", value: row?.client_name || "-" },
       { key: "phone", label: "Телефон", value: row?.client_phone || "-" },
-      { key: "lawyer", label: "Назначенный юрист", value: row?.assigned_lawyer_id || "-" },
+      { key: "lawyer", label: "Назначенный юрист", value: row?.assigned_lawyer_name || row?.assigned_lawyer_id || "-" },
       { key: "rate", label: "Ставка (фикс.)", value: fmtAmount(row?.effective_rate) },
       { key: "invoice", label: "Сумма счета", value: fmtAmount(row?.invoice_amount) },
       { key: "paid", label: "Дата оплаты", value: fmtDate(row?.paid_at) },
@@ -1156,16 +1334,65 @@
     ];
 
     const extraFields = row?.extra_fields && typeof row.extra_fields === "object" && !Array.isArray(row.extra_fields) ? Object.entries(row.extra_fields) : [];
+    const attachmentsByMessageId = useMemo(() => {
+      const map = new Map();
+      (attachments || []).forEach((item) => {
+        const messageId = String(item?.message_id || "").trim();
+        if (!messageId) return;
+        if (!map.has(messageId)) map.set(messageId, []);
+        map.get(messageId).push(item);
+      });
+      return map;
+    }, [attachments]);
+
+    const openAttachmentFromMessage = (item) => {
+      if (!item?.download_url) return;
+      const kind = detectAttachmentPreviewKind(item.file_name, item.mime_type);
+      if (kind === "none") {
+        window.open(String(item.download_url), "_blank", "noopener,noreferrer");
+        return;
+      }
+      openPreview(item);
+    };
+
     const chatTimelineItems = [];
     let previousDate = "";
-    (messages || []).forEach((item, index) => {
-      const dateLabel = fmtDateOnly(item?.created_at);
+    const timelineSource = [];
+    (messages || []).forEach((item) => {
+      timelineSource.push({
+        type: "message",
+        key: "msg-" + String(item?.id || Math.random()),
+        created_at: item?.created_at || null,
+        payload: item,
+      });
+    });
+    (attachments || [])
+      .filter((item) => !String(item?.message_id || "").trim())
+      .forEach((item) => {
+        timelineSource.push({
+          type: "file",
+          key: "file-" + String(item?.id || Math.random()),
+          created_at: item?.created_at || null,
+          payload: item,
+        });
+      });
+    timelineSource.sort((a, b) => {
+      const aTime = new Date(a.created_at || 0).getTime();
+      const bTime = new Date(b.created_at || 0).getTime();
+      if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+      if (!Number.isFinite(aTime)) return 1;
+      if (!Number.isFinite(bTime)) return -1;
+      if (aTime !== bTime) return aTime - bTime;
+      return String(a.key).localeCompare(String(b.key), "ru");
+    });
+    timelineSource.forEach((entry, index) => {
+      const dateLabel = fmtDateOnly(entry.created_at);
       const normalizedDate = dateLabel && dateLabel !== "-" ? dateLabel : "Без даты";
       if (normalizedDate !== previousDate) {
         chatTimelineItems.push({ type: "date", key: "date-" + normalizedDate + "-" + index, label: normalizedDate });
         previousDate = normalizedDate;
       }
-      chatTimelineItems.push({ type: "message", key: "msg-" + String(item?.id || index), payload: item });
+      chatTimelineItems.push(entry);
     });
 
     const routeNodes =
@@ -1177,22 +1404,6 @@
 
     return (
       <div className="block">
-        <div className="request-workspace-head">
-          <div>
-            <h3>{trackNumber ? "Работа с заявкой " + trackNumber : "Работа с заявкой"}</h3>
-            <p className="breadcrumbs">
-              <b>Заявки</b> {" -> "} <b>{trackNumber ? "Заявка " + trackNumber : "Карточка заявки"}</b>
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
-            <button className="btn secondary btn-sm" type="button" onClick={onBack}>
-              Назад к заявкам
-            </button>
-            <button className="btn secondary btn-sm" type="button" onClick={onRefresh} disabled={loading || fileUploading}>
-              Обновить
-            </button>
-          </div>
-        </div>
         <div className="request-workspace-layout">
           <div className="request-main-column">
             <div className="block">
@@ -1305,6 +1516,32 @@
                         <li key={entry.key} className="chat-date-divider">
                           <span>{entry.label}</span>
                         </li>
+                      ) : entry.type === "file" ? (
+                        <li
+                          key={entry.key}
+                          className={
+                            "chat-message " +
+                            (String(entry.payload?.responsible || "").toUpperCase().includes("КЛИЕНТ") ? "incoming" : "outgoing")
+                          }
+                        >
+                          <div className="chat-message-author">{String(entry.payload?.responsible || "Система")}</div>
+                          <div className="chat-message-bubble">
+                            <div className="chat-message-files">
+                              <button
+                                type="button"
+                                className="chat-message-file-chip"
+                                onClick={() => openAttachmentFromMessage(entry.payload)}
+                                title={String(entry.payload?.file_name || "Файл")}
+                              >
+                                <span className="chat-message-file-icon" aria-hidden="true">
+                                  📎
+                                </span>
+                                <span className="chat-message-file-name">{String(entry.payload?.file_name || "Файл")}</span>
+                              </button>
+                            </div>
+                            <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
+                          </div>
+                        </li>
                       ) : (
                         <li
                           key={entry.key}
@@ -1316,6 +1553,30 @@
                           <div className="chat-message-author">{String(entry.payload?.author_name || entry.payload?.author_type || "Система")}</div>
                           <div className="chat-message-bubble">
                             <p className="chat-message-text">{String(entry.payload?.body || "")}</p>
+                            {(() => {
+                              const messageId = String(entry.payload?.id || "").trim();
+                              if (!messageId) return null;
+                              const messageFiles = attachmentsByMessageId.get(messageId) || [];
+                              if (!messageFiles.length) return null;
+                              return (
+                                <div className="chat-message-files">
+                                  {messageFiles.map((file) => (
+                                    <button
+                                      type="button"
+                                      key={String(file.id)}
+                                      className="chat-message-file-chip"
+                                      onClick={() => openAttachmentFromMessage(file)}
+                                      title={String(file.file_name || "Файл")}
+                                    >
+                                      <span className="chat-message-file-icon" aria-hidden="true">
+                                        📎
+                                      </span>
+                                      <span className="chat-message-file-name">{String(file.file_name || "Файл")}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
                           </div>
                         </li>
@@ -1450,9 +1711,9 @@
                   )}
                 </ul>
                 <div className="request-files-tab-actions">
-                  <button className="btn secondary btn-sm" type="button" onClick={() => setChatTab("chat")}>
-                    Загрузить через чат
-                  </button>
+                  <span className="muted">
+                    {"Сообщений: " + String((messages || []).length) + " • Общий размер файлов: " + fmtBytes(totalFilesBytes)}
+                  </span>
                 </div>
               </div>
             )}
@@ -1620,6 +1881,7 @@
     const [kanbanLoading, setKanbanLoading] = useState(false);
 
     const [tables, setTables] = useState({
+      kanban: createTableState(),
       requests: createTableState(),
       invoices: createTableState(),
       quotes: createTableState(),
@@ -1634,6 +1896,7 @@
       availableTables: createTableState(),
     });
     const [tableCatalog, setTableCatalog] = useState([]);
+    const [referenceRowsMap, setReferenceRowsMap] = useState({});
 
     const [dictionaries, setDictionaries] = useState({
       topics: [],
@@ -1669,6 +1932,11 @@
       rawValue: "",
       editIndex: null,
     });
+    const [kanbanSortModal, setKanbanSortModal] = useState({
+      open: false,
+      value: "created_newest",
+    });
+    const [kanbanSortApplied, setKanbanSortApplied] = useState(false);
     const [reassignModal, setReassignModal] = useState({
       open: false,
       requestId: null,
@@ -1777,6 +2045,43 @@
       return map;
     }, [tableCatalog]);
 
+    const getReferenceOptions = useCallback(
+      (rawReference) => {
+        const reference = normalizeReferenceMeta(rawReference);
+        if (!reference) return [];
+        const rows = referenceRowsMap[reference.table] || [];
+        const map = new Map();
+        rows.forEach((row) => {
+          if (!row || typeof row !== "object") return;
+          const rawValue = row[reference.value_field];
+          if (rawValue == null || rawValue === "") return;
+          const value = String(rawValue);
+          const labelRaw = row[reference.label_field];
+          const label = String(labelRaw == null || labelRaw === "" ? rawValue : labelRaw);
+          if (!map.has(value)) map.set(value, label);
+        });
+        return Array.from(map.entries())
+          .map(([value, label]) => ({ value, label }))
+          .sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
+      },
+      [referenceRowsMap]
+    );
+
+    const resolveReferenceLabel = useCallback(
+      (rawReference, rawValue) => {
+        if (rawValue == null || rawValue === "") return "-";
+        const value = String(rawValue);
+        const options = getReferenceOptions(rawReference);
+        const found = options.find((item) => String(item.value) === value);
+        return found ? found.label : value;
+      },
+      [getReferenceOptions]
+    );
+
+    const getStatusGroupOptions = useCallback(() => {
+      return getReferenceOptions({ table: "status_groups", value_field: "id", label_field: "name" });
+    }, [getReferenceOptions]);
+
     const dictionaryTableItems = useMemo(() => {
       return (tableCatalog || [])
         .filter((item) => item && item.section === "dictionary" && Array.isArray(item.actions) && item.actions.includes("query"))
@@ -1815,6 +2120,16 @@
 
     const getFilterFields = useCallback(
       (tableKey) => {
+        if (tableKey === "kanban") {
+          return [
+            { field: "assigned_lawyer_id", label: "Юрист", type: "reference", options: getLawyerOptions },
+            { field: "client_name", label: "Клиент", type: "text" },
+            { field: "status_code", label: "Статус", type: "reference", options: getStatusOptions },
+            { field: "created_at", label: "Дата", type: "date" },
+            { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "overdue", label: "Просрочен", type: "boolean" },
+          ];
+        }
         if (tableKey === "requests") {
           return [
             { field: "track_number", label: "Номер заявки", type: "text" },
@@ -1864,6 +2179,7 @@
           return [
             { field: "code", label: "Код", type: "text" },
             { field: "name", label: "Название", type: "text" },
+            { field: "status_group_id", label: "Группа", type: "reference", options: getStatusGroupOptions },
             { field: "kind", label: "Тип", type: "enum", options: getStatusKindOptions },
             { field: "enabled", label: "Активен", type: "boolean" },
             { field: "sort_order", label: "Порядок", type: "number" },
@@ -1943,16 +2259,23 @@
               return { field: name, label, type: "reference", options: getStatusOptions };
             }
             if (name === "field_key") return { field: name, label, type: "reference", options: getFormFieldKeyOptions };
+            const reference = normalizeReferenceMeta(column.reference);
+            if (reference) {
+              return { field: name, label, type: "reference", options: () => getReferenceOptions(reference) };
+            }
             return { field: name, label, type: metaKindToFilterType(column.kind) };
           });
       },
       [
+        getReferenceOptions,
         tableCatalogMap,
         getFormFieldKeyOptions,
         getFormFieldTypeOptions,
         getInvoiceStatusOptions,
         getLawyerOptions,
         getRoleOptions,
+        role,
+        getStatusGroupOptions,
         getStatusKindOptions,
         getStatusOptions,
         getTopicOptions,
@@ -1960,11 +2283,13 @@
     );
 
     const getTableLabel = useCallback((tableKey) => {
+      if (tableKey === "kanban") return "Канбан";
       if (tableKey === "requests") return "Заявки";
       if (tableKey === "invoices") return "Счета";
       if (tableKey === "quotes") return "Цитаты";
       if (tableKey === "topics") return "Темы";
       if (tableKey === "statuses") return "Статусы";
+      if (tableKey === "statusGroups") return "Группы статусов";
       if (tableKey === "formFields") return "Поля формы";
       if (tableKey === "topicRequiredFields") return "Обязательные поля по темам";
       if (tableKey === "topicDataTemplates") return "Шаблоны дозапроса по темам";
@@ -2055,7 +2380,7 @@
     const getRecordFields = useCallback(
       (tableKey) => {
         if (tableKey === "requests") {
-          return [
+          const fields = [
             { key: "track_number", label: "Номер заявки", type: "text", optional: true, placeholder: "Оставьте пустым для автогенерации" },
             { key: "client_name", label: "Клиент", type: "text", required: true },
             { key: "client_phone", label: "Телефон", type: "text", required: true },
@@ -2063,9 +2388,12 @@
             { key: "status_code", label: "Статус", type: "reference", required: true, options: getStatusOptions },
             { key: "description", label: "Описание", type: "textarea", optional: true },
             { key: "extra_fields", label: "Дополнительные поля (JSON)", type: "json", optional: true, defaultValue: "{}" },
-            { key: "assigned_lawyer_id", label: "Назначенный юрист (ID)", type: "text", optional: true },
-            { key: "effective_rate", label: "Ставка (фикс.)", type: "number", optional: true },
           ];
+          if (role !== "LAWYER") {
+            fields.push({ key: "assigned_lawyer_id", label: "Назначенный юрист", type: "reference", optional: true, options: getLawyerOptions });
+            fields.push({ key: "effective_rate", label: "Ставка (фикс.)", type: "number", optional: true });
+          }
+          return fields;
         }
         if (tableKey === "invoices") {
           return [
@@ -2099,6 +2427,7 @@
           return [
             { key: "code", label: "Код", type: "text", required: true },
             { key: "name", label: "Название", type: "text", required: true },
+            { key: "status_group_id", label: "Группа", type: "reference", optional: true, options: getStatusGroupOptions },
             { key: "kind", label: "Тип", type: "enum", required: true, options: getStatusKindOptions, defaultValue: "DEFAULT" },
             { key: "invoice_template", label: "Шаблон счета", type: "textarea", optional: true, placeholder: "Доступные поля: {track_number}, {client_name}, {topic_code}, {amount}" },
             { key: "enabled", label: "Активен", type: "boolean", defaultValue: "true" },
@@ -2197,22 +2526,26 @@
           .map((column) => {
             const key = String(column.name || "");
             const requiredOnCreate = Boolean(column.required_on_create);
+            const reference = normalizeReferenceMeta(column.reference);
             return {
               key,
               label: String(column.label || humanizeKey(key)),
-              type: metaKindToRecordType(column.kind),
+              type: reference ? "reference" : metaKindToRecordType(column.kind),
+              options: reference ? () => getReferenceOptions(reference) : undefined,
               requiredOnCreate,
               optional: !requiredOnCreate,
             };
           });
       },
       [
+        getReferenceOptions,
         tableCatalogMap,
         getFormFieldKeyOptions,
         getFormFieldTypeOptions,
         getInvoiceStatusOptions,
         getLawyerOptions,
         getRoleOptions,
+        getStatusGroupOptions,
         getStatusKindOptions,
         getStatusOptions,
         getTopicOptions,
@@ -2440,6 +2773,52 @@
       [api, setStatus, setTableState]
     );
 
+    const loadReferenceRows = useCallback(
+      async (catalogRows, tokenOverride) => {
+        const rows = Array.isArray(catalogRows) ? catalogRows : [];
+        const byTable = {};
+        rows.forEach((item) => {
+          const table = String(item?.table || "");
+          if (!table) return;
+          byTable[table] = item;
+        });
+        const references = new Set();
+        rows.forEach((item) => {
+          (item?.columns || []).forEach((column) => {
+            const meta = normalizeReferenceMeta(column?.reference);
+            if (meta?.table) references.add(meta.table);
+          });
+        });
+        if (!references.size) {
+          setReferenceRowsMap({});
+          return;
+        }
+        const nextMap = {};
+        await Promise.all(
+          Array.from(references.values()).map(async (table) => {
+            const meta = byTable[table];
+            const endpoint = String(meta?.query_endpoint || ("/api/admin/crud/" + table + "/query"));
+            const sort = Array.isArray(meta?.default_sort) && meta.default_sort.length ? meta.default_sort : [{ field: "created_at", dir: "desc" }];
+            try {
+              const data = await api(
+                endpoint,
+                {
+                  method: "POST",
+                  body: buildUniversalQuery([], sort, 500, 0),
+                },
+                tokenOverride
+              );
+              nextMap[table] = Array.isArray(data?.rows) ? data.rows : [];
+            } catch (_) {
+              nextMap[table] = [];
+            }
+          })
+        );
+        setReferenceRowsMap(nextMap);
+      },
+      [api]
+    );
+
     useEffect(() => {
       if (configActiveKey !== "statusTransitions") {
         statusDesignerLoadedTopicRef.current = "";
@@ -2508,11 +2887,20 @@
     );
 
     const loadKanban = useCallback(
-      async (tokenOverride) => {
+      async (tokenOverride, options) => {
+        const opts = options || {};
+        const currentKanbanState = tablesRef.current.kanban || createTableState();
+        const activeFilters = Array.isArray(opts.filtersOverride) ? [...opts.filtersOverride] : [...(currentKanbanState.filters || [])];
+        const currentSortMode = Array.isArray(currentKanbanState.sort) && currentKanbanState.sort[0] ? String(currentKanbanState.sort[0].field || "") : "";
+        const activeSortMode =
+          String(opts.sortModeOverride || currentSortMode || kanbanSortModal.value || "created_newest").trim() || "created_newest";
+        const params = new URLSearchParams({ limit: "400", sort_mode: activeSortMode });
+        if (activeFilters.length) params.set("filters", JSON.stringify(activeFilters));
+
         setKanbanLoading(true);
         setStatus("kanban", "Загрузка...", "");
         try {
-          const data = await api("/api/admin/requests/kanban?limit=400", {}, tokenOverride);
+          const data = await api("/api/admin/requests/kanban?" + params.toString(), {}, tokenOverride);
           const rows = Array.isArray(data.rows) ? data.rows : [];
           const columns = Array.isArray(data.columns) && data.columns.length ? data.columns : KANBAN_GROUPS;
           setKanbanData({
@@ -2520,6 +2908,15 @@
             columns,
             total: Number(data.total || rows.length),
             truncated: Boolean(data.truncated),
+          });
+          setTableState("kanban", {
+            ...currentKanbanState,
+            filters: activeFilters,
+            sort: [{ field: activeSortMode, dir: "asc" }],
+            rows,
+            total: Number(data.total || rows.length),
+            offset: 0,
+            showAll: false,
           });
           const tail = Boolean(data.truncated) ? " Показана ограниченная выборка." : "";
           setStatus("kanban", "Канбан обновлен." + tail, "ok");
@@ -2529,7 +2926,7 @@
           setKanbanLoading(false);
         }
       },
-      [api, setStatus]
+      [api, kanbanSortModal.value, setStatus, setTableState]
     );
 
     const loadMeta = useCallback(
@@ -2589,6 +2986,7 @@
               return { ...row, key, table: tableName };
             });
           setTableCatalog(catalogRows);
+          await loadReferenceRows(catalogRows, tokenOverride);
 
           const statusesMap = new Map(Object.entries(STATUS_LABELS).map(([code, name]) => [code, { code, name }]));
           (statusesData.rows || []).forEach((row) => {
@@ -2623,7 +3021,7 @@
           // Keep defaults when dictionary endpoints are unavailable.
         }
       },
-      [api]
+      [api, loadReferenceRows]
     );
 
     const updateAvailableTableState = useCallback(
@@ -2676,6 +3074,21 @@
             ...item,
             download_url: resolveAdminObjectSrc(item.s3_key, token),
           }));
+          const usersByEmail = new Map(
+            (dictionaries.users || [])
+              .filter((user) => user && user.email)
+              .map((user) => [String(user.email).toLowerCase(), String(user.name || user.email)])
+          );
+          const normalizedMessages = (messagesData.rows || []).map((item) => {
+            if (!item || typeof item !== "object") return item;
+            const authorType = String(item.author_type || "").toUpperCase();
+            const authorName = String(item.author_name || "").trim();
+            if ((authorType === "LAWYER" || authorType === "SYSTEM") && authorName.includes("@")) {
+              const mapped = usersByEmail.get(authorName.toLowerCase());
+              if (mapped) return { ...item, author_name: mapped };
+            }
+            return item;
+          });
           setRequestModal((prev) => ({
             ...prev,
             loading: false,
@@ -2683,7 +3096,7 @@
             trackNumber: String(row.track_number || ""),
             requestData: row,
             statusRouteNodes: Array.isArray(statusRouteData?.nodes) ? statusRouteData.nodes : [],
-            messages: messagesData.rows || [],
+            messages: normalizedMessages,
             attachments,
             selectedFiles: [],
             fileUploading: false,
@@ -2704,7 +3117,7 @@
           setStatus("requestModal", "Ошибка: " + error.message, "error");
         }
       },
-      [api, setStatus, token]
+      [api, dictionaries.users, setStatus, token]
     );
 
     const openRequestDetails = useCallback(
@@ -3030,12 +3443,13 @@
           }
           setStatus("recordForm", "Сохранено", "ok");
           await loadTable(tableKey, { resetOffset: true });
+          await loadReferenceRows(tableCatalog, undefined);
           setTimeout(() => closeRecordModal(), 250);
         } catch (error) {
           setStatus("recordForm", "Ошибка: " + error.message, "error");
         }
       },
-      [api, buildRecordPayload, closeRecordModal, loadTable, recordModal, resolveMutationConfig, setStatus]
+      [api, buildRecordPayload, closeRecordModal, loadReferenceRows, loadTable, recordModal, resolveMutationConfig, setStatus, tableCatalog]
     );
 
     const deleteRecord = useCallback(
@@ -3047,11 +3461,12 @@
           await api(endpoints.delete(id), { method: "DELETE" });
           setStatus(tableKey, "Запись удалена", "ok");
           await loadTable(tableKey, { resetOffset: true });
+          await loadReferenceRows(tableCatalog, undefined);
         } catch (error) {
           setStatus(tableKey, "Ошибка удаления: " + error.message, "error");
         }
       },
-      [api, loadTable, resolveMutationConfig, setStatus]
+      [api, loadReferenceRows, loadTable, resolveMutationConfig, setStatus, tableCatalog]
     );
 
     const claimRequest = useCallback(
@@ -3376,9 +3791,13 @@
         });
 
         closeFilterModal();
-        await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: nextFilters });
+        if (filterModal.tableKey === "kanban") {
+          await loadKanban(undefined, { filtersOverride: nextFilters });
+        } else {
+          await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: nextFilters });
+        }
       },
-      [closeFilterModal, filterModal, getFieldDef, loadTable, setStatus, setTableState]
+      [closeFilterModal, filterModal, getFieldDef, loadKanban, loadTable, setStatus, setTableState]
     );
 
     const clearFiltersFromModal = useCallback(async () => {
@@ -3391,8 +3810,12 @@
         showAll: false,
       });
       closeFilterModal();
-      await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: [] });
-    }, [closeFilterModal, filterModal.tableKey, loadTable, setTableState]);
+      if (filterModal.tableKey === "kanban") {
+        await loadKanban(undefined, { filtersOverride: [] });
+      } else {
+        await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: [] });
+      }
+    }, [closeFilterModal, filterModal.tableKey, loadKanban, loadTable, setTableState]);
 
     const removeFilterChip = useCallback(
       async (tableKey, index) => {
@@ -3405,9 +3828,50 @@
           offset: 0,
           showAll: false,
         });
-        await loadTable(tableKey, { resetOffset: true, filtersOverride: nextFilters });
+        if (tableKey === "kanban") {
+          await loadKanban(undefined, { filtersOverride: nextFilters });
+        } else {
+          await loadTable(tableKey, { resetOffset: true, filtersOverride: nextFilters });
+        }
       },
-      [loadTable, setTableState]
+      [loadKanban, loadTable, setTableState]
+    );
+
+    const openKanbanSortModal = useCallback(() => {
+      const tableState = tablesRef.current.kanban || createTableState();
+      const currentMode = Array.isArray(tableState.sort) && tableState.sort[0] ? String(tableState.sort[0].field || "") : "";
+      setKanbanSortModal({
+        open: true,
+        value: currentMode || "created_newest",
+      });
+      setStatus("kanbanSort", "", "");
+    }, [setStatus]);
+
+    const closeKanbanSortModal = useCallback(() => {
+      setKanbanSortModal((prev) => ({ ...prev, open: false }));
+      setStatus("kanbanSort", "", "");
+    }, [setStatus]);
+
+    const updateKanbanSortMode = useCallback((event) => {
+      setKanbanSortModal((prev) => ({ ...prev, value: String(event.target.value || "created_newest") }));
+    }, []);
+
+    const submitKanbanSortModal = useCallback(
+      async (event) => {
+        event.preventDefault();
+        const nextMode = String(kanbanSortModal.value || "created_newest");
+        const tableState = tablesRef.current.kanban || createTableState();
+        setTableState("kanban", {
+          ...tableState,
+          sort: [{ field: nextMode, dir: "asc" }],
+          offset: 0,
+          showAll: false,
+        });
+        setKanbanSortApplied(true);
+        closeKanbanSortModal();
+        await loadKanban(undefined, { sortModeOverride: nextMode });
+      },
+      [closeKanbanSortModal, kanbanSortModal.value, loadKanban, setTableState]
     );
 
     const loadPrevPage = useCallback(
@@ -3488,6 +3952,8 @@
       setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
       setRequestModal(createRequestModalState());
       setFilterModal({ open: false, tableKey: null, field: "", op: "=", rawValue: "", editIndex: null });
+      setKanbanSortModal({ open: false, value: "created_newest" });
+      setKanbanSortApplied(false);
       setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
       setDashboardData({ scope: "", cards: [], byStatus: {}, lawyerLoads: [], myUnreadByEvent: {} });
       setKanbanData({ rows: [], columns: KANBAN_GROUPS, total: 0, truncated: false });
@@ -3497,6 +3963,7 @@
       setReferencesExpanded(true);
       setTableCatalog([]);
       setTables({
+        kanban: createTableState(),
         requests: createTableState(),
         invoices: createTableState(),
         quotes: createTableState(),
@@ -3615,7 +4082,7 @@
       if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
     }, [configActiveKey, dictionaryTableItems]);
 
-    const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open;
+    const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open;
     useEffect(() => {
       document.body.classList.toggle("modal-open", anyOverlayOpen);
       return () => document.body.classList.remove("modal-open");
@@ -3626,6 +4093,7 @@
         if (event.key !== "Escape") return;
         setRecordModal((prev) => ({ ...prev, open: false }));
         setFilterModal((prev) => ({ ...prev, open: false }));
+        setKanbanSortModal((prev) => ({ ...prev, open: false }));
         setReassignModal((prev) => ({ ...prev, open: false }));
       };
       document.addEventListener("keydown", onEsc);
@@ -3830,6 +4298,16 @@
                 role={role}
                 actorId={userId}
                 onRefresh={() => loadKanban()}
+                filters={tables.kanban.filters}
+                onOpenFilter={() => openFilterModal("kanban")}
+                onRemoveFilter={(index) => removeFilterChip("kanban", index)}
+                onEditFilter={(index) => openFilterEditModal("kanban", index)}
+                getFilterChipLabel={(clause) => {
+                  const fieldDef = getFieldDef("kanban", clause.field);
+                  return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("kanban", clause);
+                }}
+                onOpenSort={openKanbanSortModal}
+                sortActive={kanbanSortApplied}
                 onOpenRequest={openRequestDetails}
                 onClaimRequest={claimRequest}
                 onMoveRequest={moveRequestFromKanban}
@@ -3889,7 +4367,7 @@
                     <td>{row.client_phone || "-"}</td>
                     <td>{statusLabel(row.status_code)}</td>
                     <td>{row.topic_code || "-"}</td>
-                    <td>{row.assigned_lawyer_id || "-"}</td>
+                    <td>{resolveReferenceLabel({ table: "admin_users", value_field: "id", label_field: "name" }, row.assigned_lawyer_id)}</td>
                     <td>{row.invoice_amount == null ? "-" : String(row.invoice_amount)}</td>
                     <td>{fmtDate(row.paid_at)}</td>
                     <td>{renderRequestUpdatesCell(row, role)}</td>
@@ -3922,8 +4400,22 @@
             <Section active={activeSection === "requestWorkspace"} id="section-request-workspace">
               <div className="section-head">
                 <div>
-                  <h2>Карточка заявки</h2>
-                  <p className="muted">Рабочая вкладка юриста/администратора по заявке.</p>
+                  <h2>{requestModal.trackNumber ? "Карточка заявки " + requestModal.trackNumber : "Карточка заявки"}</h2>
+                </div>
+                <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                  <button className="icon-btn workspace-head-icon" type="button" data-tooltip="Назад" aria-label="Назад" onClick={goBackFromRequestWorkspace}>
+                    ↩
+                  </button>
+                  <button
+                    className="icon-btn workspace-head-icon"
+                    type="button"
+                    data-tooltip="Обновить"
+                    aria-label="Обновить"
+                    onClick={refreshRequestModal}
+                    disabled={requestModal.loading || requestModal.fileUploading}
+                  >
+                    ↻
+                  </button>
                 </div>
               </div>
               <RequestWorkspace
@@ -3937,8 +4429,6 @@
                 selectedFiles={requestModal.selectedFiles || []}
                 fileUploading={Boolean(requestModal.fileUploading)}
                 status={getStatus("requestModal")}
-                onBack={goBackFromRequestWorkspace}
-                onRefresh={refreshRequestModal}
                 onMessageChange={updateRequestModalMessageDraft}
                 onSendMessage={submitRequestModalMessage}
                 onFilesSelect={appendRequestModalFiles}
@@ -4194,6 +4684,7 @@
                         headers={[
                           { key: "code", label: "Код", sortable: true, field: "code" },
                           { key: "name", label: "Название", sortable: true, field: "name" },
+                          { key: "status_group_id", label: "Группа", sortable: true, field: "status_group_id" },
                           { key: "kind", label: "Тип", sortable: true, field: "kind" },
                           { key: "enabled", label: "Активен", sortable: true, field: "enabled" },
                           { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
@@ -4202,7 +4693,7 @@
                           { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.statuses.rows}
-                        emptyColspan={8}
+                        emptyColspan={9}
                         onSort={(field) => toggleTableSort("statuses", field)}
                         sortClause={(tables.statuses.sort && tables.statuses.sort[0]) || TABLE_SERVER_CONFIG.statuses.sort[0]}
                         renderRow={(row) => (
@@ -4211,6 +4702,7 @@
                               <code>{row.code || "-"}</code>
                             </td>
                             <td>{row.name || "-"}</td>
+                            <td>{resolveReferenceLabel({ table: "status_groups", value_field: "id", label_field: "name" }, row.status_group_id)}</td>
                             <td>{statusKindLabel(row.kind)}</td>
                             <td>{boolLabel(row.enabled)}</td>
                             <td>{String(row.sort_order ?? 0)}</td>
@@ -4500,7 +4992,7 @@
                             </td>
                             <td>{row.email || "-"}</td>
                             <td>{roleLabel(row.role)}</td>
-                            <td>{row.primary_topic_code || "-"}</td>
+                            <td>{resolveReferenceLabel({ table: "topics", value_field: "code", label_field: "name" }, row.primary_topic_code)}</td>
                             <td>{row.default_rate == null ? "-" : String(row.default_rate)}</td>
                             <td>{row.salary_percent == null ? "-" : String(row.salary_percent)}</td>
                             <td>{boolLabel(row.is_active)}</td>
@@ -4567,6 +5059,8 @@
                               if (column.kind === "boolean") return <td key={key}>{boolLabel(Boolean(value))}</td>;
                               if (column.kind === "date" || column.kind === "datetime") return <td key={key}>{fmtDate(value)}</td>;
                               if (column.kind === "json") return <td key={key}>{value == null ? "-" : JSON.stringify(value)}</td>;
+                              const reference = normalizeReferenceMeta(column.reference);
+                              if (reference) return <td key={key}>{resolveReferenceLabel(reference, value)}</td>;
                               return <td key={key}>{value == null || value === "" ? "-" : String(value)}</td>;
                             })}
                             {canUpdateInConfig || canDeleteInConfig ? (
@@ -4699,6 +5193,15 @@
           onClear={clearFiltersFromModal}
           getOperators={getOperatorsForType}
           getFieldOptions={getFieldOptions}
+        />
+
+        <KanbanSortModal
+          open={kanbanSortModal.open}
+          value={kanbanSortModal.value}
+          status={getStatus("kanbanSort")}
+          onChange={updateKanbanSortMode}
+          onClose={closeKanbanSortModal}
+          onSubmit={submitKanbanSortModal}
         />
 
         <ReassignModal

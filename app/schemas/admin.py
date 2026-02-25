@@ -29,6 +29,7 @@ class TopicUpsert(BaseModel):
 class StatusUpsert(BaseModel):
     code: str
     name: str
+    status_group_id: Optional[str] = None
     enabled: bool = True
     sort_order: int = 0
     is_terminal: bool = False
