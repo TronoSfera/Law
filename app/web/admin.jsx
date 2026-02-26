@@ -79,7 +79,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
   function DataTable({ headers, rows, emptyColspan, renderRow, onSort, sortClause }) {
     return (
-      <div className="table-wrap">
+      <div className="table-wrap table-scroll-region">
         <table>
           <thead>
             <tr>
@@ -120,7 +120,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
   function TablePager({ tableState, onPrev, onNext, onLoadAll }) {
     return (
-      <div className="pager">
+      <div className="pager table-footer-bar">
         <div>
           {tableState.showAll
             ? "Всего: " + tableState.total + " • показаны все записи"
@@ -389,7 +389,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             </div>
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
               <button className="btn" type="submit">
-                Добавить/Сохранить
+                {draft.editIndex !== null ? "Сохранить" : "Добавить"}
               </button>
               <button className="btn secondary" type="button" onClick={onClear}>
                 Очистить все

@@ -920,6 +920,15 @@
       background: rgba(255, 255, 255, 0.015);
     }
 
+    /* Main table data lives in its own scroll area; controls and pager remain outside of it. */
+    .table-scroll-region {
+      min-height: 240px;
+      max-height: clamp(260px, 50vh, 620px);
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable both-edges;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -963,6 +972,19 @@
       font-size: 0.77rem;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+    }
+
+    .table-scroll-region thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: linear-gradient(160deg, rgba(23, 34, 46, 0.98), rgba(16, 24, 33, 0.98));
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(6px);
+    }
+
+    .table-scroll-region tbody tr:last-child td {
+      border-bottom-color: transparent;
     }
 
     .sortable-th {
@@ -1146,6 +1168,27 @@
       color: var(--muted);
       font-size: 0.86rem;
       flex-wrap: wrap;
+    }
+
+    .table-footer-bar {
+      margin-top: 0;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--line);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      background: linear-gradient(160deg, rgba(18, 28, 37, 0.96), rgba(13, 20, 28, 0.98));
+      position: sticky;
+      bottom: 0;
+      z-index: 1;
+    }
+
+    .table-scroll-region + .table-footer-bar {
+      margin-top: -1px;
+    }
+
+    .filter-toolbar + .table-scroll-region {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
     }
 
     .status {

@@ -230,6 +230,14 @@
       line-height: 1.5;
       color: #c6d4e8;
       min-height: 2.8rem;
+      transition: opacity 0.42s ease, transform 0.42s ease;
+      will-change: opacity, transform;
+    }
+
+    .consultation-quote.is-transitioning p,
+    .consultation-quote.is-transitioning .quote-meta {
+      opacity: 0;
+      transform: translateY(-4px);
     }
 
     section { padding: 1.3rem 0 2.2rem; }
@@ -359,6 +367,15 @@
       margin-top: 0.7rem;
       color: #98adc7;
       font-size: 0.86rem;
+      transition: opacity 0.42s ease, transform 0.42s ease;
+      will-change: opacity, transform;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .consultation-quote p,
+      .quote-meta {
+        transition: none;
+      }
     }
 
     .expert {

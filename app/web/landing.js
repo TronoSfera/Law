@@ -18,6 +18,7 @@
 
   const quoteText = document.getElementById("quote-text");
   const quoteMeta = document.getElementById("quote-meta");
+  const quoteWrap = quoteText ? quoteText.closest(".consultation-quote") : null;
   const featuredTeamSection = document.getElementById("team");
   const featuredTeamTrack = document.getElementById("featured-team-track");
   const featuredTeamDots = document.getElementById("featured-team-dots");
@@ -120,6 +121,33 @@
   }
 
   async function loadQuotes() {
+    let quoteTransitionTimer = 0;
+    const reducedMotion = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const setQuoteContent = (quote) => {
+      if (!quoteText || !quoteMeta) return;
+      quoteText.textContent = String(quote?.text || "");
+      quoteMeta.textContent = [quote?.author, quote?.source].filter(Boolean).join(" • ");
+    };
+
+    const renderQuote = (quote) => {
+      if (!quoteText || !quoteMeta) return;
+      if (!quoteWrap || reducedMotion) {
+        setQuoteContent(quote);
+        return;
+      }
+      if (quoteTransitionTimer) {
+        clearTimeout(quoteTransitionTimer);
+        quoteTransitionTimer = 0;
+      }
+      quoteWrap.classList.add("is-transitioning");
+      quoteTransitionTimer = window.setTimeout(() => {
+        setQuoteContent(quote);
+        quoteWrap.classList.remove("is-transitioning");
+        quoteTransitionTimer = 0;
+      }, 320);
+    };
+
     try {
       const response = await fetch("/api/public/quotes?limit=8&order=random");
       if (!response.ok) throw new Error("quotes fetch failed");
@@ -128,15 +156,16 @@
       let index = 0;
       const render = () => {
         const quote = items[index % items.length];
-        quoteText.textContent = quote.text;
-        quoteMeta.textContent = [quote.author, quote.source].filter(Boolean).join(" • ");
+        renderQuote(quote);
         index += 1;
       };
       render();
       if (items.length > 1) setInterval(render, 5500);
     } catch (_) {
-      quoteText.textContent = "С вами работает дружный коллектив профессионалов. Мы уверены в вашем успехе.";
-      quoteMeta.textContent = "Команда компании";
+      renderQuote({
+        text: "С вами работает дружный коллектив профессионалов. Мы уверены в вашем успехе.",
+        author: "Команда компании",
+      });
     }
   }
 

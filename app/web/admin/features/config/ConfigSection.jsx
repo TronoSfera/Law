@@ -54,8 +54,7 @@ export function ConfigSection(props) {
               <div className="section-head">
                 <div>
                   <h2>Справочники</h2>
-                  <p className="breadcrumbs">{"Справочники -> " + (configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран")}</p>
-                  <p className="muted">Выберите справочник в дереве слева.</p>
+                  <p className="breadcrumbs">{configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран"}</p>
                 </div>
                 <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
                   Обновить
