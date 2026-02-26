@@ -1,4 +1,9 @@
 const { test, expect } = require("@playwright/test");
+const { cleanupTrackedTestData } = require("./helpers");
+
+test.afterEach(async ({ page }, testInfo) => {
+  await cleanupTrackedTestData(page, testInfo);
+});
 
 test("admin entry via route only: landing has no admin CTA and /admin opens panel", async ({ page }) => {
   await page.goto("/");

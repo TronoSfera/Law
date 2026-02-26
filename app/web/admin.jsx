@@ -1,522 +1,69 @@
+import {
+  DEFAULT_FORM_FIELD_TYPES,
+  INVOICE_STATUS_LABELS,
+  LS_TOKEN,
+  OPERATOR_LABELS,
+  ROLE_LABELS,
+  STATUS_LABELS,
+  STATUS_KIND_LABELS,
+  TABLE_KEY_ALIASES,
+  TABLE_MUTATION_CONFIG,
+  TABLE_SERVER_CONFIG,
+  TABLE_UNALIASES,
+  PAGE_SIZE,
+} from "./admin/shared/constants.js";
+import { createTableState } from "./admin/shared/state.js";
+import { KanbanBoard } from "./admin/features/kanban/KanbanBoard.jsx";
+import { ConfigSection } from "./admin/features/config/ConfigSection.jsx";
+import { DashboardSection } from "./admin/features/dashboard/DashboardSection.jsx";
+import { InvoicesSection } from "./admin/features/invoices/InvoicesSection.jsx";
+import { RequestsSection } from "./admin/features/requests/RequestsSection.jsx";
+import { QuotesSection } from "./admin/features/quotes/QuotesSection.jsx";
+import { RequestWorkspace } from "./admin/features/requests/RequestWorkspace.jsx";
+import { AvailableTablesSection } from "./admin/features/tables/AvailableTablesSection.jsx";
+import { useAdminApi } from "./admin/hooks/useAdminApi.js";
+import { useAdminCatalogLoaders } from "./admin/hooks/useAdminCatalogLoaders.js";
+import { useKanban } from "./admin/hooks/useKanban.js";
+import { useRequestWorkspace } from "./admin/hooks/useRequestWorkspace.js";
+import { useTableActions } from "./admin/hooks/useTableActions.js";
+import { useTableFilterActions } from "./admin/hooks/useTableFilterActions.js";
+import { useTablesState } from "./admin/hooks/useTablesState.js";
+import {
+  avatarColor,
+  boolFilterLabel,
+  buildUniversalQuery,
+  canAccessSection,
+  decodeJwtPayload,
+  detectAttachmentPreviewKind,
+  fallbackStatusGroup,
+  fmtAmount,
+  fmtBytes,
+  fmtDateOnly,
+  fmtKanbanDate,
+  fmtTimeOnly,
+  getOperatorsForType,
+  humanizeKey,
+  localizeMeta,
+  localizeRequestDetails,
+  metaKindToFilterType,
+  metaKindToRecordType,
+  normalizeReferenceMeta,
+  normalizeStringList,
+  resolveAdminObjectSrc,
+  resolveAdminRoute,
+  resolveAvatarSrc,
+  resolveDeadlineTone,
+  roleLabel,
+  sortByName,
+  statusLabel,
+  translateApiError,
+  userInitials,
+} from "./admin/shared/utils.js";
+
 (function () {
-  const { useCallback, useEffect, useMemo, useRef, useState } = React;
-
-  const LS_TOKEN = "admin_access_token";
-  const PAGE_SIZE = 50;
-  const DEFAULT_FORM_FIELD_TYPES = ["string", "text", "number", "boolean", "date"];
-  const ALL_OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "~"];
-  const OPERATOR_LABELS = {
-    "=": "=",
-    "!=": "!=",
-    ">": ">",
-    "<": "<",
-    ">=": ">=",
-    "<=": "<=",
-    "~": "~",
-  };
-
-  const ROLE_LABELS = {
-    ADMIN: "Администратор",
-    LAWYER: "Юрист",
-  };
-
-  const STATUS_LABELS = {
-    NEW: "Новая",
-    IN_PROGRESS: "В работе",
-    WAITING_CLIENT: "Ожидание клиента",
-    WAITING_COURT: "Ожидание суда",
-    RESOLVED: "Решена",
-    CLOSED: "Закрыта",
-    REJECTED: "Отклонена",
-  };
-  const INVOICE_STATUS_LABELS = {
-    WAITING_PAYMENT: "Ожидает оплату",
-    PAID: "Оплачен",
-    CANCELED: "Отменен",
-  };
-  const STATUS_KIND_LABELS = {
-    DEFAULT: "Обычный",
-    INVOICE: "Выставление счета",
-    PAID: "Оплачено",
-  };
-
-  const REQUEST_UPDATE_EVENT_LABELS = {
-    MESSAGE: "сообщение",
-    ATTACHMENT: "файл",
-    STATUS: "статус",
-  };
-  const KANBAN_GROUPS = [
-    { key: "NEW", label: "Новые" },
-    { key: "IN_PROGRESS", label: "В работе" },
-    { key: "WAITING", label: "Ожидание" },
-    { key: "DONE", label: "Завершены" },
-  ];
-
-  const TABLE_SERVER_CONFIG = {
-    requests: {
-      table: "requests",
-      endpoint: "/api/admin/crud/requests/query",
-      sort: [{ field: "created_at", dir: "desc" }],
-    },
-    invoices: {
-      table: "invoices",
-      endpoint: "/api/admin/invoices/query",
-      sort: [{ field: "issued_at", dir: "desc" }],
-    },
-    quotes: {
-      table: "quotes",
-      endpoint: "/api/admin/crud/quotes/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    topics: {
-      table: "topics",
-      endpoint: "/api/admin/crud/topics/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    statuses: {
-      table: "statuses",
-      endpoint: "/api/admin/crud/statuses/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    formFields: {
-      table: "form_fields",
-      endpoint: "/api/admin/crud/form_fields/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    topicRequiredFields: {
-      table: "topic_required_fields",
-      endpoint: "/api/admin/crud/topic_required_fields/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    topicDataTemplates: {
-      table: "topic_data_templates",
-      endpoint: "/api/admin/crud/topic_data_templates/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    statusTransitions: {
-      table: "topic_status_transitions",
-      endpoint: "/api/admin/crud/topic_status_transitions/query",
-      sort: [{ field: "sort_order", dir: "asc" }],
-    },
-    users: {
-      table: "admin_users",
-      endpoint: "/api/admin/crud/admin_users/query",
-      sort: [{ field: "created_at", dir: "desc" }],
-    },
-    userTopics: {
-      table: "admin_user_topics",
-      endpoint: "/api/admin/crud/admin_user_topics/query",
-      sort: [{ field: "created_at", dir: "desc" }],
-    },
-  };
-
-  const TABLE_MUTATION_CONFIG = Object.fromEntries(
-    Object.entries(TABLE_SERVER_CONFIG).map(([tableKey, config]) => [
-      tableKey,
-      {
-        create: "/api/admin/crud/" + config.table,
-        update: (id) => "/api/admin/crud/" + config.table + "/" + id,
-        delete: (id) => "/api/admin/crud/" + config.table + "/" + id,
-      },
-    ])
-  );
-  TABLE_MUTATION_CONFIG.invoices = {
-    create: "/api/admin/invoices",
-    update: (id) => "/api/admin/invoices/" + id,
-    delete: (id) => "/api/admin/invoices/" + id,
-  };
-  const TABLE_KEY_ALIASES = {
-    form_fields: "formFields",
-    status_groups: "statusGroups",
-    topic_required_fields: "topicRequiredFields",
-    topic_data_templates: "topicDataTemplates",
-    topic_status_transitions: "statusTransitions",
-    admin_users: "users",
-    admin_user_topics: "userTopics",
-  };
-  const TABLE_UNALIASES = Object.fromEntries(Object.entries(TABLE_KEY_ALIASES).map(([table, alias]) => [alias, table]));
-  const KNOWN_CONFIG_TABLE_KEYS = new Set([
-    "quotes",
-    "topics",
-    "statuses",
-    "formFields",
-    "topicRequiredFields",
-    "topicDataTemplates",
-    "statusTransitions",
-    "users",
-    "userTopics",
-  ]);
-
-  function createTableState() {
-    return {
-      filters: [],
-      sort: null,
-      offset: 0,
-      total: 0,
-      showAll: false,
-      rows: [],
-    };
-  }
-
-  function createRequestModalState() {
-    return {
-      loading: false,
-      requestId: null,
-      trackNumber: "",
-      requestData: null,
-      statusRouteNodes: [],
-      messages: [],
-      attachments: [],
-      messageDraft: "",
-      selectedFiles: [],
-      fileUploading: false,
-    };
-  }
-
-  function resolveAdminRoute(search) {
-    const params = new URLSearchParams(String(search || ""));
-    const section = String(params.get("section") || "").trim();
-    const view = String(params.get("view") || "").trim();
-    const requestId = String(params.get("requestId") || "").trim();
-    return { section, view, requestId };
-  }
-
-  function humanizeKey(value) {
-    const text = String(value || "")
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (!text) return "-";
-    return text.charAt(0).toUpperCase() + text.slice(1);
-  }
-
-  function metaKindToFilterType(kind) {
-    if (kind === "boolean") return "boolean";
-    if (kind === "number") return "number";
-    if (kind === "date" || kind === "datetime") return "date";
-    return "text";
-  }
-
-  function metaKindToRecordType(kind) {
-    if (kind === "boolean") return "boolean";
-    if (kind === "number") return "number";
-    if (kind === "json") return "json";
-    return "text";
-  }
-
-  function decodeJwtPayload(token) {
-    try {
-      const payload = token.split(".")[1] || "";
-      const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-      const json = decodeURIComponent(
-        atob(base64)
-          .split("")
-          .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-          .join("")
-      );
-      return JSON.parse(json);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function sortByName(items) {
-    return [...items].sort((a, b) => String(a.name || a.code || "").localeCompare(String(b.name || b.code || ""), "ru"));
-  }
-
-  function roleLabel(role) {
-    return ROLE_LABELS[role] || role || "-";
-  }
-
-  function statusLabel(code) {
-    return STATUS_LABELS[code] || code || "-";
-  }
-
-  function invoiceStatusLabel(code) {
-    return INVOICE_STATUS_LABELS[code] || code || "-";
-  }
-
-  function statusKindLabel(code) {
-    return STATUS_KIND_LABELS[code] || code || "-";
-  }
-
-  function fallbackStatusGroup(statusCode) {
-    const code = String(statusCode || "").toUpperCase();
-    if (!code) return "NEW";
-    if (code.startsWith("NEW")) return "NEW";
-    if (code.includes("WAIT") || code.includes("PEND") || code.includes("HOLD")) return "WAITING";
-    if (code.includes("CLOSE") || code.includes("RESOLV") || code.includes("REJECT") || code.includes("DONE") || code.includes("PAID")) return "DONE";
-    return "IN_PROGRESS";
-  }
-
-  function boolLabel(value) {
-    return value ? "Да" : "Нет";
-  }
-
-  function boolFilterLabel(value) {
-    return value ? "True" : "False";
-  }
-
-  function fmtDate(value) {
-    if (!value) return "-";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("ru-RU");
-  }
-
-  function fmtDateOnly(value) {
-    if (!value) return "-";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime())
-      ? String(value)
-      : date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
-  }
-
-  function fmtTimeOnly(value) {
-    if (!value) return "-";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime())
-      ? String(value)
-      : date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-  }
-
-  function fmtKanbanDate(value) {
-    if (!value) return "-";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value);
-    const dd = String(date.getDate()).padStart(2, "0");
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const yy = String(date.getFullYear()).slice(-2);
-    const hh = String(date.getHours()).padStart(2, "0");
-    const mi = String(date.getMinutes()).padStart(2, "0");
-    return dd + ":" + mm + ":" + yy + " " + hh + ":" + mi;
-  }
-
-  function resolveDeadlineTone(value) {
-    if (!value) return "ok";
-    const time = new Date(value).getTime();
-    if (!Number.isFinite(time)) return "ok";
-    const delta = time - Date.now();
-    const fourDaysMs = 4 * 24 * 60 * 60 * 1000;
-    const oneDayMs = 24 * 60 * 60 * 1000;
-    if (delta > fourDaysMs) return "ok";
-    if (delta > oneDayMs) return "warn";
-    return "danger";
-  }
-
-  function fmtAmount(value) {
-    if (value === null || value === undefined || value === "") return "-";
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return String(value);
-    return numeric.toLocaleString("ru-RU");
-  }
-
-  function fmtBytes(value) {
-    const size = Number(value || 0);
-    if (!Number.isFinite(size) || size <= 0) return "0 Б";
-    const units = ["Б", "КБ", "МБ", "ГБ"];
-    let index = 0;
-    let normalized = size;
-    while (normalized >= 1024 && index < units.length - 1) {
-      normalized /= 1024;
-      index += 1;
-    }
-    return normalized.toLocaleString("ru-RU", { maximumFractionDigits: index === 0 ? 0 : 1 }) + " " + units[index];
-  }
-
-  function normalizeStringList(value) {
-    if (!Array.isArray(value)) return [];
-    const out = [];
-    const seen = new Set();
-    value.forEach((item) => {
-      const text = String(item || "").trim();
-      if (!text) return;
-      const key = text.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      out.push(text);
-    });
-    return out;
-  }
-
-  function listPreview(value, emptyLabel) {
-    const items = normalizeStringList(value);
-    return items.length ? items.join(", ") : emptyLabel;
-  }
-
-  function normalizeReferenceMeta(raw) {
-    if (!raw || typeof raw !== "object") return null;
-    const table = String(raw.table || "").trim();
-    const valueField = String(raw.value_field || "id").trim() || "id";
-    const labelField = String(raw.label_field || valueField).trim() || valueField;
-    if (!table) return null;
-    return { table, value_field: valueField, label_field: labelField };
-  }
-
-  function userInitials(name, email) {
-    const source = String(name || "").trim();
-    if (source) {
-      const parts = source.split(/\s+/).filter(Boolean);
-      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-      return source.slice(0, 2).toUpperCase();
-    }
-    const mail = String(email || "").trim();
-    return (mail.slice(0, 2) || "U").toUpperCase();
-  }
-
-  function avatarColor(seed) {
-    const palette = ["#6f8fa9", "#568f7d", "#a07a5c", "#7d6ea9", "#8f6f8f", "#7f8c5a"];
-    const text = String(seed || "");
-    let hash = 0;
-    for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-    return palette[hash % palette.length];
-  }
-
-  function resolveAvatarSrc(avatarUrl, accessToken) {
-    const raw = String(avatarUrl || "").trim();
-    if (!raw) return "";
-    if (raw.startsWith("s3://")) {
-      const key = raw.slice("s3://".length);
-      if (!key || !accessToken) return "";
-      return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken);
-    }
-    return raw;
-  }
-
-  function resolveAdminObjectSrc(s3Key, accessToken) {
-    const key = String(s3Key || "").trim();
-    if (!key || !accessToken) return "";
-    return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken);
-  }
-
-  function detectAttachmentPreviewKind(fileName, mimeType) {
-    const name = String(fileName || "").toLowerCase();
-    const mime = String(mimeType || "").toLowerCase();
-    if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(name)) return "image";
-    if (mime.startsWith("video/") || /\.(mp4|webm|ogg|mov|m4v)$/.test(name)) return "video";
-    if (mime === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
-    return "none";
-  }
-
-  function buildUniversalQuery(filters, sort, limit, offset) {
-    return {
-      filters: filters || [],
-      sort: sort || [],
-      page: { limit: limit ?? PAGE_SIZE, offset: offset ?? 0 },
-    };
-  }
-
-  function canAccessSection(role, section) {
-    const allowed = new Set(["dashboard", "kanban", "requests", "requestWorkspace", "invoices", "meta", "quotes", "config", "availableTables"]);
-    if (!allowed.has(section)) return false;
-    if (section === "quotes" || section === "config" || section === "availableTables") return role === "ADMIN";
-    return true;
-  }
-
-  function translateApiError(message) {
-    const direct = {
-      "Missing auth token": "Отсутствует токен авторизации",
-      "Missing bearer token": "Отсутствует токен авторизации",
-      "Invalid token": "Некорректный токен",
-      Forbidden: "Недостаточно прав",
-      "Invalid credentials": "Неверный логин или пароль",
-      "Request not found": "Заявка не найдена",
-      "Quote not found": "Цитата не найдена",
-      not_found: "Запись не найдена",
-    };
-    if (direct[message]) return direct[message];
-    if (String(message).startsWith("HTTP ")) return "Ошибка сервера (" + message + ")";
-    return message;
-  }
-
-  function getOperatorsForType(type) {
-    if (type === "number" || type === "date" || type === "datetime") return ["=", "!=", ">", "<", ">=", "<="];
-    if (type === "boolean" || type === "reference" || type === "enum") return ["=", "!="];
-    return [...ALL_OPERATORS];
-  }
-
-  function localizeRequestDetails(row) {
-    return {
-      ID: row.id || null,
-      "Номер заявки": row.track_number || null,
-      Клиент: row.client_name || null,
-      Телефон: row.client_phone || null,
-      "Тема (код)": row.topic_code || null,
-      Статус: statusLabel(row.status_code),
-      Описание: row.description || null,
-      "Дополнительные поля": row.extra_fields || {},
-      "Назначенный юрист (ID)": row.assigned_lawyer_id || null,
-      "Ставка (фикс.)": row.effective_rate ?? null,
-      "Сумма счета": row.invoice_amount ?? null,
-      "Оплачено": row.paid_at ? fmtDate(row.paid_at) : null,
-      "Оплату подтвердил (ID)": row.paid_by_admin_id || null,
-      "Непрочитано клиентом": boolLabel(Boolean(row.client_has_unread_updates)),
-      "Тип обновления для клиента": row.client_unread_event_type ? (REQUEST_UPDATE_EVENT_LABELS[row.client_unread_event_type] || row.client_unread_event_type) : null,
-      "Непрочитано юристом": boolLabel(Boolean(row.lawyer_has_unread_updates)),
-      "Тип обновления для юриста": row.lawyer_unread_event_type ? (REQUEST_UPDATE_EVENT_LABELS[row.lawyer_unread_event_type] || row.lawyer_unread_event_type) : null,
-      "Общий размер вложений (байт)": row.total_attachments_bytes ?? 0,
-      Создано: fmtDate(row.created_at),
-      Обновлено: fmtDate(row.updated_at),
-    };
-  }
-
-  function renderRequestUpdatesCell(row, role) {
-    if (role === "LAWYER") {
-      const has = Boolean(row.lawyer_has_unread_updates);
-      const eventType = String(row.lawyer_unread_event_type || "").toUpperCase();
-      return has ? (
-        <span className="request-update-chip" title={"Есть непрочитанное обновление: " + (REQUEST_UPDATE_EVENT_LABELS[eventType] || eventType.toLowerCase())}>
-          <span className="request-update-dot" />
-          {REQUEST_UPDATE_EVENT_LABELS[eventType] || "обновление"}
-        </span>
-      ) : (
-        <span className="request-update-empty">нет</span>
-      );
-    }
-
-    const clientHas = Boolean(row.client_has_unread_updates);
-    const clientType = String(row.client_unread_event_type || "").toUpperCase();
-    const lawyerHas = Boolean(row.lawyer_has_unread_updates);
-    const lawyerType = String(row.lawyer_unread_event_type || "").toUpperCase();
-
-    if (!clientHas && !lawyerHas) return <span className="request-update-empty">нет</span>;
-    return (
-      <span className="request-updates-stack">
-        {clientHas ? (
-          <span className="request-update-chip" title={"Клиенту: " + (REQUEST_UPDATE_EVENT_LABELS[clientType] || clientType.toLowerCase())}>
-            <span className="request-update-dot" />
-            {"Клиент: " + (REQUEST_UPDATE_EVENT_LABELS[clientType] || "обновление")}
-          </span>
-        ) : null}
-        {lawyerHas ? (
-          <span className="request-update-chip" title={"Юристу: " + (REQUEST_UPDATE_EVENT_LABELS[lawyerType] || lawyerType.toLowerCase())}>
-            <span className="request-update-dot" />
-            {"Юрист: " + (REQUEST_UPDATE_EVENT_LABELS[lawyerType] || "обновление")}
-          </span>
-        ) : null}
-      </span>
-    );
-  }
-
-  function localizeMeta(data) {
-    const fieldTypeMap = {
-      string: "строка",
-      text: "текст",
-      boolean: "булево",
-      number: "число",
-      date: "дата",
-    };
-    return {
-      Сущность: data.entity,
-      Поля: (data.fields || []).map((field) => ({
-        "Код поля": field.field_name,
-        Название: field.label,
-        Тип: fieldTypeMap[field.type] || field.type,
-        Обязательное: boolLabel(field.required),
-        "Только чтение": boolLabel(field.read_only),
-        "Редактируемые роли": (field.editable_roles || []).map(roleLabel),
-      })),
-    };
-  }
+const { useCallback, useEffect, useMemo, useRef, useState } = React;
+const LEGACY_HIDDEN_DICTIONARY_TABLES = new Set(["formFields", "topicRequiredFields", "statusTransitions"]);
+const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
   function StatusLine({ status }) {
     return <p className={"status" + (status?.kind ? " " + status.kind : "")}>{status?.message || ""}</p>;
@@ -946,17 +493,41 @@
 
   function AttachmentPreviewModal({ open, title, url, fileName, mimeType, onClose }) {
     const [resolvedUrl, setResolvedUrl] = useState("");
+    const [resolvedText, setResolvedText] = useState("");
+    const [resolvedKind, setResolvedKind] = useState("");
+    const [hint, setHint] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    const decodeTextPreview = (arrayBuffer) => {
+      const bytes = new Uint8Array(arrayBuffer || new ArrayBuffer(0));
+      const sampleLength = Math.min(bytes.length, 4096);
+      let suspicious = 0;
+      for (let i = 0; i < sampleLength; i += 1) {
+        const byte = bytes[i];
+        if (byte === 0) suspicious += 4;
+        else if (byte < 9 || (byte > 13 && byte < 32)) suspicious += 1;
+      }
+      if (sampleLength && suspicious / sampleLength > 0.08) return null;
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/\u0000/g, "");
+      const normalized = text.length > 200000 ? text.slice(0, 200000) + "\n\n[Текст обрезан для предпросмотра]" : text;
+      return normalized;
+    };
 
     useEffect(() => {
       if (!open || !url) {
         setResolvedUrl("");
+        setResolvedText("");
+        setResolvedKind("");
+        setHint("");
         setLoading(false);
         setError("");
         return;
       }
       const kind = detectAttachmentPreviewKind(fileName, mimeType);
+      setResolvedKind(kind);
+      setResolvedText("");
+      setHint("");
       if (kind === "none") {
         setResolvedUrl("");
         setLoading(false);
@@ -974,13 +545,54 @@
         try {
           const response = await fetch(url, { credentials: "same-origin" });
           if (!response.ok) throw new Error("Не удалось загрузить файл для предпросмотра");
-          const blob = await response.blob();
+          const buffer = await response.arrayBuffer();
+          if (cancelled) return;
+
+          if (kind === "pdf") {
+            const header = new Uint8Array(buffer.slice(0, 5));
+            const isPdf =
+              header.length >= 5 &&
+              header[0] === 0x25 &&
+              header[1] === 0x50 &&
+              header[2] === 0x44 &&
+              header[3] === 0x46 &&
+              header[4] === 0x2d;
+            if (isPdf) {
+              setResolvedUrl(String(url));
+              setResolvedKind("pdf");
+              setLoading(false);
+              return;
+            }
+            const textPreview = decodeTextPreview(buffer);
+            if (textPreview != null) {
+              setResolvedUrl("");
+              setResolvedText(textPreview);
+              setResolvedKind("text");
+              setHint("Файл помечен как PDF, но не является валидным PDF. Показан текстовый предпросмотр.");
+              setLoading(false);
+              return;
+            }
+            throw new Error("Файл помечен как PDF, но не является валидным PDF-документом.");
+          }
+
+          if (kind === "text") {
+            const textPreview = decodeTextPreview(buffer);
+            if (textPreview == null) throw new Error("Не удалось распознать текстовый файл для предпросмотра.");
+            setResolvedUrl("");
+            setResolvedText(textPreview);
+            setResolvedKind("text");
+            setLoading(false);
+            return;
+          }
+
+          const blob = new Blob([buffer], { type: response.headers.get("content-type") || mimeType || "application/octet-stream" });
           objectUrl = URL.createObjectURL(blob);
           if (cancelled) {
             URL.revokeObjectURL(objectUrl);
             return;
           }
           setResolvedUrl(objectUrl);
+          setResolvedKind(kind);
           setLoading(false);
         } catch (err) {
           if (cancelled) return;
@@ -996,7 +608,7 @@
     }, [fileName, mimeType, open, url]);
 
     if (!open || !url) return null;
-    const kind = detectAttachmentPreviewKind(fileName, mimeType);
+    const kind = resolvedKind || detectAttachmentPreviewKind(fileName, mimeType);
     return (
       <Overlay open={open} id="request-file-preview-overlay" onClose={(event) => event.target.id === "request-file-preview-overlay" && onClose()}>
         <div className="modal request-preview-modal" onClick={(event) => event.stopPropagation()}>
@@ -1025,6 +637,7 @@
           </div>
           <div className="request-preview-body">
             {loading ? <p className="request-preview-note">Загрузка предпросмотра...</p> : null}
+            {!loading && !error && hint ? <p className="request-preview-note">{hint}</p> : null}
             {error ? <p className="request-preview-note">{error}</p> : null}
             {!loading && !error && kind === "image" && resolvedUrl ? (
               <img className="request-preview-image" src={resolvedUrl} alt={fileName || "attachment"} />
@@ -1035,6 +648,9 @@
             {!loading && !error && kind === "pdf" && resolvedUrl ? (
               <iframe className="request-preview-frame" src={resolvedUrl} title={fileName || "preview"} />
             ) : null}
+            {!loading && !error && kind === "text" ? (
+              <pre className="request-preview-text">{resolvedText || "Файл пуст."}</pre>
+            ) : null}
             {kind === "none" ? <p className="request-preview-note">Для этого типа файла доступно только открытие или скачивание.</p> : null}
           </div>
         </div>
@@ -1042,704 +658,22 @@
     );
   }
 
-  function KanbanBoard({
-    loading,
-    columns,
-    rows,
-    role,
-    actorId,
-    filters,
-    onRefresh,
-    onOpenFilter,
-    onRemoveFilter,
-    onEditFilter,
-    getFilterChipLabel,
-    onOpenSort,
-    sortActive,
-    onOpenRequest,
-    onClaimRequest,
-    onMoveRequest,
-    status,
-  }) {
-    const [draggingId, setDraggingId] = useState("");
-    const [dragOverGroup, setDragOverGroup] = useState("");
-
-    const safeColumns = Array.isArray(columns) && columns.length ? columns : KANBAN_GROUPS;
-    const grouped = useMemo(() => {
-      const map = {};
-      safeColumns.forEach((column) => {
-        map[String(column.key)] = [];
-      });
-      (rows || []).forEach((row) => {
-        const group = String(row?.status_group || fallbackStatusGroup(row?.status_code));
-        if (!map[group]) map[group] = [];
-        map[group].push(row);
-      });
-      return map;
-    }, [rows, safeColumns]);
-
-    const rowMap = useMemo(() => {
-      const map = new Map();
-      (rows || []).forEach((row) => {
-        if (!row?.id) return;
-        map.set(String(row.id), row);
-      });
-      return map;
-    }, [rows]);
-
-    const onDropToGroup = (event, groupKey) => {
-      event.preventDefault();
-      const requestId = String(event.dataTransfer.getData("text/plain") || draggingId || "");
-      setDragOverGroup("");
-      setDraggingId("");
-      if (!requestId) return;
-      const row = rowMap.get(requestId);
-      if (!row) return;
-      onMoveRequest(row, String(groupKey || ""));
-    };
-
-    return (
-      <div className="kanban-wrap">
-        <div className="section-head">
-          <div>
-            <h2>Канбан заявок</h2>
-            <p className="muted">Группировка по группам статусов и серверная фильтрация карточек.</p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button className={"btn secondary" + (sortActive ? " active-success" : "")} type="button" onClick={onOpenSort}>
-              Сортировка
-            </button>
-            <button className="btn secondary" type="button" onClick={onRefresh} disabled={loading}>
-              Обновить
-            </button>
-          </div>
-        </div>
-        <FilterToolbar
-          filters={filters || []}
-          onOpen={onOpenFilter}
-          onRemove={onRemoveFilter}
-          onEdit={onEditFilter}
-          getChipLabel={getFilterChipLabel}
-        />
-        <div className="kanban-board" id="kanban-board">
-          {safeColumns.map((column) => {
-            const key = String(column.key || "");
-            const cards = grouped[key] || [];
-            const isOver = dragOverGroup === key;
-            return (
-              <div
-                key={key}
-                className={"kanban-column" + (isOver ? " drag-over" : "")}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setDragOverGroup(key);
-                }}
-                onDragLeave={(event) => {
-                  if (event.currentTarget.contains(event.relatedTarget)) return;
-                  setDragOverGroup((prev) => (prev === key ? "" : prev));
-                }}
-                onDrop={(event) => onDropToGroup(event, key)}
-              >
-                <div className="kanban-column-head">
-                  <b>{column.label || key}</b>
-                  <span>{Number(column.total ?? cards.length)}</span>
-                </div>
-                <div className="kanban-column-body">
-                  {cards.length ? (
-                    cards.map((row) => {
-                      const requestId = String(row.id || "");
-                      const isUnassigned = !String(row.assigned_lawyer_id || "").trim();
-                      const canClaim = role === "LAWYER" && isUnassigned;
-                      const canMove =
-                        role === "ADMIN" ||
-                        (!isUnassigned && String(row.assigned_lawyer_id || "").trim() === String(actorId || "").trim());
-                      const transitionOptions = Array.isArray(row.available_transitions) ? row.available_transitions : [];
-                      const deadline = row.sla_deadline_at || row.case_deadline_at || "";
-                      const deadlineTone = resolveDeadlineTone(deadline);
-                      const unreadTypes = new Set();
-                      if (role === "LAWYER") {
-                        if (row.lawyer_has_unread_updates && row.lawyer_unread_event_type) unreadTypes.add(String(row.lawyer_unread_event_type).toUpperCase());
-                      } else {
-                        if (row.client_has_unread_updates && row.client_unread_event_type) unreadTypes.add(String(row.client_unread_event_type).toUpperCase());
-                        if (row.lawyer_has_unread_updates && row.lawyer_unread_event_type) unreadTypes.add(String(row.lawyer_unread_event_type).toUpperCase());
-                      }
-                      const hasUnreadMessage = unreadTypes.has("MESSAGE");
-                      const hasUnreadAttachment = unreadTypes.has("ATTACHMENT");
-                      return (
-                        <article
-                          key={requestId}
-                          className={"kanban-card" + (canMove ? " draggable" : "")}
-                          draggable={canMove}
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => onOpenRequest(requestId, event)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              onOpenRequest(requestId, event);
-                            }
-                          }}
-                          onDragStart={(event) => {
-                            if (!canMove) {
-                              event.preventDefault();
-                              return;
-                            }
-                            setDraggingId(requestId);
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData("text/plain", requestId);
-                          }}
-                          onDragEnd={() => {
-                            setDraggingId("");
-                            setDragOverGroup("");
-                          }}
-                        >
-                          <div className="kanban-card-head">
-                            <code>{row.track_number || "-"}</code>
-                            <span className={"kanban-status-badge group-" + String(row.status_group || "").toLowerCase()}>
-                              {row.status_name || statusLabel(row.status_code)}
-                            </span>
-                          </div>
-                          <p className="kanban-card-desc">{String(row.description || "Описание не заполнено")}</p>
-                          <div className="kanban-card-meta">
-                            <span>{row.client_name || "-"}</span>
-                            <span>{fmtKanbanDate(row.created_at)}</span>
-                          </div>
-                          <div className="kanban-card-meta">
-                            <span>{row.topic_code || "-"}</span>
-                            <span>{row.assigned_lawyer_name || (isUnassigned ? "Не назначено" : row.assigned_lawyer_id || "-")}</span>
-                          </div>
-                          <div className="kanban-card-meta">
-                            <div className="kanban-update-icons">
-                              <span className={"kanban-update-icon" + (hasUnreadMessage ? " is-unread" : "")} title="Непрочитанные сообщения">
-                                💬
-                              </span>
-                              <span className={"kanban-update-icon" + (hasUnreadAttachment ? " is-unread" : "")} title="Непрочитанные файлы">
-                                📎
-                              </span>
-                            </div>
-                            <span className={"kanban-deadline-chip tone-" + deadlineTone}>{deadline ? fmtKanbanDate(deadline) : "—"}</span>
-                          </div>
-                          <div
-                            className="kanban-card-actions"
-                            onClick={(event) => event.stopPropagation()}
-                            onMouseDown={(event) => event.stopPropagation()}
-                          >
-                            {canClaim ? (
-                              <button className="btn secondary btn-sm" type="button" onClick={() => onClaimRequest(requestId)}>
-                                Взять в работу
-                              </button>
-                            ) : null}
-                            {canMove && transitionOptions.length ? (
-                              <select
-                                className="kanban-transition-select"
-                                defaultValue=""
-                                onClick={(event) => event.stopPropagation()}
-                                onChange={(event) => {
-                                  const targetStatus = String(event.target.value || "");
-                                  if (!targetStatus) return;
-                                  onMoveRequest(row, "", targetStatus);
-                                  event.target.value = "";
-                                }}
-                              >
-                                <option value="">Перевести…</option>
-                                {transitionOptions.map((transition) => (
-                                  <option key={String(transition.to_status)} value={String(transition.to_status)}>
-                                    {String(transition.to_status_name || transition.to_status)}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : null}
-                          </div>
-                        </article>
-                      );
-                    })
-                  ) : (
-                    <p className="muted kanban-empty">Пусто</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <StatusLine status={status} />
-      </div>
-    );
-  }
-
-  function RequestWorkspace({
-    loading,
-    trackNumber,
-    requestData,
-    statusRouteNodes,
-    messages,
-    attachments,
-    messageDraft,
-    selectedFiles,
-    fileUploading,
-    status,
-    onMessageChange,
-    onSendMessage,
-    onFilesSelect,
-    onRemoveSelectedFile,
-    onClearSelectedFiles,
-  }) {
-    const [preview, setPreview] = useState({ open: false, url: "", fileName: "", mimeType: "" });
-    const [chatTab, setChatTab] = useState("chat");
-    const [dropActive, setDropActive] = useState(false);
-    const fileInputRef = useRef(null);
-
-    const openPreview = (item) => {
-      if (!item?.download_url) return;
-      setPreview({
-        open: true,
-        url: String(item.download_url),
-        fileName: String(item.file_name || ""),
-        mimeType: String(item.mime_type || ""),
-      });
-    };
-
-    const closePreview = () => setPreview({ open: false, url: "", fileName: "", mimeType: "" });
-    const pendingFiles = Array.isArray(selectedFiles) ? selectedFiles : [];
-    const hasPendingFiles = pendingFiles.length > 0;
-    const canSubmit = Boolean(String(messageDraft || "").trim() || hasPendingFiles);
-
-    const onInputFiles = (event) => {
-      const files = Array.from((event.target && event.target.files) || []);
-      if (files.length && typeof onFilesSelect === "function") onFilesSelect(files);
-      event.target.value = "";
-    };
-
-    const onDropFiles = (event) => {
-      event.preventDefault();
-      setDropActive(false);
-      const files = Array.from((event.dataTransfer && event.dataTransfer.files) || []);
-      if (files.length && typeof onFilesSelect === "function") onFilesSelect(files);
-    };
-
-    const row = requestData && typeof requestData === "object" ? requestData : null;
-    const totalFilesBytes = (attachments || []).reduce((acc, item) => acc + Number(item?.size_bytes || 0), 0);
-    const summaryFields = [
-      { key: "track", label: "Номер заявки", value: row?.track_number || trackNumber || "-", code: true },
-      { key: "status", label: "Статус", value: row ? statusLabel(row.status_code) : "-" },
-      { key: "topic", label: "Тема", value: row?.topic_code || "-" },
-      { key: "client", label: "Клиент", value: row?.client_name || "-" },
-      { key: "phone", label: "Телефон", value: row?.client_phone || "-" },
-      { key: "lawyer", label: "Назначенный юрист", value: row?.assigned_lawyer_name || row?.assigned_lawyer_id || "-" },
-      { key: "rate", label: "Ставка (фикс.)", value: fmtAmount(row?.effective_rate) },
-      { key: "invoice", label: "Сумма счета", value: fmtAmount(row?.invoice_amount) },
-      { key: "paid", label: "Дата оплаты", value: fmtDate(row?.paid_at) },
-      { key: "size", label: "Размер вложений", value: fmtBytes(row?.total_attachments_bytes) },
-      { key: "created", label: "Создана", value: fmtDate(row?.created_at) },
-      { key: "updated", label: "Обновлена", value: fmtDate(row?.updated_at) },
-    ];
-
-    const extraFields = row?.extra_fields && typeof row.extra_fields === "object" && !Array.isArray(row.extra_fields) ? Object.entries(row.extra_fields) : [];
-    const attachmentsByMessageId = useMemo(() => {
-      const map = new Map();
-      (attachments || []).forEach((item) => {
-        const messageId = String(item?.message_id || "").trim();
-        if (!messageId) return;
-        if (!map.has(messageId)) map.set(messageId, []);
-        map.get(messageId).push(item);
-      });
-      return map;
-    }, [attachments]);
-
-    const openAttachmentFromMessage = (item) => {
-      if (!item?.download_url) return;
-      const kind = detectAttachmentPreviewKind(item.file_name, item.mime_type);
-      if (kind === "none") {
-        window.open(String(item.download_url), "_blank", "noopener,noreferrer");
-        return;
-      }
-      openPreview(item);
-    };
-
-    const chatTimelineItems = [];
-    let previousDate = "";
-    const timelineSource = [];
-    (messages || []).forEach((item) => {
-      timelineSource.push({
-        type: "message",
-        key: "msg-" + String(item?.id || Math.random()),
-        created_at: item?.created_at || null,
-        payload: item,
-      });
-    });
-    (attachments || [])
-      .filter((item) => !String(item?.message_id || "").trim())
-      .forEach((item) => {
-        timelineSource.push({
-          type: "file",
-          key: "file-" + String(item?.id || Math.random()),
-          created_at: item?.created_at || null,
-          payload: item,
-        });
-      });
-    timelineSource.sort((a, b) => {
-      const aTime = new Date(a.created_at || 0).getTime();
-      const bTime = new Date(b.created_at || 0).getTime();
-      if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
-      if (!Number.isFinite(aTime)) return 1;
-      if (!Number.isFinite(bTime)) return -1;
-      if (aTime !== bTime) return aTime - bTime;
-      return String(a.key).localeCompare(String(b.key), "ru");
-    });
-    timelineSource.forEach((entry, index) => {
-      const dateLabel = fmtDateOnly(entry.created_at);
-      const normalizedDate = dateLabel && dateLabel !== "-" ? dateLabel : "Без даты";
-      if (normalizedDate !== previousDate) {
-        chatTimelineItems.push({ type: "date", key: "date-" + normalizedDate + "-" + index, label: normalizedDate });
-        previousDate = normalizedDate;
-      }
-      chatTimelineItems.push(entry);
-    });
-
-    const routeNodes =
-      Array.isArray(statusRouteNodes) && statusRouteNodes.length
-        ? statusRouteNodes
-        : row?.status_code
-          ? [{ code: row.status_code, name: statusLabel(row.status_code), state: "current", note: "Текущий этап обработки заявки" }]
-          : [];
-
-    return (
-      <div className="block">
-        <div className="request-workspace-layout">
-          <div className="request-main-column">
-            <div className="block">
-              <h3>Карточка</h3>
-              {loading ? (
-                <p className="muted">Загрузка...</p>
-              ) : row ? (
-                <>
-                  <div className="request-card-grid">
-                    {summaryFields.map((field) => (
-                      <div className="request-field" key={field.key}>
-                        <span className="request-field-label">{field.label}</span>
-                        <span className="request-field-value">{field.code ? <code>{field.value}</code> : field.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="request-description-block">
-                    <span className="request-field-label">Описание проблемы</span>
-                    <p>{row.description ? String(row.description) : "Описание не заполнено"}</p>
-                  </div>
-                  <div className="request-extra-block">
-                    <span className="request-field-label">Дополнительные данные</span>
-                    {extraFields.length ? (
-                      <ul className="simple-list request-extra-list">
-                        {extraFields.map(([key, value]) => (
-                          <li key={key}>
-                            <b>{humanizeKey(key)}:</b> {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="muted">Дополнительные данные не заполнены</p>
-                    )}
-                  </div>
-                  <div className="request-status-route">
-                    <h4>Маршрут статусов</h4>
-                    {routeNodes.length ? (
-                      <ol className="request-route-list" id="request-status-route">
-                        {routeNodes.map((node, index) => {
-                          const state = String(node?.state || "pending");
-                          const name = String(node?.name || statusLabel(node?.code));
-                          const note = String(node?.note || "").trim();
-                          const changedAt = node?.changed_at ? fmtDate(node.changed_at) : "";
-                          const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending");
-                          return (
-                            <li className={className} key={(node?.code || "node") + "-" + index}>
-                              <span className="route-dot" />
-                              <div className="route-body">
-                                <b>{name}</b>
-                                {note ? <p>{note}</p> : null}
-                                {changedAt && state !== "pending" ? <div className="muted route-time">Изменен: {changedAt}</div> : null}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    ) : (
-                      <p className="muted">Маршрут статусов для темы не настроен</p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p className="muted">Нет данных по заявке</p>
-              )}
-            </div>
-
-          </div>
-
-          <div className="block request-chat-block">
-            <div className="request-chat-head">
-              <h3>Коммуникация</h3>
-              <div className="request-chat-tabs" role="tablist" aria-label="Коммуникация">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={chatTab === "chat"}
-                  className={"tab-btn" + (chatTab === "chat" ? " active" : "")}
-                  onClick={() => setChatTab("chat")}
-                >
-                  Чат
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={chatTab === "files"}
-                  className={"tab-btn" + (chatTab === "files" ? " active" : "")}
-                  onClick={() => setChatTab("files")}
-                >
-                  {"Файлы" + (attachments.length ? " (" + attachments.length + ")" : "")}
-                </button>
-              </div>
-            </div>
-
-            <input
-              id="request-modal-file-input"
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={onInputFiles}
-              disabled={loading || fileUploading}
-              style={{ position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
-            />
-
-            {chatTab === "chat" ? (
-              <>
-                <ul className="simple-list request-modal-list request-chat-list" id="request-modal-messages">
-                  {chatTimelineItems.length ? (
-                    chatTimelineItems.map((entry) =>
-                      entry.type === "date" ? (
-                        <li key={entry.key} className="chat-date-divider">
-                          <span>{entry.label}</span>
-                        </li>
-                      ) : entry.type === "file" ? (
-                        <li
-                          key={entry.key}
-                          className={
-                            "chat-message " +
-                            (String(entry.payload?.responsible || "").toUpperCase().includes("КЛИЕНТ") ? "incoming" : "outgoing")
-                          }
-                        >
-                          <div className="chat-message-author">{String(entry.payload?.responsible || "Система")}</div>
-                          <div className="chat-message-bubble">
-                            <div className="chat-message-files">
-                              <button
-                                type="button"
-                                className="chat-message-file-chip"
-                                onClick={() => openAttachmentFromMessage(entry.payload)}
-                                title={String(entry.payload?.file_name || "Файл")}
-                              >
-                                <span className="chat-message-file-icon" aria-hidden="true">
-                                  📎
-                                </span>
-                                <span className="chat-message-file-name">{String(entry.payload?.file_name || "Файл")}</span>
-                              </button>
-                            </div>
-                            <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
-                          </div>
-                        </li>
-                      ) : (
-                        <li
-                          key={entry.key}
-                          className={
-                            "chat-message " +
-                            (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing")
-                          }
-                        >
-                          <div className="chat-message-author">{String(entry.payload?.author_name || entry.payload?.author_type || "Система")}</div>
-                          <div className="chat-message-bubble">
-                            <p className="chat-message-text">{String(entry.payload?.body || "")}</p>
-                            {(() => {
-                              const messageId = String(entry.payload?.id || "").trim();
-                              if (!messageId) return null;
-                              const messageFiles = attachmentsByMessageId.get(messageId) || [];
-                              if (!messageFiles.length) return null;
-                              return (
-                                <div className="chat-message-files">
-                                  {messageFiles.map((file) => (
-                                    <button
-                                      type="button"
-                                      key={String(file.id)}
-                                      className="chat-message-file-chip"
-                                      onClick={() => openAttachmentFromMessage(file)}
-                                      title={String(file.file_name || "Файл")}
-                                    >
-                                      <span className="chat-message-file-icon" aria-hidden="true">
-                                        📎
-                                      </span>
-                                      <span className="chat-message-file-name">{String(file.file_name || "Файл")}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              );
-                            })()}
-                            <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
-                          </div>
-                        </li>
-                      )
-                    )
-                  ) : (
-                    <li className="muted">Сообщений нет</li>
-                  )}
-                </ul>
-                <form className="stack" onSubmit={onSendMessage}>
-                  <div
-                    className={"field request-chat-composer-dropzone" + (dropActive ? " drag-active" : "")}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDropActive(true);
-                    }}
-                    onDragLeave={(event) => {
-                      if (event.currentTarget.contains(event.relatedTarget)) return;
-                      setDropActive(false);
-                    }}
-                    onDrop={onDropFiles}
-                  >
-                    <label htmlFor="request-modal-message-body">Новое сообщение</label>
-                    <textarea
-                      id="request-modal-message-body"
-                      placeholder="Введите сообщение для клиента"
-                      value={messageDraft}
-                      onChange={onMessageChange}
-                      disabled={loading || fileUploading}
-                    />
-                    <div className="request-drop-hint muted">Перетащите файлы сюда или прикрепите скрепкой</div>
-                  </div>
-                  {hasPendingFiles ? (
-                    <div className="request-pending-files">
-                      {pendingFiles.map((file, index) => (
-                        <div className="pending-file-chip" key={(file.name || "file") + "-" + String(file.lastModified || index)}>
-                          <span className="pending-file-icon" aria-hidden="true">
-                            📎
-                          </span>
-                          <span className="pending-file-name">{file.name}</span>
-                          <button
-                            type="button"
-                            className="pending-file-remove"
-                            aria-label={"Удалить файл " + file.name}
-                            onClick={() => onRemoveSelectedFile(index)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                      <button type="button" className="btn secondary btn-sm" onClick={onClearSelectedFiles}>
-                        Очистить вложения
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="request-chat-composer-actions">
-                    <button
-                      className="icon-btn file-action-btn composer-attach-btn"
-                      type="button"
-                      data-tooltip="Прикрепить файл"
-                      aria-label="Прикрепить файл"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={loading || fileUploading}
-                    >
-                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                        <path
-                          d="M8.6 13.8 15 7.4a3 3 0 0 1 4.2 4.2l-8.1 8.1a5 5 0 1 1-7.1-7.1l8.6-8.6a1 1 0 0 1 1.4 1.4l-8.6 8.6a3 3 0 1 0 4.2 4.2l8.1-8.1a1 1 0 0 0-1.4-1.4l-6.4 6.4a1 1 0 0 1-1.4-1.4z"
-                          fill="currentColor"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      className="btn"
-                      id="request-modal-message-send"
-                      type="submit"
-                      disabled={loading || fileUploading || !canSubmit}
-                    >
-                      Отправить
-                    </button>
-                  </div>
-                </form>
-              </>
-            ) : (
-              <div className="request-files-tab">
-                <ul className="simple-list request-modal-list" id="request-modal-files">
-                  {attachments.length ? (
-                    attachments.map((item) => (
-                      <li key={String(item.id)}>
-                        <div>{item.file_name || "Файл"}</div>
-                        <div className="muted request-modal-item-meta">
-                          {String(item.mime_type || "application/octet-stream") + " • " + fmtBytes(item.size_bytes) + " • " + fmtDate(item.created_at)}
-                        </div>
-                        <div className="request-file-actions">
-                          {item.download_url && detectAttachmentPreviewKind(item.file_name, item.mime_type) !== "none" ? (
-                            <button
-                              className="icon-btn file-action-btn"
-                              type="button"
-                              data-tooltip="Предпросмотр"
-                              onClick={() => openPreview(item)}
-                              aria-label={"Предпросмотр: " + String(item.file_name || "файл")}
-                            >
-                              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                                <path
-                                  d="M12 5C6.8 5 3 9.2 2 12c1 2.8 4.8 7 10 7s9-4.2 10-7c-1-2.8-4.8-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2.2A1.8 1.8 0 1 0 12 10a1.8 1.8 0 0 0 0 3.8z"
-                                  fill="currentColor"
-                                />
-                              </svg>
-                            </button>
-                          ) : null}
-                          {item.download_url ? (
-                            <a
-                              className="icon-btn file-action-btn request-file-link-icon"
-                              data-tooltip="Скачать"
-                              aria-label={"Скачать: " + String(item.file_name || "файл")}
-                              href={item.download_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                                <path
-                                  d="M12 3a1 1 0 0 1 1 1v8.17l2.58-2.58a1 1 0 1 1 1.42 1.42l-4.3 4.3a1 1 0 0 1-1.4 0l-4.3-4.3a1 1 0 0 1 1.42-1.42L11 12.17V4a1 1 0 0 1 1-1zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1z"
-                                  fill="currentColor"
-                                />
-                              </svg>
-                            </a>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))
-                  ) : (
-                    <li className="muted">Файлов пока нет</li>
-                  )}
-                </ul>
-                <div className="request-files-tab-actions">
-                  <span className="muted">
-                    {"Сообщений: " + String((messages || []).length) + " • Общий размер файлов: " + fmtBytes(totalFilesBytes)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        <StatusLine status={status} />
-        <AttachmentPreviewModal
-          open={preview.open}
-          title="Предпросмотр файла"
-          url={preview.url}
-          fileName={preview.fileName}
-          mimeType={preview.mimeType}
-          onClose={closePreview}
-        />
-      </div>
-    );
-  }
-
   function RecordModal({ open, title, fields, form, status, onClose, onChange, onSubmit, onUploadField }) {
     if (!open) return null;
+    const visibleFields = (fields || []).filter((field) => {
+      if (typeof field.visibleWhen !== "function") return true;
+      try {
+        return Boolean(field.visibleWhen(form || {}));
+      } catch (_) {
+        return true;
+      }
+    });
 
     const renderField = (field) => {
       const value = form[field.key] ?? "";
       const options = typeof field.options === "function" ? field.options() : [];
       const id = "record-field-" + field.key;
-      const disabled = Boolean(field.readOnly);
+      const disabled = Boolean(field.readOnly) || (typeof field.readOnlyWhen === "function" ? Boolean(field.readOnlyWhen(form || {})) : false);
 
       if (field.type === "textarea" || field.type === "json") {
         return (
@@ -1762,9 +696,15 @@
         );
       }
       if (field.type === "reference" || field.type === "enum") {
+        const extraOptions = Array.isArray(field.extraOptions) ? field.extraOptions : [];
         return (
           <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)} disabled={disabled}>
             {field.optional ? <option value="">-</option> : null}
+            {extraOptions.map((option) => (
+              <option value={String(option.value)} key={String(option.value)}>
+                {option.label}
+              </option>
+            ))}
             {options.map((option) => (
               <option value={String(option.value)} key={String(option.value)}>
                 {option.label}
@@ -1832,8 +772,8 @@
           </div>
           <form className="stack" onSubmit={onSubmit}>
             <div className="filters" style={{ gridTemplateColumns: "repeat(2, minmax(0,1fr))" }}>
-              {fields.map((field) => (
-                <div className="field" key={field.key}>
+              {visibleFields.map((field) => (
+                <div className="field" key={field.key} style={field.fullRow ? { gridColumn: "1 / -1" } : undefined}>
                   <label htmlFor={"record-field-" + field.key}>{field.label}</label>
                   {renderField(field)}
                 </div>
@@ -1854,6 +794,89 @@
     );
   }
 
+  function GlobalTooltipLayer() {
+    const [tooltip, setTooltip] = useState({ open: false, text: "", x: 0, y: 0, maxWidth: 320 });
+    const activeRef = useRef(null);
+
+    useEffect(() => {
+      const getTarget = (node) => {
+        if (!(node instanceof Element)) return null;
+        const el = node.closest("[data-tooltip]");
+        if (!el) return null;
+        const text = String(el.getAttribute("data-tooltip") || "").trim();
+        return text ? el : null;
+      };
+
+      const reposition = (el) => {
+        if (!(el instanceof Element)) return;
+        const text = String(el.getAttribute("data-tooltip") || "").trim();
+        if (!text) return;
+        const rect = el.getBoundingClientRect();
+        const vw = window.innerWidth || 0;
+        const maxWidth = Math.min(360, Math.max(140, vw - 24));
+        const approxWidth = Math.min(maxWidth, Math.max(80, text.length * 7.1 + 22));
+        const centerX = rect.left + rect.width / 2;
+        const x = Math.max(12 + approxWidth / 2, Math.min(vw - 12 - approxWidth / 2, centerX));
+        const y = Math.max(8, rect.top - 8);
+        setTooltip({ open: true, text, x, y, maxWidth });
+      };
+
+      const open = (node) => {
+        const target = getTarget(node);
+        if (!target) return;
+        activeRef.current = target;
+        reposition(target);
+      };
+
+      const closeIfNeeded = (related) => {
+        const current = activeRef.current;
+        if (!current) return;
+        if (related instanceof Element) {
+          if (related === current || current.contains(related)) return;
+          const nextTarget = getTarget(related);
+          if (nextTarget === current) return;
+        }
+        activeRef.current = null;
+        setTooltip((prev) => ({ ...prev, open: false }));
+      };
+
+      const onMouseOver = (event) => open(event.target);
+      const onFocusIn = (event) => open(event.target);
+      const onMouseOut = (event) => closeIfNeeded(event.relatedTarget);
+      const onFocusOut = (event) => closeIfNeeded(event.relatedTarget);
+      const onUpdatePosition = () => {
+        if (activeRef.current) reposition(activeRef.current);
+      };
+
+      document.addEventListener("mouseover", onMouseOver, true);
+      document.addEventListener("focusin", onFocusIn, true);
+      document.addEventListener("mouseout", onMouseOut, true);
+      document.addEventListener("focusout", onFocusOut, true);
+      window.addEventListener("scroll", onUpdatePosition, true);
+      window.addEventListener("resize", onUpdatePosition);
+
+      return () => {
+        document.removeEventListener("mouseover", onMouseOver, true);
+        document.removeEventListener("focusin", onFocusIn, true);
+        document.removeEventListener("mouseout", onMouseOut, true);
+        document.removeEventListener("focusout", onFocusOut, true);
+        window.removeEventListener("scroll", onUpdatePosition, true);
+        window.removeEventListener("resize", onUpdatePosition);
+      };
+    }, []);
+
+    return (
+      <div
+        className={"global-tooltip-layer" + (tooltip.open ? " open" : "")}
+        style={{ left: tooltip.x + "px", top: tooltip.y + "px", maxWidth: tooltip.maxWidth + "px" }}
+        role="tooltip"
+        aria-hidden={tooltip.open ? "false" : "true"}
+      >
+        {tooltip.text}
+      </div>
+    );
+  }
+
   function App() {
     const routeInfo = useMemo(() => resolveAdminRoute(window.location.search), []);
     const isRequestWorkspaceRoute = routeInfo.view === "request" && Boolean(routeInfo.requestId);
@@ -1871,32 +894,24 @@
       byStatus: {},
       lawyerLoads: [],
       myUnreadByEvent: {},
+      myUnreadTotal: 0,
+      unreadForClients: 0,
+      unreadForLawyers: 0,
+      deadlineAlertTotal: 0,
+      monthRevenue: 0,
+      monthExpenses: 0,
     });
-    const [kanbanData, setKanbanData] = useState({
-      rows: [],
-      columns: KANBAN_GROUPS,
-      total: 0,
-      truncated: false,
-    });
-    const [kanbanLoading, setKanbanLoading] = useState(false);
 
-    const [tables, setTables] = useState({
-      kanban: createTableState(),
-      requests: createTableState(),
-      invoices: createTableState(),
-      quotes: createTableState(),
-      topics: createTableState(),
-      statuses: createTableState(),
-      formFields: createTableState(),
-      topicRequiredFields: createTableState(),
-      topicDataTemplates: createTableState(),
-      statusTransitions: createTableState(),
-      users: createTableState(),
-      userTopics: createTableState(),
-      availableTables: createTableState(),
-    });
-    const [tableCatalog, setTableCatalog] = useState([]);
-    const [referenceRowsMap, setReferenceRowsMap] = useState({});
+    const {
+      tables,
+      tablesRef,
+      setTableState,
+      resetTablesState,
+      tableCatalog,
+      setTableCatalog,
+      referenceRowsMap,
+      setReferenceRowsMap,
+    } = useTablesState();
 
     const [dictionaries, setDictionaries] = useState({
       topics: [],
@@ -1908,7 +923,6 @@
 
     const [statusMap, setStatusMap] = useState({});
 
-    const [requestModal, setRequestModal] = useState(createRequestModalState());
     const [recordModal, setRecordModal] = useState({
       open: false,
       tableKey: null,
@@ -1932,11 +946,6 @@
       rawValue: "",
       editIndex: null,
     });
-    const [kanbanSortModal, setKanbanSortModal] = useState({
-      open: false,
-      value: "created_newest",
-    });
-    const [kanbanSortApplied, setKanbanSortApplied] = useState(false);
     const [reassignModal, setReassignModal] = useState({
       open: false,
       requestId: null,
@@ -1944,13 +953,8 @@
       lawyerId: "",
     });
 
-    const tablesRef = useRef(tables);
-    const requestOpenGuardRef = useRef({ requestId: "", ts: 0 });
     const initialRouteHandledRef = useRef(false);
     const statusDesignerLoadedTopicRef = useRef("");
-    useEffect(() => {
-      tablesRef.current = tables;
-    }, [tables]);
 
     const setStatus = useCallback((key, message, kind) => {
       setStatusMap((prev) => ({ ...prev, [key]: { message: message || "", kind: kind || "" } }));
@@ -1958,40 +962,36 @@
 
     const getStatus = useCallback((key) => statusMap[key] || { message: "", kind: "" }, [statusMap]);
 
-    const api = useCallback(
-      async (path, options, tokenOverride) => {
-        const opts = options || {};
-        const authToken = tokenOverride !== undefined ? tokenOverride : token;
-        const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+    const api = useAdminApi(token);
 
-        if (opts.auth !== false) {
-          if (!authToken) throw new Error("Отсутствует токен авторизации");
-          headers.Authorization = "Bearer " + authToken;
-        }
-
-        const response = await fetch(path, {
-          method: opts.method || "GET",
-          headers,
-          body: opts.body ? JSON.stringify(opts.body) : undefined,
-        });
-
-        const text = await response.text();
-        let payload;
-        try {
-          payload = text ? JSON.parse(text) : {};
-        } catch (_) {
-          payload = { raw: text };
-        }
-
-        if (!response.ok) {
-          const message = (payload && (payload.detail || payload.error || payload.raw)) || "HTTP " + response.status;
-          throw new Error(translateApiError(String(message)));
-        }
-
-        return payload;
-      },
-      [token]
-    );
+    const {
+      requestModal,
+      setRequestModal,
+      resetRequestWorkspaceState,
+      updateRequestModalMessageDraft,
+      appendRequestModalFiles,
+      removeRequestModalFile,
+      clearRequestModalFiles,
+      loadRequestModalData,
+      refreshRequestModal,
+      openRequestDetails,
+      clearPendingStatusChangePreset,
+      submitRequestStatusChange,
+      submitRequestModalMessage,
+      loadRequestDataTemplates,
+      loadRequestDataBatch,
+      loadRequestDataTemplateDetails,
+      saveRequestDataTemplate,
+      saveRequestDataBatch,
+    } = useRequestWorkspace({
+      api,
+      setStatus,
+      setActiveSection,
+      token,
+      users: dictionaries.users,
+      buildUniversalQuery,
+      resolveAdminObjectSrc,
+    });
 
     const getStatusOptions = useCallback(() => {
       return (dictionaries.statuses || [])
@@ -2025,6 +1025,16 @@
     const getFormFieldTypeOptions = useCallback(() => {
       return (dictionaries.formFieldTypes || []).filter(Boolean).map((item) => ({ value: item, label: item }));
     }, [dictionaries.formFieldTypes]);
+
+    const getRequestDataValueTypeOptions = useCallback(() => {
+      return [
+        { value: "string", label: "Строка (string)" },
+        { value: "date", label: "Дата (date)" },
+        { value: "number", label: "Число (number)" },
+        { value: "file", label: "Файл (file)" },
+        { value: "text", label: "Текст (text)" },
+      ];
+    }, []);
 
     const getFormFieldKeyOptions = useCallback(() => {
       return (dictionaries.formFieldKeys || [])
@@ -2082,9 +1092,20 @@
       return getReferenceOptions({ table: "status_groups", value_field: "id", label_field: "name" });
     }, [getReferenceOptions]);
 
+    const getClientOptions = useCallback(() => {
+      return getReferenceOptions({ table: "clients", value_field: "id", label_field: "full_name" });
+    }, [getReferenceOptions]);
+
     const dictionaryTableItems = useMemo(() => {
       return (tableCatalog || [])
-        .filter((item) => item && item.section === "dictionary" && Array.isArray(item.actions) && item.actions.includes("query"))
+        .filter(
+          (item) =>
+            item &&
+            item.section === "dictionary" &&
+            Array.isArray(item.actions) &&
+            item.actions.includes("query") &&
+            !LEGACY_HIDDEN_DICTIONARY_TABLES.has(String(item.key || ""))
+        )
         .sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
     }, [tableCatalog]);
 
@@ -2137,6 +1158,11 @@
             { field: "client_phone", label: "Телефон", type: "text" },
             { field: "status_code", label: "Статус", type: "reference", options: getStatusOptions },
             { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "important_date_at", label: "Важная дата", type: "date" },
+            { field: "has_unread_updates", label: "Есть оповещения", type: "boolean" },
+            { field: "deadline_alert", label: "Горящие дедлайны", type: "boolean" },
+            { field: "client_has_unread_updates", label: "Непрочитано клиентом", type: "boolean" },
+            { field: "lawyer_has_unread_updates", label: "Непрочитано юристом", type: "boolean" },
             { field: "invoice_amount", label: "Сумма счета", type: "number" },
             { field: "effective_rate", label: "Ставка", type: "number" },
             { field: "paid_at", label: "Оплачено", type: "date" },
@@ -2210,6 +1236,8 @@
             { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
             { field: "key", label: "Ключ", type: "text" },
             { field: "label", label: "Метка", type: "text" },
+            { field: "value_type", label: "Тип значения", type: "enum", options: getRequestDataValueTypeOptions },
+            { field: "document_name", label: "Документ", type: "text" },
             { field: "required", label: "Обязательное", type: "boolean" },
             { field: "enabled", label: "Активно", type: "boolean" },
             { field: "sort_order", label: "Порядок", type: "number" },
@@ -2230,6 +1258,7 @@
           return [
             { field: "name", label: "Имя", type: "text" },
             { field: "email", label: "Email", type: "text" },
+            { field: "phone", label: "Телефон", type: "text" },
             { field: "role", label: "Роль", type: "enum", options: getRoleOptions },
             { field: "primary_topic_code", label: "Профиль (тема)", type: "reference", options: getTopicOptions },
             { field: "default_rate", label: "Ставка по умолчанию", type: "number" },
@@ -2380,14 +1409,43 @@
     const getRecordFields = useCallback(
       (tableKey) => {
         if (tableKey === "requests") {
+          const isNewClientMode = (form) => {
+            const value = String(form?.client_id || "").trim();
+            return !value || value === NEW_REQUEST_CLIENT_OPTION;
+          };
           const fields = [
             { key: "track_number", label: "Номер заявки", type: "text", optional: true, placeholder: "Оставьте пустым для автогенерации" },
-            { key: "client_name", label: "Клиент", type: "text", required: true },
-            { key: "client_phone", label: "Телефон", type: "text", required: true },
+            ...(role !== "LAWYER"
+              ? [
+                  {
+                    key: "client_id",
+                    label: "Клиент",
+                    type: "reference",
+                    defaultValue: NEW_REQUEST_CLIENT_OPTION,
+                    options: getClientOptions,
+                    extraOptions: [{ value: NEW_REQUEST_CLIENT_OPTION, label: "Новый клиент" }],
+                    fullRow: true,
+                  },
+                ]
+              : []),
+            {
+              key: "client_name",
+              label: role !== "LAWYER" ? "ФИО нового клиента" : "Клиент",
+              type: "text",
+              required: true,
+              visibleWhen: role === "LAWYER" ? undefined : isNewClientMode,
+            },
+            {
+              key: "client_phone",
+              label: role !== "LAWYER" ? "Телефон нового клиента" : "Телефон",
+              type: "text",
+              required: true,
+              visibleWhen: role === "LAWYER" ? undefined : isNewClientMode,
+            },
             { key: "topic_code", label: "Тема", type: "reference", optional: true, options: getTopicOptions },
             { key: "status_code", label: "Статус", type: "reference", required: true, options: getStatusOptions },
             { key: "description", label: "Описание", type: "textarea", optional: true },
-            { key: "extra_fields", label: "Дополнительные поля (JSON)", type: "json", optional: true, defaultValue: "{}" },
+            { key: "request_cost", label: "Стоимость заявки", type: "number", optional: true },
           ];
           if (role !== "LAWYER") {
             fields.push({ key: "assigned_lawyer_id", label: "Назначенный юрист", type: "reference", optional: true, options: getLawyerOptions });
@@ -2460,6 +1518,8 @@
             { key: "topic_code", label: "Тема", type: "reference", required: true, options: getTopicOptions },
             { key: "key", label: "Ключ", type: "text", required: true },
             { key: "label", label: "Метка", type: "text", required: true },
+            { key: "value_type", label: "Тип значения", type: "enum", required: true, options: getRequestDataValueTypeOptions, defaultValue: "string" },
+            { key: "document_name", label: "Документ", type: "text", optional: true, placeholder: "Например: Договор / Паспорт" },
             { key: "description", label: "Описание", type: "textarea", optional: true },
             { key: "required", label: "Обязательное", type: "boolean", defaultValue: "true" },
             { key: "enabled", label: "Активно", type: "boolean", defaultValue: "true" },
@@ -2496,6 +1556,7 @@
           return [
             { key: "name", label: "Имя", type: "text", required: true },
             { key: "email", label: "Email", type: "text", required: true },
+            { key: "phone", label: "Телефон", type: "text", optional: true, placeholder: "+7..." },
             { key: "role", label: "Роль", type: "enum", required: true, options: getRoleOptions, defaultValue: "LAWYER" },
             {
               key: "avatar_url",
@@ -2543,6 +1604,7 @@
         getFormFieldKeyOptions,
         getFormFieldTypeOptions,
         getInvoiceStatusOptions,
+        getClientOptions,
         getLawyerOptions,
         getRoleOptions,
         getStatusGroupOptions,
@@ -2580,146 +1642,41 @@
       [getFieldDef, getFieldOptions]
     );
 
-    const setTableState = useCallback((tableKey, next) => {
-      setTables((prev) => ({ ...prev, [tableKey]: next }));
-    }, []);
+    const {
+      kanbanData,
+      kanbanLoading,
+      kanbanSortModal,
+      kanbanSortApplied,
+      loadKanban,
+      openKanbanSortModal,
+      closeKanbanSortModal,
+      updateKanbanSortMode,
+      submitKanbanSortModal,
+      resetKanbanState,
+    } = useKanban({
+      api,
+      setStatus,
+      setTableState,
+      tablesRef,
+    });
 
-    const loadTable = useCallback(
-      async (tableKey, options, tokenOverride) => {
-        const opts = options || {};
-        const config = resolveTableConfig(tableKey);
-        if (!config) return false;
+    const { loadTable, loadPrevPage, loadNextPage, loadAllRows, toggleTableSort } = useTableActions({
+      api,
+      setStatus,
+      resolveTableConfig,
+      tablesRef,
+      setTableState,
+      setDictionaries,
+      buildUniversalQuery,
+    });
 
-        const current = tablesRef.current[tableKey] || createTableState();
-        const next = {
-          ...current,
-          filters: Array.isArray(opts.filtersOverride) ? [...opts.filtersOverride] : [...(current.filters || [])],
-          sort: Array.isArray(opts.sortOverride) ? [...opts.sortOverride] : Array.isArray(current.sort) ? [...current.sort] : null,
-          rows: [...(current.rows || [])],
-        };
-
-        if (opts.resetOffset) {
-          next.offset = 0;
-          next.showAll = false;
-        }
-        if (opts.loadAll) {
-          next.offset = 0;
-          next.showAll = true;
-        }
-
-        const statusKey = tableKey;
-        setStatus(statusKey, "Загрузка...", "");
-
-        try {
-          const activeSort = next.sort && next.sort.length ? next.sort : config.sort;
-          let limit = next.showAll ? Math.max(next.total || PAGE_SIZE, PAGE_SIZE) : PAGE_SIZE;
-          const offset = next.showAll ? 0 : next.offset;
-          let data = await api(
-            config.endpoint,
-            {
-              method: "POST",
-              body: buildUniversalQuery(next.filters, activeSort, limit, offset),
-            },
-            tokenOverride
-          );
-
-          next.total = Number(data.total || 0);
-          next.rows = data.rows || [];
-
-          if (next.showAll && next.total > next.rows.length) {
-            limit = next.total;
-            data = await api(
-              config.endpoint,
-              {
-                method: "POST",
-                body: buildUniversalQuery(next.filters, activeSort, limit, 0),
-              },
-              tokenOverride
-            );
-            next.total = Number(data.total || next.total);
-            next.rows = data.rows || [];
-          }
-
-          if (!next.showAll && next.total > 0 && next.offset >= next.total) {
-            next.offset = Math.floor((next.total - 1) / PAGE_SIZE) * PAGE_SIZE;
-            setTableState(tableKey, next);
-            return loadTable(tableKey, {}, tokenOverride);
-          }
-
-          setTableState(tableKey, next);
-
-          if (tableKey === "requests") {
-            setDictionaries((prev) => {
-              const map = new Map((prev.topics || []).map((topic) => [topic.code, topic]));
-              (next.rows || []).forEach((row) => {
-                if (!row.topic_code || map.has(row.topic_code)) return;
-                map.set(row.topic_code, { code: row.topic_code, name: row.topic_code });
-              });
-              return { ...prev, topics: sortByName(Array.from(map.values())) };
-            });
-          }
-
-          if (tableKey === "topics") {
-            setDictionaries((prev) => ({
-              ...prev,
-              topics: sortByName((next.rows || []).map((row) => ({ code: row.code, name: row.name || row.code }))),
-            }));
-          }
-
-          if (tableKey === "statuses") {
-            setDictionaries((prev) => {
-              const map = new Map(Object.entries(STATUS_LABELS).map(([code, name]) => [code, { code, name }]));
-              (next.rows || []).forEach((row) => {
-                if (!row.code) return;
-                map.set(row.code, { code: row.code, name: row.name || statusLabel(row.code) });
-              });
-              return { ...prev, statuses: sortByName(Array.from(map.values())) };
-            });
-          }
-
-          if (tableKey === "formFields" || tableKey === "form_fields") {
-            setDictionaries((prev) => {
-              const set = new Set(DEFAULT_FORM_FIELD_TYPES);
-              (next.rows || []).forEach((row) => {
-                if (row?.type) set.add(row.type);
-              });
-              const fieldKeys = (next.rows || [])
-                .filter((row) => row && row.key)
-                .map((row) => ({ key: row.key, label: row.label || row.key }))
-                .sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
-              return {
-                ...prev,
-                formFieldTypes: Array.from(set.values()).sort((a, b) => String(a).localeCompare(String(b), "ru")),
-                formFieldKeys: fieldKeys,
-              };
-            });
-          }
-
-          if (tableKey === "users" || tableKey === "admin_users") {
-            setDictionaries((prev) => {
-              const map = new Map((prev.users || []).map((user) => [user.id, user]));
-              (next.rows || []).forEach((row) => {
-                map.set(row.id, {
-                  id: row.id,
-                  name: row.name || "",
-                  email: row.email || "",
-                  role: row.role || "",
-                  is_active: Boolean(row.is_active),
-                });
-              });
-              return { ...prev, users: Array.from(map.values()) };
-            });
-          }
-
-          setStatus(statusKey, "Список обновлен", "ok");
-          return true;
-        } catch (error) {
-          setStatus(statusKey, "Ошибка: " + error.message, "error");
-          return false;
-        }
-      },
-      [api, resolveTableConfig, setStatus, setTableState]
-    );
+    const { loadAvailableTables, loadReferenceRows } = useAdminCatalogLoaders({
+      api,
+      setStatus,
+      setTableState,
+      setReferenceRowsMap,
+      buildUniversalQuery,
+    });
 
     const loadCurrentConfigTable = useCallback(
       async (resetOffset, tokenOverride, keyOverride) => {
@@ -2747,76 +1704,6 @@
         });
       },
       [loadTable]
-    );
-
-    const loadAvailableTables = useCallback(
-      async (tokenOverride) => {
-        setStatus("availableTables", "Загрузка...", "");
-        try {
-          const data = await api("/api/admin/crud/meta/available-tables", {}, tokenOverride);
-          const rows = Array.isArray(data.rows) ? data.rows : [];
-          setTableState("availableTables", {
-            filters: [],
-            sort: null,
-            offset: 0,
-            total: rows.length,
-            showAll: true,
-            rows,
-          });
-          setStatus("availableTables", "Список обновлен", "ok");
-          return true;
-        } catch (error) {
-          setStatus("availableTables", "Ошибка: " + error.message, "error");
-          return false;
-        }
-      },
-      [api, setStatus, setTableState]
-    );
-
-    const loadReferenceRows = useCallback(
-      async (catalogRows, tokenOverride) => {
-        const rows = Array.isArray(catalogRows) ? catalogRows : [];
-        const byTable = {};
-        rows.forEach((item) => {
-          const table = String(item?.table || "");
-          if (!table) return;
-          byTable[table] = item;
-        });
-        const references = new Set();
-        rows.forEach((item) => {
-          (item?.columns || []).forEach((column) => {
-            const meta = normalizeReferenceMeta(column?.reference);
-            if (meta?.table) references.add(meta.table);
-          });
-        });
-        if (!references.size) {
-          setReferenceRowsMap({});
-          return;
-        }
-        const nextMap = {};
-        await Promise.all(
-          Array.from(references.values()).map(async (table) => {
-            const meta = byTable[table];
-            const endpoint = String(meta?.query_endpoint || ("/api/admin/crud/" + table + "/query"));
-            const sort = Array.isArray(meta?.default_sort) && meta.default_sort.length ? meta.default_sort : [{ field: "created_at", dir: "desc" }];
-            try {
-              const data = await api(
-                endpoint,
-                {
-                  method: "POST",
-                  body: buildUniversalQuery([], sort, 500, 0),
-                },
-                tokenOverride
-              );
-              nextMap[table] = Array.isArray(data?.rows) ? data.rows : [];
-            } catch (_) {
-              nextMap[table] = [];
-            }
-          })
-        );
-        setReferenceRowsMap(nextMap);
-      },
-      [api]
     );
 
     useEffect(() => {
@@ -2864,6 +1751,8 @@
                   { label: "Назначенные", value: data.assigned_total ?? 0 },
                   { label: "Неназначенные", value: data.unassigned_total ?? 0 },
                   { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
+                  { label: "Выручка (мес.)", value: Number(data.month_revenue ?? 0).toFixed(2) },
+                  { label: "Расходы (мес.)", value: Number(data.month_expenses ?? 0).toFixed(2) },
                   { label: "Непрочитано юристами", value: data.unread_for_lawyers ?? 0 },
                   { label: "Непрочитано клиентами", value: data.unread_for_clients ?? 0 },
                 ];
@@ -2877,6 +1766,12 @@
             byStatus: localized,
             lawyerLoads: data.lawyer_loads || [],
             myUnreadByEvent: data.my_unread_by_event || {},
+            myUnreadTotal: Number(data.my_unread_updates || 0),
+            unreadForClients: Number(data.unread_for_clients || 0),
+            unreadForLawyers: Number(data.unread_for_lawyers || 0),
+            deadlineAlertTotal: Number(data.deadline_alert_total || 0),
+            monthRevenue: Number(data.month_revenue || 0),
+            monthExpenses: Number(data.month_expenses || 0),
           });
           setStatus("dashboard", "Данные обновлены", "ok");
         } catch (error) {
@@ -2884,49 +1779,6 @@
         }
       },
       [api, role, setStatus]
-    );
-
-    const loadKanban = useCallback(
-      async (tokenOverride, options) => {
-        const opts = options || {};
-        const currentKanbanState = tablesRef.current.kanban || createTableState();
-        const activeFilters = Array.isArray(opts.filtersOverride) ? [...opts.filtersOverride] : [...(currentKanbanState.filters || [])];
-        const currentSortMode = Array.isArray(currentKanbanState.sort) && currentKanbanState.sort[0] ? String(currentKanbanState.sort[0].field || "") : "";
-        const activeSortMode =
-          String(opts.sortModeOverride || currentSortMode || kanbanSortModal.value || "created_newest").trim() || "created_newest";
-        const params = new URLSearchParams({ limit: "400", sort_mode: activeSortMode });
-        if (activeFilters.length) params.set("filters", JSON.stringify(activeFilters));
-
-        setKanbanLoading(true);
-        setStatus("kanban", "Загрузка...", "");
-        try {
-          const data = await api("/api/admin/requests/kanban?" + params.toString(), {}, tokenOverride);
-          const rows = Array.isArray(data.rows) ? data.rows : [];
-          const columns = Array.isArray(data.columns) && data.columns.length ? data.columns : KANBAN_GROUPS;
-          setKanbanData({
-            rows,
-            columns,
-            total: Number(data.total || rows.length),
-            truncated: Boolean(data.truncated),
-          });
-          setTableState("kanban", {
-            ...currentKanbanState,
-            filters: activeFilters,
-            sort: [{ field: activeSortMode, dir: "asc" }],
-            rows,
-            total: Number(data.total || rows.length),
-            offset: 0,
-            showAll: false,
-          });
-          const tail = Boolean(data.truncated) ? " Показана ограниченная выборка." : "";
-          setStatus("kanban", "Канбан обновлен." + tail, "ok");
-        } catch (error) {
-          setStatus("kanban", "Ошибка: " + error.message, "error");
-        } finally {
-          setKanbanLoading(false);
-        }
-      },
-      [api, kanbanSortModal.value, setStatus, setTableState]
     );
 
     const loadMeta = useCallback(
@@ -3013,6 +1865,7 @@
               id: row.id,
               name: row.name || "",
               email: row.email || "",
+              phone: row.phone || "",
               role: row.role || "",
               is_active: Boolean(row.is_active),
             })),
@@ -3042,211 +1895,6 @@
       },
       [api, bootstrapReferenceData, loadAvailableTables, role, setStatus, token]
     );
-
-    const loadRequestModalData = useCallback(
-      async (requestId, options) => {
-        const opts = options || {};
-        const showLoading = opts.showLoading !== false;
-        if (!requestId) return;
-
-        if (showLoading) {
-          setRequestModal((prev) => ({
-            ...prev,
-            loading: true,
-            requestId,
-            requestData: null,
-            statusRouteNodes: [],
-          }));
-        }
-
-        const requestFilter = [{ field: "request_id", op: "=", value: String(requestId) }];
-        try {
-          const [row, messagesData, attachmentsData, statusRouteData] = await Promise.all([
-            api("/api/admin/crud/requests/" + requestId),
-            api("/api/admin/chat/requests/" + requestId + "/messages"),
-            api("/api/admin/crud/attachments/query", {
-              method: "POST",
-              body: buildUniversalQuery(requestFilter, [{ field: "created_at", dir: "asc" }], 500, 0),
-            }),
-            api("/api/admin/requests/" + requestId + "/status-route").catch(() => ({ nodes: [] })),
-          ]);
-          const attachments = (attachmentsData.rows || []).map((item) => ({
-            ...item,
-            download_url: resolveAdminObjectSrc(item.s3_key, token),
-          }));
-          const usersByEmail = new Map(
-            (dictionaries.users || [])
-              .filter((user) => user && user.email)
-              .map((user) => [String(user.email).toLowerCase(), String(user.name || user.email)])
-          );
-          const normalizedMessages = (messagesData.rows || []).map((item) => {
-            if (!item || typeof item !== "object") return item;
-            const authorType = String(item.author_type || "").toUpperCase();
-            const authorName = String(item.author_name || "").trim();
-            if ((authorType === "LAWYER" || authorType === "SYSTEM") && authorName.includes("@")) {
-              const mapped = usersByEmail.get(authorName.toLowerCase());
-              if (mapped) return { ...item, author_name: mapped };
-            }
-            return item;
-          });
-          setRequestModal((prev) => ({
-            ...prev,
-            loading: false,
-            requestId: row.id || requestId,
-            trackNumber: String(row.track_number || ""),
-            requestData: row,
-            statusRouteNodes: Array.isArray(statusRouteData?.nodes) ? statusRouteData.nodes : [],
-            messages: normalizedMessages,
-            attachments,
-            selectedFiles: [],
-            fileUploading: false,
-          }));
-          if (showLoading) setStatus("requestModal", "", "");
-        } catch (error) {
-          setRequestModal((prev) => ({
-            ...prev,
-            loading: false,
-            requestId,
-            requestData: null,
-            statusRouteNodes: [],
-            messages: [],
-            attachments: [],
-            selectedFiles: [],
-            fileUploading: false,
-          }));
-          setStatus("requestModal", "Ошибка: " + error.message, "error");
-        }
-      },
-      [api, dictionaries.users, setStatus, token]
-    );
-
-    const openRequestDetails = useCallback(
-      async (requestId, event) => {
-        if (event) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        if (!requestId) return;
-        const normalizedRequestId = String(requestId);
-        const now = Date.now();
-        const prev = requestOpenGuardRef.current;
-        if (prev.requestId === normalizedRequestId && now - prev.ts < 900) return;
-        requestOpenGuardRef.current = { requestId: normalizedRequestId, ts: now };
-        if (window.location.pathname !== "/admin.html" || window.location.search) {
-          window.history.replaceState(null, "", "/admin.html");
-        }
-        setStatus("requestModal", "", "");
-        setActiveSection("requestWorkspace");
-        await loadRequestModalData(normalizedRequestId, { showLoading: true });
-      },
-      [loadRequestModalData, setStatus]
-    );
-
-    const refreshRequestModal = useCallback(async () => {
-      if (!requestModal.requestId) return;
-      await loadRequestModalData(requestModal.requestId, { showLoading: true });
-    }, [loadRequestModalData, requestModal.requestId]);
-
-    const updateRequestModalMessageDraft = useCallback((event) => {
-      const value = event.target.value;
-      setRequestModal((prev) => ({ ...prev, messageDraft: value }));
-    }, []);
-
-    const submitRequestModalMessage = useCallback(
-      async (event) => {
-        event.preventDefault();
-        const requestId = requestModal.requestId;
-        const body = String(requestModal.messageDraft || "").trim();
-        const files = Array.isArray(requestModal.selectedFiles) ? requestModal.selectedFiles : [];
-        if (!requestId || (!body && !files.length)) return;
-        try {
-          setRequestModal((prev) => ({ ...prev, fileUploading: true }));
-          setStatus("requestModal", files.length ? "Отправка сообщения и файлов..." : "Отправка сообщения...", "");
-
-          let messageId = null;
-          if (body) {
-            const message = await api("/api/admin/chat/requests/" + requestId + "/messages", {
-              method: "POST",
-              body: { body },
-            });
-            messageId = String(message?.id || "").trim() || null;
-          }
-
-          for (const file of files) {
-            const mimeType = String(file.type || "application/octet-stream");
-            const init = await api("/api/admin/uploads/init", {
-              method: "POST",
-              body: {
-                file_name: file.name,
-                mime_type: mimeType,
-                size_bytes: file.size,
-                scope: "REQUEST_ATTACHMENT",
-                request_id: requestId,
-              },
-            });
-            const putResp = await fetch(init.presigned_url, {
-              method: "PUT",
-              headers: { "Content-Type": mimeType },
-              body: file,
-            });
-            if (!putResp.ok) throw new Error("Не удалось загрузить файл в хранилище");
-            await api("/api/admin/uploads/complete", {
-              method: "POST",
-              body: {
-                key: init.key,
-                file_name: file.name,
-                mime_type: mimeType,
-                size_bytes: file.size,
-                scope: "REQUEST_ATTACHMENT",
-                request_id: requestId,
-                message_id: messageId,
-              },
-            });
-          }
-
-          setRequestModal((prev) => ({ ...prev, messageDraft: "", selectedFiles: [], fileUploading: false }));
-          const successMessage = body && files.length ? "Сообщение и файлы отправлены" : files.length ? "Файлы отправлены" : "Сообщение отправлено";
-          setStatus("requestModal", successMessage, "ok");
-          await loadRequestModalData(requestId, { showLoading: false });
-        } catch (error) {
-          setRequestModal((prev) => ({ ...prev, fileUploading: false }));
-          setStatus("requestModal", "Ошибка отправки: " + error.message, "error");
-        }
-      },
-      [api, loadRequestModalData, requestModal.messageDraft, requestModal.requestId, requestModal.selectedFiles, setStatus]
-    );
-
-    const appendRequestModalFiles = useCallback((files) => {
-      const list = Array.isArray(files) ? files.filter(Boolean) : [];
-      if (!list.length) return;
-      setRequestModal((prev) => {
-        const existing = Array.isArray(prev.selectedFiles) ? prev.selectedFiles : [];
-        const next = [...existing];
-        list.forEach((file) => {
-          const duplicate = next.some(
-            (item) =>
-              item &&
-              item.name === file.name &&
-              Number(item.size || 0) === Number(file.size || 0) &&
-              Number(item.lastModified || 0) === Number(file.lastModified || 0)
-          );
-          if (!duplicate) next.push(file);
-        });
-        return { ...prev, selectedFiles: next };
-      });
-    }, []);
-
-    const removeRequestModalFile = useCallback((index) => {
-      setRequestModal((prev) => {
-        const existing = Array.isArray(prev.selectedFiles) ? [...prev.selectedFiles] : [];
-        existing.splice(index, 1);
-        return { ...prev, selectedFiles: existing };
-      });
-    }, []);
-
-    const clearRequestModalFiles = useCallback(() => {
-      setRequestModal((prev) => ({ ...prev, selectedFiles: [] }));
-    }, []);
 
     const openCreateRecordModal = useCallback(
       (tableKey) => {
@@ -3304,6 +1952,9 @@
           else if (field.type === "json") nextForm[field.key] = value == null ? "" : JSON.stringify(value, null, 2);
           else nextForm[field.key] = value == null ? "" : String(value);
         });
+        if (tableKey === "requests" && role !== "LAWYER" && !String(nextForm.client_id || "").trim()) {
+          nextForm.client_id = NEW_REQUEST_CLIENT_OPTION;
+        }
         setRecordModal({ open: true, tableKey, mode: "edit", rowId: row.id, form: nextForm });
         setStatus("recordForm", "", "");
       },
@@ -3315,9 +1966,50 @@
       setStatus("recordForm", "", "");
     }, [setStatus]);
 
-    const updateRecordField = useCallback((field, value) => {
-      setRecordModal((prev) => ({ ...prev, form: { ...(prev.form || {}), [field]: value } }));
-    }, []);
+    const updateRecordField = useCallback(
+      (field, value) => {
+        setRecordModal((prev) => {
+          const nextForm = { ...(prev.form || {}), [field]: value };
+          if (prev.tableKey === "requests") {
+            if (field === "client_id") {
+              const selectedId = String(value || "").trim();
+              if (!selectedId || selectedId === NEW_REQUEST_CLIENT_OPTION) {
+                nextForm.client_id = NEW_REQUEST_CLIENT_OPTION;
+                nextForm.client_name = "";
+                nextForm.client_phone = "";
+              } else if (selectedId) {
+                const rows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
+                const found = rows.find((row) => String(row?.id || "") === selectedId);
+                if (found) {
+                  nextForm.client_name = String(found.full_name || nextForm.client_name || "");
+                  nextForm.client_phone = String(found.phone || nextForm.client_phone || "");
+                }
+              }
+            }
+            if (
+              (field === "client_name" || field === "client_phone") &&
+              String(nextForm.client_id || "").trim() &&
+              String(nextForm.client_id || "").trim() !== NEW_REQUEST_CLIENT_OPTION
+            ) {
+              const selectedId = String(nextForm.client_id || "").trim();
+              const rows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
+              const found = rows.find((row) => String(row?.id || "") === selectedId);
+              if (found) {
+                const selectedName = String(found.full_name || "");
+                const selectedPhone = String(found.phone || "");
+                const currentName = String(field === "client_name" ? value : nextForm.client_name || "");
+                const currentPhone = String(field === "client_phone" ? value : nextForm.client_phone || "");
+                if (currentName !== selectedName || currentPhone !== selectedPhone) {
+                  nextForm.client_id = "";
+                }
+              }
+            }
+          }
+          return { ...prev, form: nextForm };
+        });
+      },
+      [referenceRowsMap.clients]
+    );
 
     const uploadRecordFieldFile = useCallback(
       async (field, file) => {
@@ -3407,6 +2099,10 @@
           }
 
           const value = String(raw || "").trim();
+          if (tableKey === "requests" && field.key === "client_id" && value === NEW_REQUEST_CLIENT_OPTION) {
+            payload[field.key] = null;
+            return;
+          }
           if (!value) {
             if (mode === "create" && field.autoCreate) return;
             if (mode === "create" && field.requiredOnCreate) throw new Error("Заполните поле \"" + field.label + "\"");
@@ -3419,7 +2115,7 @@
           payload[field.key] = value;
         });
 
-        if (tableKey === "requests" && !payload.extra_fields) payload.extra_fields = {};
+        if (tableKey === "requests" && mode === "create" && !payload.extra_fields) payload.extra_fields = {};
         if (tableKey === "invoices" && mode === "edit") delete payload.request_track_number;
         return payload;
       },
@@ -3526,23 +2222,31 @@
             setStatus("kanban", "Для этой карточки нет перехода в выбранную колонку", "error");
             return;
           }
+          if (candidates.length > 1) {
+            await openRequestDetails(requestId, undefined, {
+              statusChangePreset: {
+                source: "kanban",
+                targetGroup: groupKey,
+                suggestedStatuses: candidates.map((item) => String(item?.to_status || "")).filter(Boolean),
+              },
+            });
+            setStatus("kanban", "Откройте модальное окно смены статуса и выберите конкретный статус", "ok");
+            return;
+          }
           targetStatus = String(candidates[0]?.to_status || "").trim();
         }
         if (!targetStatus || targetStatus === String(row?.status_code || "")) return;
 
         try {
           setStatus("kanban", "Переводим заявку...", "");
-          await api("/api/admin/requests/" + requestId, {
-            method: "PATCH",
-            body: { status_code: targetStatus },
-          });
+          await submitRequestStatusChange({ requestId, statusCode: targetStatus });
           setStatus("kanban", "Статус заявки обновлен", "ok");
           await Promise.all([loadKanban(), loadTable("requests", { resetOffset: true })]);
         } catch (error) {
           setStatus("kanban", "Ошибка перехода: " + error.message, "error");
         }
       },
-      [api, loadKanban, loadTable, role, setStatus, userId]
+      [loadKanban, loadTable, openRequestDetails, role, setStatus, submitRequestStatusChange, userId]
     );
 
     const downloadInvoicePdf = useCallback(
@@ -3739,185 +2443,16 @@
       setFilterModal((prev) => ({ ...prev, rawValue: event.target.value }));
     }, []);
 
-    const applyFilterModal = useCallback(
-      async (event) => {
-        event.preventDefault();
-        if (!filterModal.tableKey) return;
-
-        const fieldDef = getFieldDef(filterModal.tableKey, filterModal.field);
-        if (!fieldDef) {
-          setStatus("filter", "Поле фильтра не выбрано", "error");
-          return;
-        }
-
-        let value;
-        if (fieldDef.type === "boolean") {
-          value = filterModal.rawValue === "true";
-        } else if (fieldDef.type === "number") {
-          if (String(filterModal.rawValue || "").trim() === "") {
-            setStatus("filter", "Введите число", "error");
-            return;
-          }
-          value = Number(filterModal.rawValue);
-          if (Number.isNaN(value)) {
-            setStatus("filter", "Некорректное число", "error");
-            return;
-          }
-        } else {
-          value = String(filterModal.rawValue || "").trim();
-          if (!value) {
-            setStatus("filter", "Введите значение фильтра", "error");
-            return;
-          }
-        }
-
-        const tableState = tablesRef.current[filterModal.tableKey] || createTableState();
-        const nextFilters = [...(tableState.filters || [])];
-        const nextClause = { field: fieldDef.field, op: filterModal.op, value };
-
-        if (Number.isInteger(filterModal.editIndex) && filterModal.editIndex >= 0 && filterModal.editIndex < nextFilters.length) {
-          nextFilters[filterModal.editIndex] = nextClause;
-        } else {
-          const existingIndex = nextFilters.findIndex((item) => item.field === nextClause.field && item.op === nextClause.op);
-          if (existingIndex >= 0) nextFilters[existingIndex] = nextClause;
-          else nextFilters.push(nextClause);
-        }
-
-        setTableState(filterModal.tableKey, {
-          ...tableState,
-          filters: nextFilters,
-          offset: 0,
-          showAll: false,
-        });
-
-        closeFilterModal();
-        if (filterModal.tableKey === "kanban") {
-          await loadKanban(undefined, { filtersOverride: nextFilters });
-        } else {
-          await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: nextFilters });
-        }
-      },
-      [closeFilterModal, filterModal, getFieldDef, loadKanban, loadTable, setStatus, setTableState]
-    );
-
-    const clearFiltersFromModal = useCallback(async () => {
-      if (!filterModal.tableKey) return;
-      const tableState = tablesRef.current[filterModal.tableKey] || createTableState();
-      setTableState(filterModal.tableKey, {
-        ...tableState,
-        filters: [],
-        offset: 0,
-        showAll: false,
-      });
-      closeFilterModal();
-      if (filterModal.tableKey === "kanban") {
-        await loadKanban(undefined, { filtersOverride: [] });
-      } else {
-        await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: [] });
-      }
-    }, [closeFilterModal, filterModal.tableKey, loadKanban, loadTable, setTableState]);
-
-    const removeFilterChip = useCallback(
-      async (tableKey, index) => {
-        const tableState = tablesRef.current[tableKey] || createTableState();
-        const nextFilters = [...(tableState.filters || [])];
-        nextFilters.splice(index, 1);
-        setTableState(tableKey, {
-          ...tableState,
-          filters: nextFilters,
-          offset: 0,
-          showAll: false,
-        });
-        if (tableKey === "kanban") {
-          await loadKanban(undefined, { filtersOverride: nextFilters });
-        } else {
-          await loadTable(tableKey, { resetOffset: true, filtersOverride: nextFilters });
-        }
-      },
-      [loadKanban, loadTable, setTableState]
-    );
-
-    const openKanbanSortModal = useCallback(() => {
-      const tableState = tablesRef.current.kanban || createTableState();
-      const currentMode = Array.isArray(tableState.sort) && tableState.sort[0] ? String(tableState.sort[0].field || "") : "";
-      setKanbanSortModal({
-        open: true,
-        value: currentMode || "created_newest",
-      });
-      setStatus("kanbanSort", "", "");
-    }, [setStatus]);
-
-    const closeKanbanSortModal = useCallback(() => {
-      setKanbanSortModal((prev) => ({ ...prev, open: false }));
-      setStatus("kanbanSort", "", "");
-    }, [setStatus]);
-
-    const updateKanbanSortMode = useCallback((event) => {
-      setKanbanSortModal((prev) => ({ ...prev, value: String(event.target.value || "created_newest") }));
-    }, []);
-
-    const submitKanbanSortModal = useCallback(
-      async (event) => {
-        event.preventDefault();
-        const nextMode = String(kanbanSortModal.value || "created_newest");
-        const tableState = tablesRef.current.kanban || createTableState();
-        setTableState("kanban", {
-          ...tableState,
-          sort: [{ field: nextMode, dir: "asc" }],
-          offset: 0,
-          showAll: false,
-        });
-        setKanbanSortApplied(true);
-        closeKanbanSortModal();
-        await loadKanban(undefined, { sortModeOverride: nextMode });
-      },
-      [closeKanbanSortModal, kanbanSortModal.value, loadKanban, setTableState]
-    );
-
-    const loadPrevPage = useCallback(
-      (tableKey) => {
-        const tableState = tablesRef.current[tableKey] || createTableState();
-        const next = { ...tableState, offset: Math.max(0, tableState.offset - PAGE_SIZE), showAll: false };
-        setTableState(tableKey, next);
-        loadTable(tableKey, {});
-      },
-      [loadTable, setTableState]
-    );
-
-    const loadNextPage = useCallback(
-      (tableKey) => {
-        const tableState = tablesRef.current[tableKey] || createTableState();
-        if (tableState.offset + PAGE_SIZE >= tableState.total) return;
-        const next = { ...tableState, offset: tableState.offset + PAGE_SIZE, showAll: false };
-        setTableState(tableKey, next);
-        loadTable(tableKey, {});
-      },
-      [loadTable, setTableState]
-    );
-
-    const loadAllRows = useCallback(
-      (tableKey) => {
-        const tableState = tablesRef.current[tableKey] || createTableState();
-        if (!tableState.total) return;
-        const next = { ...tableState, offset: 0, showAll: true };
-        setTableState(tableKey, next);
-        loadTable(tableKey, { loadAll: true });
-      },
-      [loadTable, setTableState]
-    );
-
-    const toggleTableSort = useCallback(
-      (tableKey, field) => {
-        const tableState = tablesRef.current[tableKey] || createTableState();
-        const currentSort = Array.isArray(tableState.sort) ? tableState.sort[0] : null;
-        const dir = currentSort && currentSort.field === field ? (currentSort.dir === "asc" ? "desc" : "asc") : "asc";
-        const sortOverride = [{ field, dir }];
-        const next = { ...tableState, sort: sortOverride, offset: 0, showAll: false };
-        setTableState(tableKey, next);
-        loadTable(tableKey, { resetOffset: true, sortOverride });
-      },
-      [loadTable, setTableState]
-    );
+    const { applyFilterModal, clearFiltersFromModal, removeFilterChip } = useTableFilterActions({
+      filterModal,
+      closeFilterModal,
+      getFieldDef,
+      loadKanban,
+      loadTable,
+      setStatus,
+      setTableState,
+      tablesRef,
+    });
 
     const selectConfigNode = useCallback(
       (tableKey) => {
@@ -3943,6 +2478,32 @@
       [refreshSection, resetAdminRoute, role]
     );
 
+    const applyRequestsQuickFilterPreset = useCallback(
+      async (filters, statusMessage) => {
+        const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
+        resetAdminRoute();
+        setActiveSection("requests");
+        const currentState = tablesRef.current.requests || createTableState();
+        setTableState("requests", {
+          ...currentState,
+          filters: nextFilters,
+          offset: 0,
+          showAll: false,
+        });
+        if (statusMessage) setStatus("requests", statusMessage, "");
+        await loadTable("requests", { resetOffset: true, filtersOverride: nextFilters });
+      },
+      [loadTable, resetAdminRoute, setStatus, setTableState, tablesRef]
+    );
+
+    const openRequestsWithUnreadAlerts = useCallback(async () => {
+      await applyRequestsQuickFilterPreset([{ field: "has_unread_updates", op: "=", value: true }], "Показаны заявки с новыми оповещениями");
+    }, [applyRequestsQuickFilterPreset]);
+
+    const openRequestsWithDeadlineAlerts = useCallback(async () => {
+      await applyRequestsQuickFilterPreset([{ field: "deadline_alert", op: "=", value: true }], "Показаны заявки с горящими дедлайнами");
+    }, [applyRequestsQuickFilterPreset]);
+
     const logout = useCallback(() => {
       localStorage.removeItem(LS_TOKEN);
       setToken("");
@@ -3950,33 +2511,27 @@
       setEmail("");
       setUserId("");
       setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
-      setRequestModal(createRequestModalState());
+      resetRequestWorkspaceState();
       setFilterModal({ open: false, tableKey: null, field: "", op: "=", rawValue: "", editIndex: null });
-      setKanbanSortModal({ open: false, value: "created_newest" });
-      setKanbanSortApplied(false);
+      resetKanbanState();
       setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
-      setDashboardData({ scope: "", cards: [], byStatus: {}, lawyerLoads: [], myUnreadByEvent: {} });
-      setKanbanData({ rows: [], columns: KANBAN_GROUPS, total: 0, truncated: false });
-      setKanbanLoading(false);
+      setDashboardData({
+        scope: "",
+        cards: [],
+        byStatus: {},
+        lawyerLoads: [],
+        myUnreadByEvent: {},
+        myUnreadTotal: 0,
+        unreadForClients: 0,
+        unreadForLawyers: 0,
+        deadlineAlertTotal: 0,
+        monthRevenue: 0,
+        monthExpenses: 0,
+      });
       setMetaJson("");
       setConfigActiveKey("");
       setReferencesExpanded(true);
-      setTableCatalog([]);
-      setTables({
-        kanban: createTableState(),
-        requests: createTableState(),
-        invoices: createTableState(),
-        quotes: createTableState(),
-        topics: createTableState(),
-        statuses: createTableState(),
-        formFields: createTableState(),
-        topicRequiredFields: createTableState(),
-        topicDataTemplates: createTableState(),
-        statusTransitions: createTableState(),
-        users: createTableState(),
-        userTopics: createTableState(),
-        availableTables: createTableState(),
-      });
+      resetTablesState();
       setDictionaries({
         topics: [],
         statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
@@ -3986,7 +2541,7 @@
       });
       setStatusMap({});
       setActiveSection("dashboard");
-    }, []);
+    }, [resetKanbanState, resetRequestWorkspaceState, resetTablesState]);
 
     const login = useCallback(
       async (emailInput, passwordInput) => {
@@ -4093,12 +2648,12 @@
         if (event.key !== "Escape") return;
         setRecordModal((prev) => ({ ...prev, open: false }));
         setFilterModal((prev) => ({ ...prev, open: false }));
-        setKanbanSortModal((prev) => ({ ...prev, open: false }));
+        closeKanbanSortModal();
         setReassignModal((prev) => ({ ...prev, open: false }));
       };
       document.addEventListener("keydown", onEsc);
       return () => document.removeEventListener("keydown", onEsc);
-    }, []);
+    }, [closeKanbanSortModal]);
 
     const menuItems = useMemo(() => {
       return [
@@ -4106,9 +2661,16 @@
         { key: "kanban", label: "Канбан" },
         { key: "requests", label: "Заявки" },
         { key: "invoices", label: "Счета" },
-        { key: "meta", label: "Метаданные" },
       ];
     }, []);
+
+    const topbarUnreadCount = useMemo(() => {
+      const roleCode = String(role || "").toUpperCase();
+      if (roleCode === "LAWYER") return Number(dashboardData.myUnreadTotal || 0);
+      return Number(dashboardData.unreadForClients || 0) + Number(dashboardData.unreadForLawyers || 0);
+    }, [dashboardData.myUnreadTotal, dashboardData.unreadForClients, dashboardData.unreadForLawyers, role]);
+
+    const topbarDeadlineAlertCount = useMemo(() => Number(dashboardData.deadlineAlertTotal || 0), [dashboardData.deadlineAlertTotal]);
 
     const activeFilterFields = useMemo(() => {
       if (!filterModal.tableKey) return [];
@@ -4227,67 +2789,63 @@
                 <h1>Панель администратора</h1>
                 <p className="muted">UniversalQuery, RBAC и аудит действий по ключевым сущностям системы.</p>
               </div>
-              <span className="badge">роль: {roleLabel(role)}</span>
+              <div className="topbar-actions" aria-label="Быстрые уведомления и дедлайны">
+                <button
+                  type="button"
+                  className={
+                    "icon-btn topbar-alert-btn" + (topbarDeadlineAlertCount > 0 ? " has-alert alert-danger" : "")
+                  }
+                  data-tooltip={
+                    topbarDeadlineAlertCount > 0
+                      ? "Горящие дедлайны: " + String(topbarDeadlineAlertCount)
+                      : "Горящих дедлайнов нет"
+                  }
+                  aria-label="Показать заявки с горящими дедлайнами"
+                  onClick={openRequestsWithDeadlineAlerts}
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                    <path
+                      d="M12 3a1.6 1.6 0 0 1 1.42.86l7.14 13.7A1.6 1.6 0 0 1 19.14 20H4.86a1.6 1.6 0 0 1-1.42-2.44l7.14-13.7A1.6 1.6 0 0 1 12 3zm0 4.2a1 1 0 0 0-1 1v5.2a1 1 0 1 0 2 0V8.2a1 1 0 0 0-1-1zm0 9.4a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <span className="topbar-alert-dot" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className={
+                    "icon-btn topbar-alert-btn" + (topbarUnreadCount > 0 ? " has-alert alert-success" : "")
+                  }
+                  data-tooltip={
+                    topbarUnreadCount > 0
+                      ? "Новые оповещения по заявкам: " + String(topbarUnreadCount)
+                      : "Новых оповещений нет"
+                  }
+                  aria-label="Показать заявки с новыми оповещениями"
+                  onClick={openRequestsWithUnreadAlerts}
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                    <path
+                      d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11zm2 .5v.32l6 4.44 6-4.44V7a.5.5 0 0 0-.5-.5h-11A.5.5 0 0 0 6 7zm12 2.8-5.4 4a1 1 0 0 1-1.2 0L6 9.8v7.7c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V9.8z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <span className="topbar-alert-dot" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <Section active={activeSection === "dashboard"} id="section-dashboard">
-              <div className="section-head">
-                <div>
-                  <h2>Обзор метрик</h2>
-                  <p className="muted">Состояние заявок и SLA-мониторинг.</p>
-                </div>
-              </div>
-              <div className="cards">
-                {dashboardData.cards.map((card) => (
-                  <div className="card" key={card.label}>
-                    <p>{card.label}</p>
-                    <b>{card.value}</b>
-                  </div>
-                ))}
-              </div>
-              <div className="json">{JSON.stringify(dashboardData.byStatus || {}, null, 2)}</div>
-              {dashboardData.scope === "LAWYER" ? (
-                <div className="json" style={{ marginTop: "0.5rem" }}>
-                  {JSON.stringify(dashboardData.myUnreadByEvent || {}, null, 2)}
-                </div>
-              ) : null}
-              <div style={{ marginTop: "0.85rem" }}>
-                <h3 style={{ margin: "0 0 0.55rem" }}>Загрузка юристов</h3>
-                <DataTable
-                  headers={[
-                    { key: "name", label: "Юрист" },
-                    { key: "email", label: "Email" },
-                    { key: "primary_topic_code", label: "Основная тема" },
-                    { key: "active_load", label: "Активные заявки" },
-                    { key: "total_assigned", label: "Всего назначено" },
-                    { key: "active_amount", label: "Сумма активных" },
-                    { key: "monthly_paid_gross", label: "Вал оплат за месяц" },
-                    { key: "monthly_salary", label: "Зарплата за месяц" },
-                  ]}
-                  rows={dashboardData.lawyerLoads || []}
-                  emptyColspan={8}
-                  renderRow={(row) => (
-                    <tr key={row.lawyer_id}>
-                      <td>
-                        <div className="user-identity">
-                          <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={32} />
-                          <div className="user-identity-text">
-                            <b>{row.name || "-"}</b>
-                          </div>
-                        </div>
-                      </td>
-                      <td>{row.email || "-"}</td>
-                      <td>{row.primary_topic_code || "-"}</td>
-                      <td>{String(row.active_load ?? 0)}</td>
-                      <td>{String(row.total_assigned ?? 0)}</td>
-                      <td>{String(row.active_amount ?? 0)}</td>
-                      <td>{String(row.monthly_paid_gross ?? 0)}</td>
-                      <td>{String(row.monthly_salary ?? 0)}</td>
-                    </tr>
-                  )}
-                />
-              </div>
-              <StatusLine status={getStatus("dashboard")} />
+              <DashboardSection
+                dashboardData={dashboardData}
+                token={token}
+                status={getStatus("dashboard")}
+                apiCall={api}
+                onOpenRequest={openRequestDetails}
+                DataTableComponent={DataTable}
+                StatusLineComponent={StatusLine}
+                UserAvatarComponent={UserAvatar}
+              />
             </Section>
 
             <Section active={activeSection === "kanban"} id="section-kanban">
@@ -4312,89 +2870,39 @@
                 onClaimRequest={claimRequest}
                 onMoveRequest={moveRequestFromKanban}
                 status={getStatus("kanban")}
+                FilterToolbarComponent={FilterToolbar}
+                StatusLineComponent={StatusLine}
               />
             </Section>
 
             <Section active={activeSection === "requests"} id="section-requests">
-              <div className="section-head">
-                <div>
-                  <h2>Заявки</h2>
-                  <p className="muted">Серверная фильтрация и просмотр клиентских заявок.</p>
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button className="btn secondary" type="button" onClick={() => loadTable("requests", { resetOffset: true })}>
-                    Обновить
-                  </button>
-                  <button className="btn" type="button" onClick={() => openCreateRecordModal("requests")}>
-                    Новая заявка
-                  </button>
-                </div>
-              </div>
-              <FilterToolbar
-                filters={tables.requests.filters}
-                onOpen={() => openFilterModal("requests")}
-                onRemove={(index) => removeFilterChip("requests", index)}
-                onEdit={(index) => openFilterEditModal("requests", index)}
-                getChipLabel={(clause) => {
-                  const fieldDef = getFieldDef("requests", clause.field);
-                  return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("requests", clause);
-                }}
-              />
-              <DataTable
-                headers={[
-                  { key: "track_number", label: "Номер", sortable: true, field: "track_number" },
-                  { key: "client_name", label: "Клиент", sortable: true, field: "client_name" },
-                  { key: "client_phone", label: "Телефон", sortable: true, field: "client_phone" },
-                  { key: "status_code", label: "Статус", sortable: true, field: "status_code" },
-                  { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
-                  { key: "assigned_lawyer_id", label: "Назначен", sortable: true, field: "assigned_lawyer_id" },
-                  { key: "invoice_amount", label: "Счет", sortable: true, field: "invoice_amount" },
-                  { key: "paid_at", label: "Оплачено", sortable: true, field: "paid_at" },
-                  { key: "updates", label: "Обновления" },
-                  { key: "created_at", label: "Создана", sortable: true, field: "created_at" },
-                  { key: "actions", label: "Действия" },
-                ]}
-                rows={tables.requests.rows}
-                emptyColspan={11}
+              <RequestsSection
+                role={role}
+                tables={tables}
+                status={getStatus("requests")}
+                getFieldDef={getFieldDef}
+                getFilterValuePreview={getFilterValuePreview}
+                resolveReferenceLabel={resolveReferenceLabel}
+                onRefresh={() => loadTable("requests", { resetOffset: true })}
+                onCreate={() => openCreateRecordModal("requests")}
+                onOpenFilter={() => openFilterModal("requests")}
+                onRemoveFilter={(index) => removeFilterChip("requests", index)}
+                onEditFilter={(index) => openFilterEditModal("requests", index)}
                 onSort={(field) => toggleTableSort("requests", field)}
-                sortClause={(tables.requests.sort && tables.requests.sort[0]) || TABLE_SERVER_CONFIG.requests.sort[0]}
-                renderRow={(row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <code>{row.track_number || "-"}</code>
-                    </td>
-                    <td>{row.client_name || "-"}</td>
-                    <td>{row.client_phone || "-"}</td>
-                    <td>{statusLabel(row.status_code)}</td>
-                    <td>{row.topic_code || "-"}</td>
-                    <td>{resolveReferenceLabel({ table: "admin_users", value_field: "id", label_field: "name" }, row.assigned_lawyer_id)}</td>
-                    <td>{row.invoice_amount == null ? "-" : String(row.invoice_amount)}</td>
-                    <td>{fmtDate(row.paid_at)}</td>
-                    <td>{renderRequestUpdatesCell(row, role)}</td>
-                    <td>{fmtDate(row.created_at)}</td>
-                    <td>
-                      <div className="table-actions">
-                        {role === "LAWYER" && !row.assigned_lawyer_id ? (
-                          <IconButton icon="📥" tooltip="Взять в работу" onClick={() => claimRequest(row.id)} />
-                        ) : null}
-                        {role === "ADMIN" && row.assigned_lawyer_id ? (
-                          <IconButton icon="⇄" tooltip="Переназначить" onClick={() => openReassignModal(row)} />
-                        ) : null}
-                        <IconButton icon="👁" tooltip="Открыть заявку" onClick={(event) => openRequestDetails(row.id, event)} />
-                        <IconButton icon="✎" tooltip="Редактировать заявку" onClick={() => openEditRecordModal("requests", row)} />
-                        <IconButton icon="🗑" tooltip="Удалить заявку" onClick={() => deleteRecord("requests", row.id)} tone="danger" />
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              />
-              <TablePager
-                tableState={tables.requests}
                 onPrev={() => loadPrevPage("requests")}
                 onNext={() => loadNextPage("requests")}
                 onLoadAll={() => loadAllRows("requests")}
+                onClaimRequest={claimRequest}
+                onOpenReassign={openReassignModal}
+                onOpenRequest={openRequestDetails}
+                onEditRecord={(row) => openEditRecordModal("requests", row)}
+                onDeleteRecord={(id) => deleteRecord("requests", id)}
+                FilterToolbarComponent={FilterToolbar}
+                DataTableComponent={DataTable}
+                TablePagerComponent={TablePager}
+                StatusLineComponent={StatusLine}
+                IconButtonComponent={IconButton}
               />
-              <StatusLine status={getStatus("requests")} />
             </Section>
 
             <Section active={activeSection === "requestWorkspace"} id="section-request-workspace">
@@ -4404,7 +2912,7 @@
                 </div>
                 <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
                   <button className="icon-btn workspace-head-icon" type="button" data-tooltip="Назад" aria-label="Назад" onClick={goBackFromRequestWorkspace}>
-                    ↩
+                    <span className="workspace-head-icon-glyph">↩</span>
                   </button>
                   <button
                     className="icon-btn workspace-head-icon"
@@ -4414,15 +2922,22 @@
                     onClick={refreshRequestModal}
                     disabled={requestModal.loading || requestModal.fileUploading}
                   >
-                    ↻
+                    <span className="workspace-head-icon-glyph">↻</span>
                   </button>
                 </div>
               </div>
               <RequestWorkspace
+                viewerRole={role}
+                viewerUserId={userId}
                 loading={requestModal.loading}
                 trackNumber={requestModal.trackNumber}
                 requestData={requestModal.requestData}
+                financeSummary={requestModal.financeSummary}
                 statusRouteNodes={requestModal.statusRouteNodes}
+                statusHistory={requestModal.statusHistory || []}
+                availableStatuses={requestModal.availableStatuses || []}
+                currentImportantDateAt={requestModal.currentImportantDateAt || ""}
+                pendingStatusChangePreset={requestModal.pendingStatusChangePreset}
                 messages={requestModal.messages || []}
                 attachments={requestModal.attachments || []}
                 messageDraft={requestModal.messageDraft || ""}
@@ -4434,735 +2949,121 @@
                 onFilesSelect={appendRequestModalFiles}
                 onRemoveSelectedFile={removeRequestModalFile}
                 onClearSelectedFiles={clearRequestModalFiles}
+                onLoadRequestDataTemplates={loadRequestDataTemplates}
+                onLoadRequestDataBatch={loadRequestDataBatch}
+                onLoadRequestDataTemplateDetails={loadRequestDataTemplateDetails}
+                onSaveRequestDataTemplate={saveRequestDataTemplate}
+                onSaveRequestDataBatch={saveRequestDataBatch}
+                onChangeStatus={submitRequestStatusChange}
+                onConsumePendingStatusChangePreset={clearPendingStatusChangePreset}
+                AttachmentPreviewModalComponent={AttachmentPreviewModal}
+                StatusLineComponent={StatusLine}
               />
             </Section>
 
             <Section active={activeSection === "invoices"} id="section-invoices">
-              <div className="section-head">
-                <div>
-                  <h2>Счета</h2>
-                  <p className="muted">Выставленные счета клиентам, статусы оплаты и выгрузка PDF.</p>
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button className="btn secondary" type="button" onClick={() => loadTable("invoices", { resetOffset: true })}>
-                    Обновить
-                  </button>
-                  <button className="btn" type="button" onClick={() => openCreateRecordModal("invoices")}>
-                    Новый счет
-                  </button>
-                </div>
-              </div>
-              <FilterToolbar
-                filters={tables.invoices.filters}
-                onOpen={() => openFilterModal("invoices")}
-                onRemove={(index) => removeFilterChip("invoices", index)}
-                onEdit={(index) => openFilterEditModal("invoices", index)}
-                getChipLabel={(clause) => {
-                  const fieldDef = getFieldDef("invoices", clause.field);
-                  return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("invoices", clause);
-                }}
-              />
-              <DataTable
-                headers={[
-                  { key: "invoice_number", label: "Номер", sortable: true, field: "invoice_number" },
-                  { key: "status", label: "Статус", sortable: true, field: "status" },
-                  { key: "amount", label: "Сумма", sortable: true, field: "amount" },
-                  { key: "payer_display_name", label: "Плательщик", sortable: true, field: "payer_display_name" },
-                  { key: "request_track_number", label: "Заявка" },
-                  { key: "issued_by_name", label: "Выставил", sortable: true, field: "issued_by_admin_user_id" },
-                  { key: "issued_at", label: "Сформирован", sortable: true, field: "issued_at" },
-                  { key: "paid_at", label: "Оплачен", sortable: true, field: "paid_at" },
-                  { key: "actions", label: "Действия" },
-                ]}
-                rows={tables.invoices.rows}
-                emptyColspan={9}
+              <InvoicesSection
+                role={role}
+                tables={tables}
+                status={getStatus("invoices")}
+                getFieldDef={getFieldDef}
+                getFilterValuePreview={getFilterValuePreview}
+                onRefresh={() => loadTable("invoices", { resetOffset: true })}
+                onCreate={() => openCreateRecordModal("invoices")}
+                onOpenFilter={() => openFilterModal("invoices")}
+                onRemoveFilter={(index) => removeFilterChip("invoices", index)}
+                onEditFilter={(index) => openFilterEditModal("invoices", index)}
                 onSort={(field) => toggleTableSort("invoices", field)}
-                sortClause={(tables.invoices.sort && tables.invoices.sort[0]) || TABLE_SERVER_CONFIG.invoices.sort[0]}
-                renderRow={(row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <code>{row.invoice_number || "-"}</code>
-                    </td>
-                    <td>{row.status_label || invoiceStatusLabel(row.status)}</td>
-                    <td>{row.amount == null ? "-" : String(row.amount) + " " + String(row.currency || "RUB")}</td>
-                    <td>{row.payer_display_name || "-"}</td>
-                    <td>{row.request_track_number || row.request_id || "-"}</td>
-                    <td>{row.issued_by_name || "-"}</td>
-                    <td>{fmtDate(row.issued_at)}</td>
-                    <td>{fmtDate(row.paid_at)}</td>
-                    <td>
-                      <div className="table-actions">
-                        <IconButton icon="👁" tooltip="Открыть заявку" onClick={(event) => openInvoiceRequest(row, event)} />
-                        <IconButton icon="⬇" tooltip="Скачать PDF" onClick={() => downloadInvoicePdf(row)} />
-                        <IconButton icon="✎" tooltip="Редактировать счет" onClick={() => openEditRecordModal("invoices", row)} />
-                        {role === "ADMIN" ? (
-                          <IconButton icon="🗑" tooltip="Удалить счет" onClick={() => deleteRecord("invoices", row.id)} tone="danger" />
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              />
-              <TablePager
-                tableState={tables.invoices}
                 onPrev={() => loadPrevPage("invoices")}
                 onNext={() => loadNextPage("invoices")}
                 onLoadAll={() => loadAllRows("invoices")}
+                onOpenRequest={openInvoiceRequest}
+                onDownloadPdf={downloadInvoicePdf}
+                onEditRecord={(row) => openEditRecordModal("invoices", row)}
+                onDeleteRecord={(id) => deleteRecord("invoices", id)}
+                FilterToolbarComponent={FilterToolbar}
+                DataTableComponent={DataTable}
+                TablePagerComponent={TablePager}
+                StatusLineComponent={StatusLine}
+                IconButtonComponent={IconButton}
               />
-              <StatusLine status={getStatus("invoices")} />
             </Section>
 
             <Section active={activeSection === "quotes"} id="section-quotes">
-              <div className="section-head">
-                <div>
-                  <h2>Цитаты</h2>
-                  <p className="muted">Управление публичной лентой цитат с серверными фильтрами.</p>
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button className="btn secondary" type="button" onClick={() => loadTable("quotes", { resetOffset: true })}>
-                    Обновить
-                  </button>
-                  <button className="btn" type="button" onClick={() => openCreateRecordModal("quotes")}>
-                    Новая цитата
-                  </button>
-                </div>
-              </div>
-              <FilterToolbar
-                filters={tables.quotes.filters}
-                onOpen={() => openFilterModal("quotes")}
-                onRemove={(index) => removeFilterChip("quotes", index)}
-                onEdit={(index) => openFilterEditModal("quotes", index)}
-                getChipLabel={(clause) => {
-                  const fieldDef = getFieldDef("quotes", clause.field);
-                  return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("quotes", clause);
-                }}
-              />
-              <DataTable
-                headers={[
-                  { key: "author", label: "Автор", sortable: true, field: "author" },
-                  { key: "text", label: "Текст", sortable: true, field: "text" },
-                  { key: "source", label: "Источник", sortable: true, field: "source" },
-                  { key: "is_active", label: "Активна", sortable: true, field: "is_active" },
-                  { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                  { key: "created_at", label: "Создана", sortable: true, field: "created_at" },
-                  { key: "actions", label: "Действия" },
-                ]}
-                rows={tables.quotes.rows}
-                emptyColspan={7}
+              <QuotesSection
+                tables={tables}
+                status={getStatus("quotes")}
+                getFieldDef={getFieldDef}
+                getFilterValuePreview={getFilterValuePreview}
+                onRefresh={() => loadTable("quotes", { resetOffset: true })}
+                onCreate={() => openCreateRecordModal("quotes")}
+                onOpenFilter={() => openFilterModal("quotes")}
+                onRemoveFilter={(index) => removeFilterChip("quotes", index)}
+                onEditFilter={(index) => openFilterEditModal("quotes", index)}
                 onSort={(field) => toggleTableSort("quotes", field)}
-                sortClause={(tables.quotes.sort && tables.quotes.sort[0]) || TABLE_SERVER_CONFIG.quotes.sort[0]}
-                renderRow={(row) => (
-                  <tr key={row.id}>
-                    <td>{row.author || "-"}</td>
-                    <td>{row.text || "-"}</td>
-                    <td>{row.source || "-"}</td>
-                    <td>{boolLabel(row.is_active)}</td>
-                    <td>{String(row.sort_order ?? 0)}</td>
-                    <td>{fmtDate(row.created_at)}</td>
-                    <td>
-                      <div className="table-actions">
-                        <IconButton icon="✎" tooltip="Редактировать цитату" onClick={() => openEditRecordModal("quotes", row)} />
-                        <IconButton icon="🗑" tooltip="Удалить цитату" onClick={() => deleteRecord("quotes", row.id)} tone="danger" />
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              />
-              <TablePager
-                tableState={tables.quotes}
                 onPrev={() => loadPrevPage("quotes")}
                 onNext={() => loadNextPage("quotes")}
                 onLoadAll={() => loadAllRows("quotes")}
+                onEditRecord={(row) => openEditRecordModal("quotes", row)}
+                onDeleteRecord={(id) => deleteRecord("quotes", id)}
+                FilterToolbarComponent={FilterToolbar}
+                DataTableComponent={DataTable}
+                TablePagerComponent={TablePager}
+                StatusLineComponent={StatusLine}
+                IconButtonComponent={IconButton}
               />
-              <StatusLine status={getStatus("quotes")} />
             </Section>
-
             <Section active={activeSection === "config"} id="section-config">
-              <div className="section-head">
-                <div>
-                  <h2>Справочники</h2>
-                  <p className="breadcrumbs">{"Справочники -> " + (configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран")}</p>
-                  <p className="muted">Выберите справочник в дереве слева.</p>
-                </div>
-                <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
-                  Обновить
-                </button>
-              </div>
-              <div className="config-layout">
-                <div className="config-panel">
-                  <div className="block">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                      <h3 style={{ margin: 0 }}>{configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран"}</h3>
-                      {canCreateInConfig && configActiveKey ? (
-                        <button className="btn" type="button" onClick={() => openCreateRecordModal(configActiveKey)}>
-                          Добавить
-                        </button>
-                      ) : null}
-                    </div>
-                    <FilterToolbar
-                      filters={activeConfigTableState.filters}
-                      onOpen={() => openFilterModal(configActiveKey)}
-                      onRemove={(index) => removeFilterChip(configActiveKey, index)}
-                      onEdit={(index) => openFilterEditModal(configActiveKey, index)}
-                      getChipLabel={(clause) => {
-                        const fieldDef = getFieldDef(configActiveKey, clause.field);
-                        return (
-                          (fieldDef ? fieldDef.label : clause.field) +
-                          " " +
-                          OPERATOR_LABELS[clause.op] +
-                          " " +
-                          getFilterValuePreview(configActiveKey, clause)
-                        );
-                      }}
-                    />
-                    {configActiveKey === "topics" ? (
-                      <DataTable
-                        headers={[
-                          { key: "code", label: "Код", sortable: true, field: "code" },
-                          { key: "name", label: "Название", sortable: true, field: "name" },
-                          { key: "enabled", label: "Активна", sortable: true, field: "enabled" },
-                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.topics.rows}
-                        emptyColspan={5}
-                        onSort={(field) => toggleTableSort("topics", field)}
-                        sortClause={(tables.topics.sort && tables.topics.sort[0]) || TABLE_SERVER_CONFIG.topics.sort[0]}
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>
-                              <code>{row.code || "-"}</code>
-                            </td>
-                            <td>{row.name || "-"}</td>
-                            <td>{boolLabel(row.enabled)}</td>
-                            <td>{String(row.sort_order ?? 0)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать тему" onClick={() => openEditRecordModal("topics", row)} />
-                                <IconButton icon="🗑" tooltip="Удалить тему" onClick={() => deleteRecord("topics", row.id)} tone="danger" />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "quotes" ? (
-                      <DataTable
-                        headers={[
-                          { key: "author", label: "Автор", sortable: true, field: "author" },
-                          { key: "text", label: "Текст", sortable: true, field: "text" },
-                          { key: "source", label: "Источник", sortable: true, field: "source" },
-                          { key: "is_active", label: "Активна", sortable: true, field: "is_active" },
-                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                          { key: "created_at", label: "Создана", sortable: true, field: "created_at" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.quotes.rows}
-                        emptyColspan={7}
-                        onSort={(field) => toggleTableSort("quotes", field)}
-                        sortClause={(tables.quotes.sort && tables.quotes.sort[0]) || TABLE_SERVER_CONFIG.quotes.sort[0]}
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>{row.author || "-"}</td>
-                            <td>{row.text || "-"}</td>
-                            <td>{row.source || "-"}</td>
-                            <td>{boolLabel(row.is_active)}</td>
-                            <td>{String(row.sort_order ?? 0)}</td>
-                            <td>{fmtDate(row.created_at)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать цитату" onClick={() => openEditRecordModal("quotes", row)} />
-                                <IconButton icon="🗑" tooltip="Удалить цитату" onClick={() => deleteRecord("quotes", row.id)} tone="danger" />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "statuses" ? (
-                      <DataTable
-                        headers={[
-                          { key: "code", label: "Код", sortable: true, field: "code" },
-                          { key: "name", label: "Название", sortable: true, field: "name" },
-                          { key: "status_group_id", label: "Группа", sortable: true, field: "status_group_id" },
-                          { key: "kind", label: "Тип", sortable: true, field: "kind" },
-                          { key: "enabled", label: "Активен", sortable: true, field: "enabled" },
-                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                          { key: "is_terminal", label: "Терминальный", sortable: true, field: "is_terminal" },
-                          { key: "invoice_template", label: "Шаблон счета" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.statuses.rows}
-                        emptyColspan={9}
-                        onSort={(field) => toggleTableSort("statuses", field)}
-                        sortClause={(tables.statuses.sort && tables.statuses.sort[0]) || TABLE_SERVER_CONFIG.statuses.sort[0]}
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>
-                              <code>{row.code || "-"}</code>
-                            </td>
-                            <td>{row.name || "-"}</td>
-                            <td>{resolveReferenceLabel({ table: "status_groups", value_field: "id", label_field: "name" }, row.status_group_id)}</td>
-                            <td>{statusKindLabel(row.kind)}</td>
-                            <td>{boolLabel(row.enabled)}</td>
-                            <td>{String(row.sort_order ?? 0)}</td>
-                            <td>{boolLabel(row.is_terminal)}</td>
-                            <td>{row.invoice_template || "-"}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать статус" onClick={() => openEditRecordModal("statuses", row)} />
-                                <IconButton icon="🗑" tooltip="Удалить статус" onClick={() => deleteRecord("statuses", row.id)} tone="danger" />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "formFields" ? (
-                      <DataTable
-                        headers={[
-                          { key: "key", label: "Ключ", sortable: true, field: "key" },
-                          { key: "label", label: "Метка", sortable: true, field: "label" },
-                          { key: "type", label: "Тип", sortable: true, field: "type" },
-                          { key: "required", label: "Обязательное", sortable: true, field: "required" },
-                          { key: "enabled", label: "Активно", sortable: true, field: "enabled" },
-                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.formFields.rows}
-                        emptyColspan={7}
-                        onSort={(field) => toggleTableSort("formFields", field)}
-                        sortClause={(tables.formFields.sort && tables.formFields.sort[0]) || TABLE_SERVER_CONFIG.formFields.sort[0]}
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>
-                              <code>{row.key || "-"}</code>
-                            </td>
-                            <td>{row.label || "-"}</td>
-                            <td>{row.type || "-"}</td>
-                            <td>{boolLabel(row.required)}</td>
-                            <td>{boolLabel(row.enabled)}</td>
-                            <td>{String(row.sort_order ?? 0)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать поле формы" onClick={() => openEditRecordModal("formFields", row)} />
-                                <IconButton icon="🗑" tooltip="Удалить поле формы" onClick={() => deleteRecord("formFields", row.id)} tone="danger" />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "topicRequiredFields" ? (
-                      <DataTable
-                        headers={[
-                          { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
-                          { key: "field_key", label: "Поле формы", sortable: true, field: "field_key" },
-                          { key: "required", label: "Обязательное", sortable: true, field: "required" },
-                          { key: "enabled", label: "Активно", sortable: true, field: "enabled" },
-                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                          { key: "created_at", label: "Создано", sortable: true, field: "created_at" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.topicRequiredFields.rows}
-                        emptyColspan={7}
-                        onSort={(field) => toggleTableSort("topicRequiredFields", field)}
-                        sortClause={
-                          (tables.topicRequiredFields.sort && tables.topicRequiredFields.sort[0]) ||
-                          TABLE_SERVER_CONFIG.topicRequiredFields.sort[0]
-                        }
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>{row.topic_code || "-"}</td>
-                            <td>
-                              <code>{row.field_key || "-"}</code>
-                            </td>
-                            <td>{boolLabel(row.required)}</td>
-                            <td>{boolLabel(row.enabled)}</td>
-                            <td>{String(row.sort_order ?? 0)}</td>
-                            <td>{fmtDate(row.created_at)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton
-                                  icon="✎"
-                                  tooltip="Редактировать обязательное поле"
-                                  onClick={() => openEditRecordModal("topicRequiredFields", row)}
-                                />
-                                <IconButton
-                                  icon="🗑"
-                                  tooltip="Удалить обязательное поле"
-                                  onClick={() => deleteRecord("topicRequiredFields", row.id)}
-                                  tone="danger"
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "topicDataTemplates" ? (
-                      <DataTable
-                        headers={[
-                          { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
-                          { key: "key", label: "Ключ", sortable: true, field: "key" },
-                          { key: "label", label: "Метка", sortable: true, field: "label" },
-                          { key: "description", label: "Описание", sortable: true, field: "description" },
-                          { key: "required", label: "Обязательное", sortable: true, field: "required" },
-                          { key: "enabled", label: "Активно", sortable: true, field: "enabled" },
-                          { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                          { key: "created_at", label: "Создано", sortable: true, field: "created_at" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.topicDataTemplates.rows}
-                        emptyColspan={9}
-                        onSort={(field) => toggleTableSort("topicDataTemplates", field)}
-                        sortClause={
-                          (tables.topicDataTemplates.sort && tables.topicDataTemplates.sort[0]) ||
-                          TABLE_SERVER_CONFIG.topicDataTemplates.sort[0]
-                        }
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>{row.topic_code || "-"}</td>
-                            <td>
-                              <code>{row.key || "-"}</code>
-                            </td>
-                            <td>{row.label || "-"}</td>
-                            <td>{row.description || "-"}</td>
-                            <td>{boolLabel(row.required)}</td>
-                            <td>{boolLabel(row.enabled)}</td>
-                            <td>{String(row.sort_order ?? 0)}</td>
-                            <td>{fmtDate(row.created_at)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать шаблон" onClick={() => openEditRecordModal("topicDataTemplates", row)} />
-                                <IconButton icon="🗑" tooltip="Удалить шаблон" onClick={() => deleteRecord("topicDataTemplates", row.id)} tone="danger" />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "statusTransitions" ? (
-                      <>
-                        <div className="status-designer">
-                          <div className="status-designer-head">
-                            <div>
-                              <h4>Конструктор маршрута статусов</h4>
-                              <p className="muted">Ветвления, возвраты, SLA и требования к данным/файлам на каждом переходе.</p>
-                            </div>
-                            <div className="status-designer-controls">
-                              <select
-                                id="status-designer-topic"
-                                value={statusDesignerTopicCode}
-                                onChange={(event) => loadStatusDesignerTopic(event.target.value)}
-                              >
-                                <option value="">Выберите тему</option>
-                                {(dictionaries.topics || []).map((topic) => (
-                                  <option key={topic.code} value={topic.code}>
-                                    {(topic.name || topic.code) + " (" + topic.code + ")"}
-                                  </option>
-                                ))}
-                              </select>
-                              <button className="btn secondary btn-sm" type="button" onClick={() => loadStatusDesignerTopic(statusDesignerTopicCode)}>
-                                Обновить тему
-                              </button>
-                              <button className="btn btn-sm" type="button" onClick={openCreateStatusTransitionForTopic}>
-                                Добавить переход
-                              </button>
-                            </div>
-                          </div>
-                          {statusDesignerCards.length ? (
-                            <div className="status-designer-grid" id="status-designer-cards">
-                              {statusDesignerCards.map((card) => (
-                                <div className="status-node-card" key={card.code}>
-                                  <div className="status-node-head">
-                                    <div>
-                                      <b>{card.name}</b>
-                                      <code>{card.code}</code>
-                                    </div>
-                                    {card.isTerminal ? <span className="status-node-terminal">Терминальный</span> : null}
-                                  </div>
-                                  {card.outgoing.length ? (
-                                    <ul className="simple-list status-node-links">
-                                      {card.outgoing.map((link) => (
-                                        <li key={String(link.id)}>
-                                          <button
-                                            className="status-link-chip"
-                                            type="button"
-                                            onClick={() => openEditRecordModal("statusTransitions", link)}
-                                          >
-                                            <span>{statusLabel(link.to_status) + " (" + String(link.to_status || "-") + ")"}</span>
-                                            <small>
-                                              {"SLA: " +
-                                                (link.sla_hours == null ? "-" : String(link.sla_hours) + " ч") +
-                                                " • Данные: " +
-                                                listPreview(link.required_data_keys, "-") +
-                                                " • Файлы: " +
-                                                listPreview(link.required_mime_types, "-")}
-                                            </small>
-                                          </button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="muted">Нет исходящих переходов</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="muted">Для выбранной темы переходы пока не настроены.</p>
-                          )}
-                        </div>
-                        <DataTable
-                          headers={[
-                            { key: "topic_code", label: "Тема", sortable: true, field: "topic_code" },
-                            { key: "from_status", label: "Из статуса", sortable: true, field: "from_status" },
-                            { key: "to_status", label: "В статус", sortable: true, field: "to_status" },
-                            { key: "sla_hours", label: "SLA (часы)", sortable: true, field: "sla_hours" },
-                            { key: "required_data_keys", label: "Обязательные данные" },
-                            { key: "required_mime_types", label: "Обязательные файлы" },
-                            { key: "enabled", label: "Активен", sortable: true, field: "enabled" },
-                            { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
-                            { key: "actions", label: "Действия" },
-                          ]}
-                          rows={tables.statusTransitions.rows}
-                          emptyColspan={9}
-                          onSort={(field) => toggleTableSort("statusTransitions", field)}
-                          sortClause={
-                            (tables.statusTransitions.sort && tables.statusTransitions.sort[0]) || TABLE_SERVER_CONFIG.statusTransitions.sort[0]
-                          }
-                          renderRow={(row) => (
-                            <tr key={row.id}>
-                              <td>{row.topic_code || "-"}</td>
-                              <td>{statusLabel(row.from_status)}</td>
-                              <td>{statusLabel(row.to_status)}</td>
-                              <td>{row.sla_hours == null ? "-" : String(row.sla_hours)}</td>
-                              <td>{listPreview(row.required_data_keys, "-")}</td>
-                              <td>{listPreview(row.required_mime_types, "-")}</td>
-                              <td>{boolLabel(row.enabled)}</td>
-                              <td>{String(row.sort_order ?? 0)}</td>
-                              <td>
-                                <div className="table-actions">
-                                  <IconButton
-                                    icon="✎"
-                                    tooltip="Редактировать переход"
-                                    onClick={() => openEditRecordModal("statusTransitions", row)}
-                                  />
-                                  <IconButton
-                                    icon="🗑"
-                                    tooltip="Удалить переход"
-                                    onClick={() => deleteRecord("statusTransitions", row.id)}
-                                    tone="danger"
-                                  />
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        />
-                      </>
-                    ) : null}
-                    {configActiveKey === "users" ? (
-                      <DataTable
-                        headers={[
-                          { key: "name", label: "Пользователь", sortable: true, field: "name" },
-                          { key: "email", label: "Email", sortable: true, field: "email" },
-                          { key: "role", label: "Роль", sortable: true, field: "role" },
-                          { key: "primary_topic_code", label: "Профиль (тема)", sortable: true, field: "primary_topic_code" },
-                          { key: "default_rate", label: "Ставка", sortable: true, field: "default_rate" },
-                          { key: "salary_percent", label: "Процент", sortable: true, field: "salary_percent" },
-                          { key: "is_active", label: "Активен", sortable: true, field: "is_active" },
-                          { key: "responsible", label: "Ответственный", sortable: true, field: "responsible" },
-                          { key: "created_at", label: "Создан", sortable: true, field: "created_at" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.users.rows}
-                        emptyColspan={10}
-                        onSort={(field) => toggleTableSort("users", field)}
-                        sortClause={(tables.users.sort && tables.users.sort[0]) || TABLE_SERVER_CONFIG.users.sort[0]}
-                        renderRow={(row) => (
-                          <tr key={row.id}>
-                            <td>
-                              <div className="user-identity">
-                                <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={32} />
-                                <div className="user-identity-text">
-                                  <b>{row.name || "-"}</b>
-                                </div>
-                              </div>
-                            </td>
-                            <td>{row.email || "-"}</td>
-                            <td>{roleLabel(row.role)}</td>
-                            <td>{resolveReferenceLabel({ table: "topics", value_field: "code", label_field: "name" }, row.primary_topic_code)}</td>
-                            <td>{row.default_rate == null ? "-" : String(row.default_rate)}</td>
-                            <td>{row.salary_percent == null ? "-" : String(row.salary_percent)}</td>
-                            <td>{boolLabel(row.is_active)}</td>
-                            <td>{row.responsible || "-"}</td>
-                            <td>{fmtDate(row.created_at)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать пользователя" onClick={() => openEditRecordModal("users", row)} />
-                                <IconButton icon="🗑" tooltip="Удалить пользователя" onClick={() => deleteRecord("users", row.id)} tone="danger" />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    {configActiveKey === "userTopics" ? (
-                      <DataTable
-                        headers={[
-                          { key: "admin_user_id", label: "Юрист", sortable: true, field: "admin_user_id" },
-                          { key: "topic_code", label: "Доп. тема", sortable: true, field: "topic_code" },
-                          { key: "responsible", label: "Ответственный", sortable: true, field: "responsible" },
-                          { key: "created_at", label: "Создано", sortable: true, field: "created_at" },
-                          { key: "actions", label: "Действия" },
-                        ]}
-                        rows={tables.userTopics.rows}
-                        emptyColspan={5}
-                        onSort={(field) => toggleTableSort("userTopics", field)}
-                        sortClause={(tables.userTopics.sort && tables.userTopics.sort[0]) || TABLE_SERVER_CONFIG.userTopics.sort[0]}
-                        renderRow={(row) => {
-                          const lawyer = (dictionaries.users || []).find((item) => String(item.id) === String(row.admin_user_id));
-                          const lawyerLabel = lawyer ? (lawyer.name || lawyer.email || row.admin_user_id) : row.admin_user_id || "-";
-                          return (
-                            <tr key={row.id}>
-                              <td>{lawyerLabel}</td>
-                              <td>{row.topic_code || "-"}</td>
-                              <td>{row.responsible || "-"}</td>
-                              <td>{fmtDate(row.created_at)}</td>
-                              <td>
-                                <div className="table-actions">
-                                  <IconButton icon="✎" tooltip="Редактировать связь" onClick={() => openEditRecordModal("userTopics", row)} />
-                                  <IconButton icon="🗑" tooltip="Удалить связь" onClick={() => deleteRecord("userTopics", row.id)} tone="danger" />
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        }}
-                      />
-                    ) : null}
-                    {configActiveKey && !KNOWN_CONFIG_TABLE_KEYS.has(configActiveKey) ? (
-                      <DataTable
-                        headers={genericConfigHeaders}
-                        rows={activeConfigTableState.rows}
-                        emptyColspan={Math.max(1, genericConfigHeaders.length)}
-                        onSort={(field) => toggleTableSort(configActiveKey, field)}
-                        sortClause={
-                          (activeConfigTableState.sort && activeConfigTableState.sort[0]) ||
-                          ((resolveTableConfig(configActiveKey)?.sort || [])[0])
-                        }
-                        renderRow={(row) => (
-                          <tr key={row.id || JSON.stringify(row)}>
-                            {(activeConfigMeta?.columns || []).map((column) => {
-                              const key = String(column.name || "");
-                              const value = row[key];
-                              if (column.kind === "boolean") return <td key={key}>{boolLabel(Boolean(value))}</td>;
-                              if (column.kind === "date" || column.kind === "datetime") return <td key={key}>{fmtDate(value)}</td>;
-                              if (column.kind === "json") return <td key={key}>{value == null ? "-" : JSON.stringify(value)}</td>;
-                              const reference = normalizeReferenceMeta(column.reference);
-                              if (reference) return <td key={key}>{resolveReferenceLabel(reference, value)}</td>;
-                              return <td key={key}>{value == null || value === "" ? "-" : String(value)}</td>;
-                            })}
-                            {canUpdateInConfig || canDeleteInConfig ? (
-                              <td>
-                                <div className="table-actions">
-                                  {canUpdateInConfig ? (
-                                    <IconButton icon="✎" tooltip="Редактировать запись" onClick={() => openEditRecordModal(configActiveKey, row)} />
-                                  ) : null}
-                                  {canDeleteInConfig ? (
-                                    <IconButton icon="🗑" tooltip="Удалить запись" onClick={() => deleteRecord(configActiveKey, row.id)} tone="danger" />
-                                  ) : null}
-                                </div>
-                              </td>
-                            ) : null}
-                          </tr>
-                        )}
-                      />
-                    ) : null}
-                    <TablePager
-                      tableState={activeConfigTableState}
-                      onPrev={() => loadPrevPage(configActiveKey)}
-                      onNext={() => loadNextPage(configActiveKey)}
-                      onLoadAll={() => loadAllRows(configActiveKey)}
-                    />
-                    <StatusLine status={getStatus(configActiveKey)} />
-                  </div>
-                </div>
-              </div>
-            </Section>
-
-            <Section active={activeSection === "availableTables"} id="section-available-tables">
-              <div className="section-head">
-                <div>
-                  <h2>Доступность таблиц</h2>
-                  <p className="muted">Скрытая служебная вкладка. Доступ только для администратора по прямой ссылке.</p>
-                </div>
-                <button className="btn secondary" type="button" onClick={() => loadAvailableTables()}>
-                  Обновить
-                </button>
-              </div>
-              <DataTable
-                headers={[
-                  { key: "label", label: "Таблица" },
-                  { key: "table", label: "Код" },
-                  { key: "section", label: "Раздел" },
-                  { key: "is_active", label: "Активна" },
-                  { key: "updated_at", label: "Обновлена" },
-                  { key: "responsible", label: "Ответственный" },
-                  { key: "actions", label: "Действия" },
-                ]}
-                rows={tables.availableTables.rows}
-                emptyColspan={7}
-                renderRow={(row) => (
-                  <tr key={String(row.table || row.label)}>
-                    <td>{row.label || "-"}</td>
-                    <td>
-                      <code>{row.table || "-"}</code>
-                    </td>
-                    <td>{row.section || "-"}</td>
-                    <td>{boolLabel(Boolean(row.is_active))}</td>
-                    <td>{fmtDate(row.updated_at)}</td>
-                    <td>{row.responsible || "-"}</td>
-                    <td>
-                      <div className="table-actions">
-                        <IconButton
-                          icon={row.is_active ? "⏸" : "▶"}
-                          tooltip={row.is_active ? "Деактивировать таблицу" : "Активировать таблицу"}
-                          onClick={() => updateAvailableTableState(row.table, !Boolean(row.is_active))}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                )}
+              <ConfigSection
+                token={token}
+                tables={tables}
+                dictionaries={dictionaries}
+                configActiveKey={configActiveKey}
+                activeConfigTableState={activeConfigTableState}
+                activeConfigMeta={activeConfigMeta}
+                genericConfigHeaders={genericConfigHeaders}
+                canCreateInConfig={canCreateInConfig}
+                canUpdateInConfig={canUpdateInConfig}
+                canDeleteInConfig={canDeleteInConfig}
+                statusDesignerTopicCode={statusDesignerTopicCode}
+                statusDesignerCards={statusDesignerCards}
+                getTableLabel={getTableLabel}
+                getFieldDef={getFieldDef}
+                getFilterValuePreview={getFilterValuePreview}
+                resolveReferenceLabel={resolveReferenceLabel}
+                resolveTableConfig={resolveTableConfig}
+                getStatus={getStatus}
+                loadCurrentConfigTable={loadCurrentConfigTable}
+                openCreateRecordModal={openCreateRecordModal}
+                openFilterModal={openFilterModal}
+                removeFilterChip={removeFilterChip}
+                openFilterEditModal={openFilterEditModal}
+                toggleTableSort={toggleTableSort}
+                openEditRecordModal={openEditRecordModal}
+                deleteRecord={deleteRecord}
+                loadStatusDesignerTopic={loadStatusDesignerTopic}
+                openCreateStatusTransitionForTopic={openCreateStatusTransitionForTopic}
+                loadPrevPage={loadPrevPage}
+                loadNextPage={loadNextPage}
+                loadAllRows={loadAllRows}
+                FilterToolbarComponent={FilterToolbar}
+                DataTableComponent={DataTable}
+                TablePagerComponent={TablePager}
+                StatusLineComponent={StatusLine}
+                IconButtonComponent={IconButton}
+                UserAvatarComponent={UserAvatar}
               />
-              <StatusLine status={getStatus("availableTables")} />
             </Section>
-
-            <Section active={activeSection === "meta"} id="section-meta">
-              <div className="section-head">
-                <div>
-                  <h2>Схема метаданных</h2>
-                  <p className="muted">Поля сущностей для meta-driven форм.</p>
-                </div>
-              </div>
-              <div className="filters" style={{ gridTemplateColumns: "1fr auto" }}>
-                <div className="field">
-                  <label htmlFor="meta-entity">Сущность</label>
-                  <input
-                    id="meta-entity"
-                    value={metaEntity}
-                    placeholder="quotes"
-                    onChange={(event) => setMetaEntity(event.target.value)}
-                  />
-                </div>
-                <div style={{ display: "flex", alignItems: "end" }}>
-                  <button className="btn secondary" type="button" onClick={() => loadMeta()}>
-                    Загрузить
-                  </button>
-                </div>
-              </div>
-              <div className="json">{metaJson}</div>
-              <StatusLine status={getStatus("meta")} />
+            <Section active={activeSection === "availableTables"} id="section-available-tables">
+              <AvailableTablesSection
+                tables={tables}
+                status={getStatus("availableTables")}
+                onRefresh={() => loadAvailableTables()}
+                onToggleActive={updateAvailableTableState}
+                DataTableComponent={DataTable}
+                StatusLineComponent={StatusLine}
+                IconButtonComponent={IconButton}
+              />
             </Section>
           </main>
         </div>
@@ -5216,6 +3117,7 @@
         />
 
         {!token || !role ? <LoginScreen onSubmit={login} status={getStatus("login")} /> : null}
+        <GlobalTooltipLayer />
       </>
     );
   }

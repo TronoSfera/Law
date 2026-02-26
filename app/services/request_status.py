@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -42,6 +43,7 @@ def register_status_history(
     *,
     admin: dict[str, Any] | None = None,
     comment: str | None = None,
+    important_date_at: datetime | None = None,
     responsible: str = "Администратор системы",
 ) -> None:
     db.add(
@@ -51,6 +53,7 @@ def register_status_history(
             to_status=str(to_status or "").strip(),
             changed_by_admin_id=actor_admin_uuid(admin),
             comment=comment,
+            important_date_at=important_date_at,
             responsible=responsible,
         )
     )
@@ -64,6 +67,7 @@ def apply_status_change_effects(
     to_status: str,
     admin: dict[str, Any] | None = None,
     comment: str | None = None,
+    important_date_at: datetime | None = None,
     responsible: str = "Администратор системы",
 ) -> None:
     old_code = str(from_status or "").strip()
@@ -78,5 +82,6 @@ def apply_status_change_effects(
         new_code,
         admin=admin,
         comment=comment,
+        important_date_at=important_date_at,
         responsible=responsible,
     )

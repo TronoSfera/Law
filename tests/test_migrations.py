@@ -88,6 +88,8 @@ class MigrationTests(unittest.TestCase):
             "form_fields",
             "topic_required_fields",
             "topic_data_templates",
+            "request_data_templates",
+            "request_data_template_items",
             "request_data_requirements",
             "requests",
             "messages",
@@ -97,6 +99,7 @@ class MigrationTests(unittest.TestCase):
             "otp_sessions",
             "quotes",
             "admin_user_topics",
+            "landing_featured_staff",
             "topic_status_transitions",
             "notifications",
             "invoices",
@@ -109,7 +112,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0018_status_groups")
+        self.assertEqual(version, "0024_featured_staff_carousel")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -122,6 +125,8 @@ class MigrationTests(unittest.TestCase):
             "form_fields",
             "topic_required_fields",
             "topic_data_templates",
+            "request_data_templates",
+            "request_data_template_items",
             "request_data_requirements",
             "requests",
             "messages",
@@ -131,6 +136,7 @@ class MigrationTests(unittest.TestCase):
             "otp_sessions",
             "quotes",
             "admin_user_topics",
+            "landing_featured_staff",
             "topic_status_transitions",
             "notifications",
             "invoices",
@@ -176,14 +182,21 @@ class MigrationTests(unittest.TestCase):
         columns = {column["name"] for column in self.inspector.get_columns("admin_users")}
         self.assertIn("default_rate", columns)
         self.assertIn("salary_percent", columns)
+        self.assertIn("phone", columns)
 
     def test_requests_contains_financial_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("requests")}
         self.assertIn("client_id", columns)
+        self.assertIn("important_date_at", columns)
         self.assertIn("effective_rate", columns)
+        self.assertIn("request_cost", columns)
         self.assertIn("invoice_amount", columns)
         self.assertIn("paid_at", columns)
         self.assertIn("paid_by_admin_id", columns)
+
+    def test_status_history_contains_important_date_column(self):
+        columns = {column["name"] for column in self.inspector.get_columns("status_history")}
+        self.assertIn("important_date_at", columns)
 
     def test_invoices_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("invoices")}
@@ -221,3 +234,39 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("phone", columns)
         self.assertIn("created_at", columns)
         self.assertIn("responsible", columns)
+
+    def test_topic_data_templates_contains_request_data_catalog_fields(self):
+        columns = {column["name"] for column in self.inspector.get_columns("topic_data_templates")}
+        self.assertIn("value_type", columns)
+        self.assertIn("document_name", columns)
+
+    def test_request_data_requirements_contains_chat_request_fields(self):
+        columns = {column["name"] for column in self.inspector.get_columns("request_data_requirements")}
+        self.assertIn("request_message_id", columns)
+        self.assertIn("field_type", columns)
+        self.assertIn("document_name", columns)
+        self.assertIn("value_text", columns)
+        self.assertIn("sort_order", columns)
+
+    def test_request_data_template_tables_contain_core_columns(self):
+        templates = {column["name"] for column in self.inspector.get_columns("request_data_templates")}
+        self.assertIn("topic_code", templates)
+        self.assertIn("name", templates)
+        self.assertIn("created_by_admin_id", templates)
+        self.assertIn("sort_order", templates)
+
+        items = {column["name"] for column in self.inspector.get_columns("request_data_template_items")}
+        self.assertIn("request_data_template_id", items)
+        self.assertIn("topic_data_template_id", items)
+        self.assertIn("key", items)
+        self.assertIn("label", items)
+        self.assertIn("value_type", items)
+        self.assertIn("sort_order", items)
+
+    def test_landing_featured_staff_contains_core_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("landing_featured_staff")}
+        self.assertIn("admin_user_id", columns)
+        self.assertIn("caption", columns)
+        self.assertIn("sort_order", columns)
+        self.assertIn("pinned", columns)
+        self.assertIn("enabled", columns)

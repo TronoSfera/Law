@@ -11,6 +11,8 @@ os.environ.setdefault("S3_SECRET_KEY", "test")
 os.environ.setdefault("S3_BUCKET", "test")
 
 from app.main import app
+from app.core.http_hardening import _response_security_headers
+from starlette.requests import Request
 
 
 class HttpHardeningTests(unittest.TestCase):
@@ -57,3 +59,37 @@ class HttpHardeningTests(unittest.TestCase):
         self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
         self.assertEqual(response.headers.get("x-frame-options"), "DENY")
         self.assertTrue(bool(response.headers.get("x-request-id")))
+
+    def test_file_preview_paths_allow_same_origin_framing_only(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/public/uploads/object/123",
+            "raw_path": b"/api/public/uploads/object/123",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        headers = _response_security_headers(Request(scope))
+        self.assertEqual(headers.get("X-Frame-Options"), "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", str(headers.get("Content-Security-Policy")))
+
+    def test_non_file_paths_keep_deny_framing(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/public/requests/TRK-1",
+            "raw_path": b"/api/public/requests/TRK-1",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        headers = _response_security_headers(Request(scope))
+        self.assertEqual(headers.get("X-Frame-Options"), "DENY")
+        self.assertIn("frame-ancestors 'none'", str(headers.get("Content-Security-Policy")))

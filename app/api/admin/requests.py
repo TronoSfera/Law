@@ -16,16 +16,17 @@ from app.schemas.admin import (
     RequestDataRequirementCreate,
     RequestDataRequirementPatch,
     RequestReassign,
+    RequestStatusChange,
 )
 from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
+from app.models.client import Client
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.request import Request
 from app.models.status import Status
 from app.models.status_group import StatusGroup
 from app.models.status_history import StatusHistory
 from app.models.topic_data_template import TopicDataTemplate
-from app.models.topic_status_transition import TopicStatusTransition
 from app.services.notifications import (
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     mark_admin_notifications_read,
@@ -33,9 +34,8 @@ from app.services.notifications import (
 )
 from app.services.request_read_markers import EVENT_STATUS, clear_unread_for_lawyer, mark_unread_for_client
 from app.services.request_status import actor_admin_uuid, apply_status_change_effects
-from app.services.status_flow import transition_allowed_for_topic
 from app.services.request_templates import validate_required_topic_fields_or_400
-from app.services.status_transition_requirements import normalize_string_list, validate_transition_requirements_or_400
+from app.services.status_transition_requirements import normalize_string_list
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.universal_query import apply_universal_query
 
@@ -104,6 +104,149 @@ def _parse_datetime_safe(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _normalize_important_date_or_default(raw: object, *, default_days: int = 3) -> datetime:
+    parsed = _parse_datetime_safe(raw)
+    if parsed:
+        return parsed
+    return datetime.now(timezone.utc) + timedelta(days=default_days)
+
+
+def _terminal_status_codes(db: Session) -> set[str]:
+    rows = db.query(Status.code).filter(Status.is_terminal.is_(True)).all()
+    codes = {str(code or "").strip() for (code,) in rows if str(code or "").strip()}
+    return codes or {"RESOLVED", "CLOSED", "REJECTED"}
+
+
+def _coerce_request_bool_filter_or_400(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "y", "да"}:
+        return True
+    if text in {"0", "false", "no", "n", "нет"}:
+        return False
+    raise HTTPException(status_code=400, detail="Значение фильтра должно быть boolean")
+
+
+def _split_request_special_filters(uq: UniversalQuery) -> tuple[UniversalQuery, list[FilterClause]]:
+    filters = list(uq.filters or [])
+    special: list[FilterClause] = []
+    regular: list[FilterClause] = []
+    for clause in filters:
+        field = str(getattr(clause, "field", "") or "").strip()
+        if field in {"has_unread_updates", "deadline_alert"}:
+            special.append(clause)
+        else:
+            regular.append(clause)
+    return UniversalQuery(filters=regular, sort=list(uq.sort or []), page=uq.page), special
+
+
+def _apply_request_special_filters(
+    base_query,
+    *,
+    db: Session,
+    role: str,
+    actor_id: str,
+    special_filters: list[FilterClause],
+):
+    if not special_filters:
+        return base_query
+    terminal_codes_cache: set[str] | None = None
+    for clause in special_filters:
+        field = str(clause.field or "").strip()
+        op = str(clause.op or "").strip()
+        if op not in {"=", "!="}:
+            raise HTTPException(status_code=400, detail=f'Оператор "{op}" не поддерживается для фильтра "{field}"')
+        expected = _coerce_request_bool_filter_or_400(clause.value)
+        if field == "has_unread_updates":
+            if role == "LAWYER":
+                expr = Request.lawyer_has_unread_updates.is_(True)
+            else:
+                expr = or_(
+                    Request.lawyer_has_unread_updates.is_(True),
+                    Request.client_has_unread_updates.is_(True),
+                )
+        elif field == "deadline_alert":
+            now_utc = datetime.now(timezone.utc)
+            next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
+            if terminal_codes_cache is None:
+                terminal_codes_cache = _terminal_status_codes(db)
+            expr = (
+                Request.important_date_at.is_not(None)
+                & (Request.important_date_at < next_day_start)
+                & (Request.status_code.notin_(terminal_codes_cache))
+            )
+            if role == "LAWYER":
+                expr = expr & (Request.assigned_lawyer_id == actor_id)
+        else:
+            continue
+        base_query = base_query.filter(expr if expected else ~expr)
+    return base_query
+
+
+def _normalize_client_phone(value: object) -> str:
+    text = "".join(ch for ch in str(value or "") if ch.isdigit() or ch == "+")
+    if not text:
+        return ""
+    if text.startswith("8") and len(text) == 11:
+        text = "+7" + text[1:]
+    if not text.startswith("+") and text.isdigit():
+        text = "+" + text
+    return text
+
+
+def _client_uuid_or_none(value: object) -> UUID | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return UUID(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail='Некорректный "client_id"')
+
+
+def _client_for_request_payload_or_400(
+    db: Session,
+    *,
+    client_id: object,
+    client_name: object,
+    client_phone: object,
+    responsible: str,
+) -> Client:
+    client_uuid = _client_uuid_or_none(client_id)
+    if client_uuid is not None:
+        row = db.get(Client, client_uuid)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
+        return row
+
+    normalized_phone = _normalize_client_phone(client_phone)
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail='Поле "client_phone" обязательно')
+    normalized_name = str(client_name or "").strip() or "Клиент"
+
+    row = db.query(Client).filter(Client.phone == normalized_phone).first()
+    if row is None:
+        row = Client(
+            full_name=normalized_name,
+            phone=normalized_phone,
+            responsible=responsible,
+        )
+        db.add(row)
+        db.flush()
+        return row
+
+    changed = False
+    if normalized_name and row.full_name != normalized_name:
+        row.full_name = normalized_name
+        changed = True
+    if changed:
+        row.responsible = responsible
+        db.add(row)
+        db.flush()
+    return row
 
 
 def _extract_case_deadline(extra_fields: object) -> datetime | None:
@@ -281,8 +424,8 @@ def _request_data_requirement_row(row: RequestDataRequirement) -> dict:
 def query_requests(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN","LAWYER"))):
     base_query = db.query(Request)
     role = str(admin.get("role") or "").upper()
+    actor = str(admin.get("sub") or "").strip()
     if role == "LAWYER":
-        actor = str(admin.get("sub") or "").strip()
         if not actor:
             raise HTTPException(status_code=401, detail="Некорректный токен")
         base_query = base_query.filter(
@@ -292,7 +435,15 @@ def query_requests(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depe
             )
         )
 
-    q = apply_universal_query(base_query, Request, uq)
+    regular_uq, special_filters = _split_request_special_filters(uq)
+    base_query = _apply_request_special_filters(
+        base_query,
+        db=db,
+        role=role,
+        actor_id=actor,
+        special_filters=special_filters,
+    )
+    q = apply_universal_query(base_query, Request, regular_uq)
     total = q.count()
     rows = q.offset(uq.page.offset).limit(uq.page.limit).all()
     return {
@@ -300,11 +451,14 @@ def query_requests(uq: UniversalQuery, db: Session = Depends(get_db), admin=Depe
             {
                 "id": str(r.id),
                 "track_number": r.track_number,
+                "client_id": str(r.client_id) if r.client_id else None,
                 "status_code": r.status_code,
                 "client_name": r.client_name,
                 "client_phone": r.client_phone,
                 "topic_code": r.topic_code,
+                "important_date_at": r.important_date_at.isoformat() if r.important_date_at else None,
                 "effective_rate": float(r.effective_rate) if r.effective_rate is not None else None,
+                "request_cost": float(r.request_cost) if r.request_cost is not None else None,
                 "invoice_amount": float(r.invoice_amount) if r.invoice_amount is not None else None,
                 "paid_at": r.paid_at.isoformat() if r.paid_at else None,
                 "paid_by_admin_id": r.paid_by_admin_id,
@@ -360,32 +514,7 @@ def get_requests_kanban(
 
     request_id_to_row = {str(row.id): row for row in request_rows}
     request_ids = [row.id for row in request_rows]
-    topic_codes = {str(row.topic_code or "").strip() for row in request_rows if str(row.topic_code or "").strip()}
     status_codes = {str(row.status_code or "").strip() for row in request_rows if str(row.status_code or "").strip()}
-
-    transition_rows: list[TopicStatusTransition] = []
-    if topic_codes:
-        transition_rows = (
-            db.query(TopicStatusTransition)
-            .filter(
-                TopicStatusTransition.enabled.is_(True),
-                TopicStatusTransition.topic_code.in_(list(topic_codes)),
-            )
-            .order_by(
-                TopicStatusTransition.topic_code.asc(),
-                TopicStatusTransition.from_status.asc(),
-                TopicStatusTransition.sort_order.asc(),
-                TopicStatusTransition.to_status.asc(),
-            )
-            .all()
-        )
-        for row in transition_rows:
-            from_code = str(row.from_status or "").strip()
-            to_code = str(row.to_status or "").strip()
-            if from_code:
-                status_codes.add(from_code)
-            if to_code:
-                status_codes.add(to_code)
 
     status_meta_map: dict[str, dict[str, object]] = {}
     if status_codes:
@@ -448,16 +577,30 @@ def get_requests_kanban(
             current_status_changed_at[request_id] = row.created_at
             previous_status_by_request[request_id] = str(row.from_status or "").strip()
 
-    transitions_by_key: dict[tuple[str, str], list[TopicStatusTransition]] = {}
-    transitions_to_key: dict[tuple[str, str], list[TopicStatusTransition]] = {}
-    for row in transition_rows:
-        topic_code = str(row.topic_code or "").strip()
-        from_status = str(row.from_status or "").strip()
-        to_status = str(row.to_status or "").strip()
-        if not topic_code or not from_status or not to_status:
+    all_enabled_status_rows = (
+        db.query(Status, StatusGroup)
+        .outerjoin(StatusGroup, StatusGroup.id == Status.status_group_id)
+        .filter(Status.enabled.is_(True))
+        .order_by(Status.sort_order.asc(), Status.name.asc(), Status.code.asc())
+        .all()
+    )
+    all_enabled_statuses: list[dict[str, object]] = []
+    for status_row, group_row in all_enabled_status_rows:
+        code = str(status_row.code or "").strip()
+        if not code:
             continue
-        transitions_by_key.setdefault((topic_code, from_status), []).append(row)
-        transitions_to_key.setdefault((topic_code, to_status), []).append(row)
+        meta = {
+            "code": code,
+            "name": str(status_row.name or code),
+            "kind": str(status_row.kind or "DEFAULT"),
+            "is_terminal": bool(status_row.is_terminal),
+            "status_group_id": str(status_row.status_group_id) if status_row.status_group_id else None,
+            "status_group_name": (str(group_row.name) if group_row is not None and group_row.name else None),
+            "status_group_order": (int(group_row.sort_order or 0) if group_row is not None else None),
+            "sort_order": int(status_row.sort_order or 0),
+        }
+        status_meta_map.setdefault(code, meta)
+        all_enabled_statuses.append(meta)
 
     status_groups_rows = db.query(StatusGroup).order_by(StatusGroup.sort_order.asc(), StatusGroup.name.asc()).all()
     columns_catalog = [
@@ -474,7 +617,6 @@ def get_requests_kanban(
     group_totals: dict[str, int] = {row["key"]: 0 for row in columns_catalog}
     for row in request_rows:
         request_id = str(row.id)
-        topic_code = str(row.topic_code or "").strip()
         status_code = str(row.status_code or "").strip()
         status_meta = _status_meta_or_default(status_meta_map, status_code)
         status_group = str(status_meta.get("status_group_id") or "").strip()
@@ -496,9 +638,9 @@ def get_requests_kanban(
             }
             columns_catalog.append(columns_by_key[status_group])
         available_transitions = []
-        for transition in transitions_by_key.get((topic_code, status_code), []):
-            to_status = str(transition.to_status or "").strip()
-            if not to_status:
+        for status_def in all_enabled_statuses:
+            to_status = str(status_def.get("code") or "").strip()
+            if not to_status or to_status == status_code:
                 continue
             to_meta = _status_meta_or_default(status_meta_map, to_status)
             target_group = str(to_meta.get("status_group_id") or "").strip()
@@ -514,26 +656,12 @@ def get_requests_kanban(
                     "to_status": to_status,
                     "to_status_name": str(to_meta.get("name") or to_status),
                     "target_group": target_group,
-                    "sla_hours": transition.sla_hours,
+                    "is_terminal": bool(to_meta.get("is_terminal")),
                 }
             )
 
-        case_deadline = _extract_case_deadline(row.extra_fields)
-        entered_at = current_status_changed_at.get(request_id) or row.created_at
-        previous_status = previous_status_by_request.get(request_id)
-        transition_candidates = transitions_to_key.get((topic_code, status_code), [])
-        matched_transition = None
-        if previous_status:
-            for transition in transition_candidates:
-                if str(transition.from_status or "").strip() == previous_status:
-                    matched_transition = transition
-                    break
-        if matched_transition is None and transition_candidates:
-            matched_transition = transition_candidates[0]
-
+        case_deadline = row.important_date_at or _extract_case_deadline(row.extra_fields)
         sla_deadline = None
-        if entered_at and matched_transition and matched_transition.sla_hours is not None:
-            sla_deadline = entered_at + timedelta(hours=int(matched_transition.sla_hours))
 
         assigned_id = str(row.assigned_lawyer_id or "").strip() or None
         items.append(
@@ -544,6 +672,7 @@ def get_requests_kanban(
                 "client_phone": row.client_phone,
                 "topic_code": row.topic_code,
                 "status_code": status_code,
+                "important_date_at": row.important_date_at.isoformat() if row.important_date_at else None,
                 "status_name": str(status_meta.get("name") or status_code),
                 "status_group": status_group,
                 "status_group_name": status_group_name or None,
@@ -618,6 +747,13 @@ def create_request(payload: RequestAdminCreate, db: Session = Depends(get_db), a
     validate_required_topic_fields_or_400(db, payload.topic_code, payload.extra_fields)
     track = payload.track_number or f"TRK-{uuid4().hex[:10].upper()}"
     responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    client = _client_for_request_payload_or_400(
+        db,
+        client_id=payload.client_id,
+        client_name=payload.client_name,
+        client_phone=payload.client_phone,
+        responsible=responsible,
+    )
     assigned_lawyer_id = str(payload.assigned_lawyer_id or "").strip() or None
     effective_rate = payload.effective_rate
     if assigned_lawyer_id:
@@ -627,14 +763,17 @@ def create_request(payload: RequestAdminCreate, db: Session = Depends(get_db), a
             effective_rate = assigned_lawyer.default_rate
     row = Request(
         track_number=track,
-        client_name=payload.client_name,
-        client_phone=payload.client_phone,
+        client_id=client.id,
+        client_name=client.full_name,
+        client_phone=client.phone,
         topic_code=payload.topic_code,
         status_code=payload.status_code,
+        important_date_at=payload.important_date_at,
         description=payload.description,
         extra_fields=payload.extra_fields,
         assigned_lawyer_id=assigned_lawyer_id,
         effective_rate=effective_rate,
+        request_cost=payload.request_cost,
         invoice_amount=payload.invoice_amount,
         paid_at=payload.paid_at,
         paid_by_admin_id=payload.paid_by_admin_id,
@@ -682,30 +821,32 @@ def update_request(
                 changes["effective_rate"] = assigned_lawyer.default_rate
     old_status = str(row.status_code or "")
     responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+    if {"client_id", "client_name", "client_phone"}.intersection(set(changes.keys())):
+        client = _client_for_request_payload_or_400(
+            db,
+            client_id=changes.get("client_id", row.client_id),
+            client_name=changes.get("client_name", row.client_name),
+            client_phone=changes.get("client_phone", row.client_phone),
+            responsible=responsible,
+        )
+        changes["client_id"] = client.id
+        changes["client_name"] = client.full_name
+        changes["client_phone"] = client.phone
+    status_changed = "status_code" in changes and str(changes.get("status_code") or "") != old_status
+    if status_changed and ("important_date_at" not in changes or changes.get("important_date_at") is None):
+        changes["important_date_at"] = _normalize_important_date_or_default(None)
     for key, value in changes.items():
         setattr(row, key, value)
-    if "status_code" in changes and str(changes.get("status_code") or "") != old_status:
+    if status_changed:
         next_status = str(changes.get("status_code") or "")
-        if not transition_allowed_for_topic(
-            db,
-            str(row.topic_code or "").strip() or None,
-            old_status,
-            next_status,
-        ):
-            raise HTTPException(status_code=400, detail="Переход статуса не разрешен для выбранной темы")
-        validate_transition_requirements_or_400(
-            db,
-            row,
-            from_status=old_status,
-            to_status=next_status,
-            extra_fields_override=row.extra_fields if isinstance(row.extra_fields, dict) else None,
-        )
+        important_date_at = row.important_date_at
         billing_note = apply_billing_transition_effects(
             db,
             req=row,
             from_status=old_status,
             to_status=next_status,
             admin=admin,
+            important_date_at=important_date_at,
             responsible=responsible,
         )
         mark_unread_for_client(row, EVENT_STATUS)
@@ -723,7 +864,11 @@ def update_request(
             event_type=NOTIFICATION_EVENT_STATUS,
             actor_role=str(admin.get("role") or "").upper() or "ADMIN",
             actor_admin_user_id=admin.get("sub"),
-            body=(f"{old_status} -> {next_status}" + (f"\n{billing_note}" if billing_note else "")),
+            body=(
+                f"{old_status} -> {next_status}"
+                + (f"\nВажная дата: {important_date_at.isoformat()}" if important_date_at else "")
+                + (f"\n{billing_note}" if billing_note else "")
+            ),
             responsible=responsible,
         )
     try:
@@ -772,14 +917,17 @@ def get_request(request_id: str, db: Session = Depends(get_db), admin=Depends(re
     return {
         "id": str(req.id),
         "track_number": req.track_number,
+        "client_id": str(req.client_id) if req.client_id else None,
         "client_name": req.client_name,
         "client_phone": req.client_phone,
         "topic_code": req.topic_code,
         "status_code": req.status_code,
+        "important_date_at": req.important_date_at.isoformat() if req.important_date_at else None,
         "description": req.description,
         "extra_fields": req.extra_fields,
         "assigned_lawyer_id": req.assigned_lawyer_id,
         "effective_rate": float(req.effective_rate) if req.effective_rate is not None else None,
+        "request_cost": float(req.request_cost) if req.request_cost is not None else None,
         "invoice_amount": float(req.invoice_amount) if req.invoice_amount is not None else None,
         "paid_at": req.paid_at.isoformat() if req.paid_at else None,
         "paid_by_admin_id": req.paid_by_admin_id,
@@ -790,6 +938,86 @@ def get_request(request_id: str, db: Session = Depends(get_db), admin=Depends(re
         "lawyer_unread_event_type": req.lawyer_unread_event_type,
         "created_at": req.created_at.isoformat() if req.created_at else None,
         "updated_at": req.updated_at.isoformat() if req.updated_at else None,
+    }
+
+
+@router.post("/{request_id}/status-change")
+def change_request_status(
+    request_id: str,
+    payload: RequestStatusChange,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER")),
+):
+    request_uuid = _request_uuid_or_400(request_id)
+    req = db.get(Request, request_uuid)
+    if not req:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_lawyer_can_manage_request_or_403(admin, req)
+
+    next_status = str(payload.status_code or "").strip()
+    if not next_status:
+        raise HTTPException(status_code=400, detail='Поле "status_code" обязательно')
+
+    status_row = db.query(Status).filter(Status.code == next_status, Status.enabled.is_(True)).first()
+    if status_row is None:
+        raise HTTPException(status_code=400, detail="Указан несуществующий или неактивный статус")
+
+    old_status = str(req.status_code or "").strip()
+    if old_status == next_status:
+        raise HTTPException(status_code=400, detail="Выберите новый статус")
+
+    important_date_at = _normalize_important_date_or_default(payload.important_date_at)
+    comment = str(payload.comment or "").strip() or None
+    responsible = str(admin.get("email") or "").strip() or "Администратор системы"
+
+    req.status_code = next_status
+    req.important_date_at = important_date_at
+    req.responsible = responsible
+
+    billing_note = apply_billing_transition_effects(
+        db,
+        req=req,
+        from_status=old_status,
+        to_status=next_status,
+        admin=admin,
+        responsible=responsible,
+    )
+    mark_unread_for_client(req, EVENT_STATUS)
+    apply_status_change_effects(
+        db,
+        req,
+        from_status=old_status,
+        to_status=next_status,
+        admin=admin,
+        comment=comment,
+        important_date_at=important_date_at,
+        responsible=responsible,
+    )
+    notify_request_event(
+        db,
+        request=req,
+        event_type=NOTIFICATION_EVENT_STATUS,
+        actor_role=str(admin.get("role") or "").upper() or "ADMIN",
+        actor_admin_user_id=admin.get("sub"),
+        body=(
+            f"{old_status} -> {next_status}"
+            + f"\nВажная дата: {important_date_at.isoformat()}"
+            + (f"\n{comment}" if comment else "")
+            + (f"\n{billing_note}" if billing_note else "")
+        ),
+        responsible=responsible,
+    )
+
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return {
+        "status": "ok",
+        "request_id": str(req.id),
+        "track_number": req.track_number,
+        "from_status": old_status or None,
+        "to_status": next_status,
+        "important_date_at": req.important_date_at.isoformat() if req.important_date_at else None,
     }
 
 
@@ -808,22 +1036,6 @@ def get_request_status_route(
     topic_code = str(req.topic_code or "").strip()
     current_status = str(req.status_code or "").strip()
 
-    transitions: list[TopicStatusTransition] = []
-    if topic_code:
-        transitions = (
-            db.query(TopicStatusTransition)
-            .filter(
-                TopicStatusTransition.topic_code == topic_code,
-                TopicStatusTransition.enabled.is_(True),
-            )
-            .order_by(
-                TopicStatusTransition.sort_order.asc(),
-                TopicStatusTransition.from_status.asc(),
-                TopicStatusTransition.to_status.asc(),
-            )
-            .all()
-        )
-
     history_rows = (
         db.query(StatusHistory)
         .filter(StatusHistory.request_id == req.id)
@@ -841,23 +1053,28 @@ def get_request_status_route(
             known_codes.add(from_code)
         if to_code:
             known_codes.add(to_code)
-    for row in transitions:
-        from_code = str(row.from_status or "").strip()
-        to_code = str(row.to_status or "").strip()
-        if from_code:
-            known_codes.add(from_code)
-        if to_code:
-            known_codes.add(to_code)
-
     statuses_map: dict[str, dict[str, str]] = {}
+    all_enabled_status_rows = db.query(Status, StatusGroup).outerjoin(StatusGroup, StatusGroup.id == Status.status_group_id).filter(Status.enabled.is_(True)).all()
+    for status_row, _group_row in all_enabled_status_rows:
+        code = str(status_row.code or "").strip()
+        if code:
+            known_codes.add(code)
     if known_codes:
-        status_rows = db.query(Status).filter(Status.code.in_(list(known_codes))).all()
+        status_rows = (
+            db.query(Status, StatusGroup)
+            .outerjoin(StatusGroup, StatusGroup.id == Status.status_group_id)
+            .filter(Status.code.in_(list(known_codes)))
+            .all()
+        )
         statuses_map = {
-            str(row.code): {
-                "name": str(row.name or row.code),
-                "kind": str(row.kind or "DEFAULT"),
+            str(status_row.code): {
+                "name": str(status_row.name or status_row.code),
+                "kind": str(status_row.kind or "DEFAULT"),
+                "is_terminal": bool(status_row.is_terminal),
+                "status_group_id": str(status_row.status_group_id) if status_row.status_group_id else None,
+                "status_group_name": (str(group_row.name) if group_row is not None and group_row.name else None),
             }
-            for row in status_rows
+            for status_row, group_row in status_rows
         }
 
     sequence_from_history: list[str] = []
@@ -885,26 +1102,7 @@ def get_request_status_route(
     for code in sequence_from_history:
         add_code(code)
 
-    for row in transitions:
-        add_code(str(row.from_status or ""))
-        add_code(str(row.to_status or ""))
-
     add_code(current_status)
-
-    transition_by_to_status: dict[str, dict[str, object]] = {}
-    for row in transitions:
-        to_code = str(row.to_status or "").strip()
-        if not to_code:
-            continue
-        current = transition_by_to_status.get(to_code)
-        if current is None or int(row.sort_order or 0) < int(current.get("sort_order") or 0):
-            transition_by_to_status[to_code] = {
-                "from_status": str(row.from_status or "").strip() or None,
-                "sla_hours": row.sla_hours,
-                "required_data_keys": normalize_string_list(row.required_data_keys),
-                "required_mime_types": normalize_string_list(row.required_mime_types),
-                "sort_order": int(row.sort_order or 0),
-            }
 
     changed_at_by_status: dict[str, str] = {}
     for row in history_rows:
@@ -922,7 +1120,6 @@ def get_request_status_route(
     nodes: list[dict[str, str | int | None]] = []
     for index, code in enumerate(ordered_codes):
         meta = statuses_map.get(code) or {}
-        transition_meta = transition_by_to_status.get(code) or {}
         state = "pending"
         if code == current_status:
             state = "current"
@@ -930,18 +1127,6 @@ def get_request_status_route(
             state = "completed"
 
         note_parts: list[str] = []
-        from_status = transition_meta.get("from_status")
-        if from_status:
-            note_parts.append(f"Переход из статуса «{status_name(str(from_status))}»")
-        sla_hours = transition_meta.get("sla_hours")
-        if sla_hours is not None:
-            note_parts.append(f"SLA: {sla_hours} ч")
-        required_data_keys = transition_meta.get("required_data_keys") or []
-        if required_data_keys:
-            note_parts.append("Данные: " + ", ".join(str(item) for item in required_data_keys))
-        required_mime_types = transition_meta.get("required_mime_types") or []
-        if required_mime_types:
-            note_parts.append("Файлы: " + ", ".join(str(item) for item in required_mime_types))
         kind = str(meta.get("kind") or "DEFAULT")
         if kind == "INVOICE":
             note_parts.append("Этап выставления счета")
@@ -954,11 +1139,77 @@ def get_request_status_route(
                 "name": status_name(code),
                 "kind": kind,
                 "state": state,
-                "sla_hours": sla_hours,
-                "required_data_keys": required_data_keys,
-                "required_mime_types": required_mime_types,
                 "changed_at": changed_at_by_status.get(code),
                 "note": " • ".join(note_parts),
+            }
+        )
+
+    history_entries: list[dict[str, object]] = []
+    timeline: list[dict[str, object]] = []
+    for row in history_rows:
+        timeline.append(
+            {
+                "id": str(row.id),
+                "from_status": str(row.from_status or "").strip() or None,
+                "to_status": str(row.to_status or "").strip() or None,
+                "to_status_name": status_name(str(row.to_status or "").strip()) if str(row.to_status or "").strip() else None,
+                "created_at": row.created_at,
+                "important_date_at": row.important_date_at,
+                "comment": row.comment,
+            }
+        )
+    if not timeline:
+        timeline.append(
+            {
+                "id": "current",
+                "from_status": None,
+                "to_status": current_status or None,
+                "to_status_name": status_name(current_status) if current_status else None,
+                "created_at": req.updated_at or req.created_at,
+                "important_date_at": req.important_date_at,
+                "comment": None,
+            }
+        )
+    for index, item in enumerate(timeline):
+        current_at = item.get("created_at")
+        next_at = timeline[index + 1].get("created_at") if index + 1 < len(timeline) else datetime.now(timezone.utc)
+        duration_seconds = None
+        if isinstance(current_at, datetime) and isinstance(next_at, datetime):
+            delta = next_at - current_at
+            duration_seconds = max(0, int(delta.total_seconds()))
+        history_entries.append(
+            {
+                "id": item.get("id"),
+                "from_status": item.get("from_status"),
+                "to_status": item.get("to_status"),
+                "to_status_name": item.get("to_status_name"),
+                "changed_at": current_at.isoformat() if isinstance(current_at, datetime) else None,
+                "important_date_at": item.get("important_date_at").isoformat() if isinstance(item.get("important_date_at"), datetime) else None,
+                "comment": item.get("comment"),
+                "duration_seconds": duration_seconds,
+            }
+        )
+
+    available_statuses: list[dict[str, object]] = []
+    for status_row, group_row in sorted(
+        all_enabled_status_rows,
+        key=lambda pair: (
+            int(pair[1].sort_order or 0) if pair[1] is not None else 999,
+            int(pair[0].sort_order or 0),
+            str(pair[0].name or pair[0].code).lower(),
+        ),
+    ):
+        code = str(status_row.code or "").strip()
+        if not code:
+            continue
+        available_statuses.append(
+            {
+                "code": code,
+                "name": str(status_row.name or code),
+                "kind": str(status_row.kind or "DEFAULT"),
+                "is_terminal": bool(status_row.is_terminal),
+                "status_group_id": str(status_row.status_group_id) if status_row.status_group_id else None,
+                "status_group_name": (str(group_row.name) if group_row is not None and group_row.name else None),
             }
         )
 
@@ -967,6 +1218,9 @@ def get_request_status_route(
         "track_number": req.track_number,
         "topic_code": req.topic_code,
         "current_status": current_status or None,
+        "current_important_date_at": req.important_date_at.isoformat() if req.important_date_at else None,
+        "available_statuses": available_statuses,
+        "history": list(reversed(history_entries)),
         "nodes": nodes,
     }
 

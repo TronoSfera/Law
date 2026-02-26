@@ -4,7 +4,7 @@ import importlib
 import json
 import pkgutil
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any
@@ -27,6 +27,8 @@ from app.models.form_field import FormField
 from app.models.client import Client
 from app.models.table_availability import TableAvailability
 from app.models.request_data_requirement import RequestDataRequirement
+from app.models.request_data_template import RequestDataTemplate
+from app.models.request_data_template_item import RequestDataTemplateItem
 from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.request import Request
@@ -75,6 +77,7 @@ REQUEST_FINANCIAL_FIELDS = {"effective_rate", "invoice_amount", "paid_at", "paid
 REQUEST_CALCULATED_FIELDS = {"invoice_amount", "paid_at", "paid_by_admin_id", "total_attachments_bytes"}
 INVOICE_CALCULATED_FIELDS = {"issued_by_admin_user_id", "issued_by_role", "issued_at", "paid_at"}
 ALLOWED_ADMIN_ROLES = {"ADMIN", "LAWYER"}
+ALLOWED_REQUEST_DATA_VALUE_TYPES = {"string", "text", "date", "number", "file"}
 
 # Per-table RBAC: table -> role -> actions.
 # If a table is missing here, fallback rules are used.
@@ -103,9 +106,12 @@ TABLE_ROLE_ACTIONS: dict[str, dict[str, set[str]]] = {
     "otp_sessions": {"ADMIN": {"query", "read"}},
     "admin_users": {"ADMIN": set(CRUD_ACTIONS)},
     "admin_user_topics": {"ADMIN": set(CRUD_ACTIONS)},
+    "landing_featured_staff": {"ADMIN": set(CRUD_ACTIONS)},
     "topic_status_transitions": {"ADMIN": set(CRUD_ACTIONS)},
     "topic_required_fields": {"ADMIN": set(CRUD_ACTIONS)},
     "topic_data_templates": {"ADMIN": set(CRUD_ACTIONS)},
+    "request_data_templates": {"ADMIN": set(CRUD_ACTIONS)},
+    "request_data_template_items": {"ADMIN": set(CRUD_ACTIONS)},
     "request_data_requirements": {"ADMIN": set(CRUD_ACTIONS)},
     "notifications": {"ADMIN": {"query", "read", "update"}},
 }
@@ -264,10 +270,13 @@ def _table_label(table_name: str) -> str:
         "clients": "Клиенты",
         "table_availability": "Доступность таблиц",
         "topic_required_fields": "Обязательные поля темы",
-        "topic_data_templates": "Шаблоны данных темы",
+        "topic_data_templates": "Дополнительные данные",
+        "request_data_templates": "Шаблоны доп. данных",
+        "request_data_template_items": "Набор данных шаблона",
         "topic_status_transitions": "Переходы статусов темы",
         "admin_users": "Пользователи",
         "admin_user_topics": "Дополнительные темы юристов",
+        "landing_featured_staff": "Карусель сотрудников лендинга",
         "attachments": "Вложения",
         "messages": "Сообщения",
         "audit_log": "Журнал аудита",
@@ -355,8 +364,16 @@ def _column_label(table_name: str, column_name: str) -> str:
         "key": "Ключ",
         "name": "Название",
         "label": "Метка",
+        "caption": "Подпись",
+        "value_type": "Тип значения",
+        "document_name": "Документ",
+        "request_data_template_id": "Шаблон",
+        "request_data_template_item_id": "Элемент шаблона",
         "text": "Текст",
         "description": "Описание",
+        "request_message_id": "ID сообщения запроса",
+        "field_type": "Тип поля",
+        "value_text": "Данные",
         "author": "Автор",
         "source": "Источник",
         "email": "Email",
@@ -384,6 +401,7 @@ def _column_label(table_name: str, column_name: str) -> str:
         "updated_at": "Дата обновления",
         "responsible": "Ответственный",
         "sort_order": "Порядок",
+        "pinned": "Закреплен",
         "is_active": "Активен",
         "enabled": "Активен",
         "required": "Обязательное",
@@ -396,6 +414,7 @@ def _column_label(table_name: str, column_name: str) -> str:
         "primary_topic_code": "Профильная тема",
         "default_rate": "Ставка по умолчанию",
         "effective_rate": "Ставка (фикс.)",
+        "request_cost": "Стоимость заявки",
         "salary_percent": "Процент зарплаты",
         "invoice_amount": "Сумма счета",
         "paid_by_admin_id": "Оплату подтвердил",
@@ -468,12 +487,17 @@ def _reference_override(table_name: str, column_name: str) -> tuple[str, str] | 
         ("topic_required_fields", "topic_code"): ("topics", "code"),
         ("topic_required_fields", "field_key"): ("form_fields", "key"),
         ("topic_data_templates", "topic_code"): ("topics", "code"),
+        ("request_data_templates", "topic_code"): ("topics", "code"),
+        ("request_data_templates", "created_by_admin_id"): ("admin_users", "id"),
+        ("request_data_template_items", "request_data_template_id"): ("request_data_templates", "id"),
+        ("request_data_template_items", "topic_data_template_id"): ("topic_data_templates", "id"),
         ("topic_status_transitions", "topic_code"): ("topics", "code"),
         ("topic_status_transitions", "from_status"): ("statuses", "code"),
         ("topic_status_transitions", "to_status"): ("statuses", "code"),
         ("admin_users", "primary_topic_code"): ("topics", "code"),
         ("admin_user_topics", "admin_user_id"): ("admin_users", "id"),
         ("admin_user_topics", "topic_code"): ("topics", "code"),
+        ("landing_featured_staff", "admin_user_id"): ("admin_users", "id"),
         ("request_data_requirements", "request_id"): ("requests", "id"),
         ("request_data_requirements", "topic_template_id"): ("topic_data_templates", "id"),
         ("request_data_requirements", "created_by_admin_id"): ("admin_users", "id"),
@@ -530,6 +554,8 @@ def _reference_label_field(table_name: str, value_field: str) -> str:
         "status_groups": "name",
         "form_fields": "label",
         "topic_data_templates": "label",
+        "request_data_templates": "name",
+        "request_data_template_items": "label",
         "invoices": "invoice_number",
         "messages": "body",
         "attachments": "file_name",
@@ -784,6 +810,8 @@ def _apply_admin_user_fields_for_create(payload: dict[str, Any]) -> dict[str, An
         raise HTTPException(status_code=400, detail="Email обязателен")
     data["email"] = email
     data["role"] = role
+    if "phone" in data:
+        data["phone"] = _normalize_optional_string(_normalize_client_phone(data.get("phone")))
     data["avatar_url"] = _normalize_optional_string(data.get("avatar_url"))
     data["primary_topic_code"] = _normalize_optional_string(data.get("primary_topic_code"))
     data["password_hash"] = hash_password(raw_password)
@@ -809,6 +837,8 @@ def _apply_admin_user_fields_for_update(payload: dict[str, Any]) -> dict[str, An
         if not email:
             raise HTTPException(status_code=400, detail="Email не может быть пустым")
         data["email"] = email
+    if "phone" in data:
+        data["phone"] = _normalize_optional_string(_normalize_client_phone(data.get("phone")))
     if "avatar_url" in data:
         data["avatar_url"] = _normalize_optional_string(data.get("avatar_url"))
     if "primary_topic_code" in data:
@@ -936,6 +966,88 @@ def _apply_topic_data_templates_fields(db: Session, payload: dict[str, Any]) -> 
         if not key:
             raise HTTPException(status_code=400, detail='Поле "key" не может быть пустым')
         data["key"] = key
+    if "value_type" in data:
+        value_type = str(data.get("value_type") or "").strip().lower()
+        if value_type not in ALLOWED_REQUEST_DATA_VALUE_TYPES:
+            raise HTTPException(status_code=400, detail='Поле "value_type" должно быть одним из: string, text, date, number, file')
+        data["value_type"] = value_type
+    if "document_name" in data:
+        data["document_name"] = _normalize_optional_string(data.get("document_name"))
+    return data
+
+
+def _apply_request_data_templates_fields(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    data = dict(payload)
+    if "topic_code" in data:
+      topic_code = str(data.get("topic_code") or "").strip()
+      if not topic_code:
+          raise HTTPException(status_code=400, detail='Поле "topic_code" не может быть пустым')
+      _ensure_topic_exists_or_400(db, topic_code)
+      data["topic_code"] = topic_code
+    if "name" in data:
+      name = str(data.get("name") or "").strip()
+      if not name:
+          raise HTTPException(status_code=400, detail='Поле "name" не может быть пустым')
+      data["name"] = name
+    if "description" in data:
+      data["description"] = _normalize_optional_string(data.get("description"))
+    if "created_by_admin_id" in data and data.get("created_by_admin_id") is not None:
+      admin_id = _parse_uuid_or_400(data.get("created_by_admin_id"), "created_by_admin_id")
+      admin_user = db.get(AdminUser, admin_id)
+      if admin_user is None:
+          raise HTTPException(status_code=400, detail="Пользователь не найден")
+      data["created_by_admin_id"] = admin_id
+    return data
+
+
+def _apply_request_data_template_items_fields(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    data = dict(payload)
+    template = None
+    if "request_data_template_id" in data:
+      template_id = _parse_uuid_or_400(data.get("request_data_template_id"), "request_data_template_id")
+      template = db.get(RequestDataTemplate, template_id)
+      if template is None:
+          raise HTTPException(status_code=400, detail="Шаблон не найден")
+      data["request_data_template_id"] = template_id
+    if "topic_data_template_id" in data and data.get("topic_data_template_id") is not None:
+      catalog_id = _parse_uuid_or_400(data.get("topic_data_template_id"), "topic_data_template_id")
+      catalog = db.get(TopicDataTemplate, catalog_id)
+      if catalog is None:
+          raise HTTPException(status_code=400, detail="Поле доп. данных не найдено")
+      data["topic_data_template_id"] = catalog_id
+      if "key" not in data or not str(data.get("key") or "").strip():
+          data["key"] = str(catalog.key or "").strip()
+      if "label" not in data or not str(data.get("label") or "").strip():
+          data["label"] = str(catalog.label or catalog.key or "").strip()
+      if "value_type" not in data or not str(data.get("value_type") or "").strip():
+          data["value_type"] = str(catalog.value_type or "string")
+      if template is not None and str(template.topic_code or "").strip() and str(catalog.topic_code or "").strip():
+          if str(template.topic_code) != str(catalog.topic_code):
+              raise HTTPException(status_code=400, detail="Поле не соответствует теме шаблона")
+    if "key" in data:
+      key = str(data.get("key") or "").strip()
+      if not key:
+          raise HTTPException(status_code=400, detail='Поле "key" не может быть пустым')
+      data["key"] = key[:80]
+    if "label" in data:
+      label = str(data.get("label") or "").strip()
+      if not label:
+          raise HTTPException(status_code=400, detail='Поле "label" не может быть пустым')
+      data["label"] = label
+    if "value_type" in data:
+      value_type = str(data.get("value_type") or "").strip().lower()
+      if value_type not in ALLOWED_REQUEST_DATA_VALUE_TYPES:
+          raise HTTPException(status_code=400, detail='Поле "value_type" должно быть одним из: string, text, date, number, file')
+      data["value_type"] = value_type
+    if "sort_order" in data:
+      raw = data.get("sort_order")
+      if raw is None or str(raw).strip() == "":
+          data["sort_order"] = 0
+      else:
+          try:
+              data["sort_order"] = int(raw)
+          except (TypeError, ValueError):
+              raise HTTPException(status_code=400, detail='Поле "sort_order" должно быть целым числом')
     return data
 
 
@@ -953,11 +1065,31 @@ def _apply_request_data_requirements_fields(db: Session, payload: dict[str, Any]
         if template is None:
             raise HTTPException(status_code=400, detail="Шаблон темы не найден")
         data["topic_template_id"] = template_id
+    if "request_message_id" in data and data.get("request_message_id") is not None:
+        data["request_message_id"] = _parse_uuid_or_400(data.get("request_message_id"), "request_message_id")
     if "key" in data:
         key = str(data.get("key") or "").strip()
         if not key:
             raise HTTPException(status_code=400, detail='Поле "key" не может быть пустым')
         data["key"] = key
+    if "field_type" in data:
+        field_type = str(data.get("field_type") or "").strip().lower()
+        if field_type not in ALLOWED_REQUEST_DATA_VALUE_TYPES:
+            raise HTTPException(status_code=400, detail='Поле "field_type" должно быть одним из: string, text, date, number, file')
+        data["field_type"] = field_type
+    if "document_name" in data:
+        data["document_name"] = _normalize_optional_string(data.get("document_name"))
+    if "value_text" in data:
+        data["value_text"] = _normalize_optional_string(data.get("value_text"))
+    if "sort_order" in data:
+        raw_sort = data.get("sort_order")
+        if raw_sort is None or str(raw_sort).strip() == "":
+            data["sort_order"] = 0
+        else:
+            try:
+                data["sort_order"] = int(raw_sort)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail='Поле "sort_order" должно быть целым числом')
     return data
 
 
@@ -1416,7 +1548,20 @@ def get_row(
     if normalized == "attachments" and isinstance(row, Attachment):
         req = _request_for_related_row_or_404(db, row)
         _ensure_lawyer_can_view_request_or_403(admin, req)
-    return _strip_hidden_fields(normalized, _row_to_dict(row))
+    payload = _strip_hidden_fields(normalized, _row_to_dict(row))
+    if normalized == "requests" and isinstance(row, Request):
+        assigned_lawyer_id = str(row.assigned_lawyer_id or "").strip()
+        if assigned_lawyer_id:
+            try:
+                lawyer_uuid = uuid.UUID(assigned_lawyer_id)
+            except ValueError:
+                lawyer_uuid = None
+            if lawyer_uuid is not None:
+                lawyer = db.get(AdminUser, lawyer_uuid)
+                if lawyer is not None:
+                    payload["assigned_lawyer_name"] = lawyer.name or lawyer.email or assigned_lawyer_id
+                    payload["assigned_lawyer_phone"] = _serialize_value(getattr(lawyer, "phone", None))
+    return payload
 
 
 @router.post("/{table_name}", status_code=201)
@@ -1490,6 +1635,10 @@ def create_row(
         clean_payload = _apply_topic_required_fields_fields(db, clean_payload)
     if normalized == "topic_data_templates":
         clean_payload = _apply_topic_data_templates_fields(db, clean_payload)
+    if normalized == "request_data_templates":
+        clean_payload = _apply_request_data_templates_fields(db, clean_payload)
+    if normalized == "request_data_template_items":
+        clean_payload = _apply_request_data_template_items_fields(db, clean_payload)
     if normalized == "request_data_requirements":
         clean_payload = _apply_request_data_requirements_fields(db, clean_payload)
     if normalized == "topic_status_transitions":
@@ -1557,6 +1706,10 @@ def update_row(
         clean_payload = _apply_topic_required_fields_fields(db, clean_payload)
     if normalized == "topic_data_templates":
         clean_payload = _apply_topic_data_templates_fields(db, clean_payload)
+    if normalized == "request_data_templates":
+        clean_payload = _apply_request_data_templates_fields(db, clean_payload)
+    if normalized == "request_data_template_items":
+        clean_payload = _apply_request_data_template_items_fields(db, clean_payload)
     if normalized == "request_data_requirements":
         clean_payload = _apply_request_data_requirements_fields(db, clean_payload)
     if normalized == "topic_status_transitions":
@@ -1603,23 +1756,9 @@ def update_row(
     if normalized == "requests" and "status_code" in clean_payload:
         before_status = str(before.get("status_code") or "")
         after_status = str(clean_payload.get("status_code") or "")
-        topic_code = str(before.get("topic_code") or "").strip() or None
-        if not transition_allowed_for_topic(db, topic_code, before_status, after_status):
-            raise HTTPException(
-                status_code=400,
-                detail="Переход статуса не разрешен для выбранной темы",
-            )
         if before_status != after_status and isinstance(row, Request):
-            extra_fields_override = clean_payload.get("extra_fields")
-            if not isinstance(extra_fields_override, dict):
-                extra_fields_override = row.extra_fields if isinstance(row.extra_fields, dict) else None
-            validate_transition_requirements_or_400(
-                db,
-                row,
-                from_status=before_status,
-                to_status=after_status,
-                extra_fields_override=extra_fields_override,
-            )
+            if "important_date_at" not in clean_payload or clean_payload.get("important_date_at") is None:
+                clean_payload["important_date_at"] = datetime.now(timezone.utc) + timedelta(days=3)
             billing_note = apply_billing_transition_effects(
                 db,
                 req=row,
@@ -1635,6 +1774,7 @@ def update_row(
                 from_status=before_status,
                 to_status=after_status,
                 admin=admin,
+                important_date_at=clean_payload.get("important_date_at"),
                 responsible=responsible,
             )
             notify_request_event(
@@ -1643,7 +1783,15 @@ def update_row(
                 event_type=NOTIFICATION_EVENT_STATUS,
                 actor_role=_actor_role(admin),
                 actor_admin_user_id=admin.get("sub"),
-                body=(f"{before_status} -> {after_status}" + (f"\n{billing_note}" if billing_note else "")),
+                body=(
+                    f"{before_status} -> {after_status}"
+                    + (
+                        f"\nВажная дата: {clean_payload.get('important_date_at').isoformat()}"
+                        if isinstance(clean_payload.get("important_date_at"), datetime)
+                        else ""
+                    )
+                    + (f"\n{billing_note}" if billing_note else "")
+                ),
                 responsible=responsible,
             )
     for key, value in clean_payload.items():

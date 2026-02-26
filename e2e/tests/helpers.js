@@ -7,6 +7,8 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const PUBLIC_SECRET = process.env.PUBLIC_JWT_SECRET || "change_me_public";
 const PUBLIC_COOKIE_NAME = process.env.PUBLIC_COOKIE_NAME || "public_jwt";
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || "admin@example.com";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || "admin123";
 
 function randomDigits(length) {
   let value = "";
@@ -20,11 +22,141 @@ function randomPhone() {
   return `+79${randomDigits(9)}`;
 }
 
+function buildTinyPdfBuffer(label = "E2E PDF") {
+  const safe = String(label || "E2E PDF").replace(/[()\\]/g, " ");
+  const stream = `BT /F1 16 Tf 24 96 Td (${safe}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${Buffer.byteLength(stream, "utf-8")} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let i = 0; i < objects.length; i += 1) {
+    offsets.push(Buffer.byteLength(pdf, "utf-8"));
+    pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+
+  const xrefOffset = Buffer.byteLength(pdf, "utf-8");
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let i = 1; i < offsets.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "utf-8");
+}
+
+function detectMimeForFixture(fileName) {
+  const lower = String(fileName || "").toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".txt")) return "text/plain";
+  if (lower.endsWith(".json")) return "application/json";
+  return "application/octet-stream";
+}
+
 function createPublicCookieToken(phone) {
   return jwt.sign({ sub: phone, purpose: "CREATE_REQUEST" }, PUBLIC_SECRET, {
     algorithm: "HS256",
     expiresIn: "7d",
   });
+}
+
+function createCleanupTracker() {
+  const state = {
+    track_numbers: new Set(),
+    phones: new Set(),
+    emails: new Set(),
+    hasArtifacts: false,
+  };
+  return {
+    addTrack(value) {
+      const text = String(value || "").trim();
+      if (!text) return;
+      state.track_numbers.add(text);
+      state.hasArtifacts = true;
+    },
+    addPhone(value) {
+      const text = String(value || "").trim();
+      if (!text) return;
+      state.phones.add(text);
+      state.hasArtifacts = true;
+    },
+    addEmail(value) {
+      const text = String(value || "").trim().toLowerCase();
+      if (!text) return;
+      state.emails.add(text);
+      state.hasArtifacts = true;
+    },
+    hasArtifacts() {
+      return state.hasArtifacts;
+    },
+    toPayload() {
+      return {
+        track_numbers: Array.from(state.track_numbers),
+        phones: Array.from(state.phones),
+        emails: Array.from(state.emails),
+        include_default_e2e_patterns: true,
+      };
+    },
+  };
+}
+
+function _getCleanupTracker(testInfo) {
+  if (!testInfo) return null;
+  if (!testInfo._cleanupTracker) {
+    testInfo._cleanupTracker = createCleanupTracker();
+  }
+  return testInfo._cleanupTracker;
+}
+
+function trackCleanupPhone(testInfo, phone) {
+  const tracker = _getCleanupTracker(testInfo);
+  if (tracker) tracker.addPhone(phone);
+}
+
+function trackCleanupTrack(testInfo, trackNumber) {
+  const tracker = _getCleanupTracker(testInfo);
+  if (tracker) tracker.addTrack(trackNumber);
+}
+
+function trackCleanupEmail(testInfo, email) {
+  const tracker = _getCleanupTracker(testInfo);
+  if (tracker) tracker.addEmail(email);
+}
+
+async function cleanupTrackedTestData(page, testInfo) {
+  const tracker = testInfo && testInfo._cleanupTracker;
+  if (!tracker || !tracker.hasArtifacts()) {
+    return;
+  }
+
+  const baseUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
+  let token = "";
+  const loginResponse = await page.request.post(`${baseUrl}/api/admin/auth/login`, {
+    data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+    failOnStatusCode: false,
+  });
+  if (loginResponse.ok()) {
+    const body = await loginResponse.json().catch(() => ({}));
+    token = String(body?.access_token || "");
+  }
+  if (!token) {
+    throw new Error(`E2E cleanup failed: admin login ${loginResponse.status()}`);
+  }
+
+  const cleanupResponse = await page.request.post(`${baseUrl}/api/admin/test-utils/cleanup-test-data`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: tracker.toPayload(),
+    failOnStatusCode: false,
+  });
+  if (!cleanupResponse.ok()) {
+    const text = await cleanupResponse.text().catch(() => "");
+    throw new Error(`E2E cleanup failed: ${cleanupResponse.status()} ${text}`);
+  }
 }
 
 async function installPromptAutoAccept(page, code = "000000") {
@@ -130,11 +262,13 @@ async function sendCabinetMessage(page, text) {
 
 async function uploadCabinetFile(page, fileName = "e2e.txt", bodyText = "E2E file") {
   let lastError = null;
+  const mimeType = detectMimeForFixture(fileName);
+  const buffer = mimeType === "application/pdf" ? buildTinyPdfBuffer(bodyText) : Buffer.from(bodyText, "utf-8");
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     await page.locator("#cabinet-file-input").setInputFiles({
       name: fileName,
-      mimeType: "application/pdf",
-      buffer: Buffer.from(bodyText, "utf-8"),
+      mimeType,
+      buffer,
     });
     await page.locator("#cabinet-file-upload").click();
 
@@ -202,6 +336,11 @@ async function selectDictionaryNode(page, label) {
 
 module.exports = {
   randomPhone,
+  createCleanupTracker,
+  trackCleanupPhone,
+  trackCleanupTrack,
+  trackCleanupEmail,
+  cleanupTrackedTestData,
   preparePublicSession,
   createRequestViaLanding,
   openPublicCabinet,
@@ -212,4 +351,5 @@ module.exports = {
   rowByTrack,
   openDictionaryTree,
   selectDictionaryNode,
+  buildTinyPdfBuffer,
 };

@@ -8,6 +8,7 @@ class AdminUser(Base, UUIDMixin, TimestampMixin):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # ADMIN|LAWYER
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     email: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     primary_topic_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)

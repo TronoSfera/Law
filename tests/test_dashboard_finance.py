@@ -20,6 +20,7 @@ from app.core.security import create_jwt
 from app.db.session import get_db
 from app.main import app
 from app.models.admin_user import AdminUser
+from app.models.audit_log import AuditLog
 from app.models.message import Message
 from app.models.request import Request
 from app.models.status import Status
@@ -37,6 +38,7 @@ class DashboardFinanceTests(unittest.TestCase):
         )
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         AdminUser.__table__.create(bind=cls.engine)
+        AuditLog.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
         Status.__table__.create(bind=cls.engine)
         Message.__table__.create(bind=cls.engine)
@@ -50,6 +52,7 @@ class DashboardFinanceTests(unittest.TestCase):
         Message.__table__.drop(bind=cls.engine)
         Status.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
+        AuditLog.__table__.drop(bind=cls.engine)
         AdminUser.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
 
@@ -60,6 +63,7 @@ class DashboardFinanceTests(unittest.TestCase):
             db.execute(delete(Message))
             db.execute(delete(Request))
             db.execute(delete(Status))
+            db.execute(delete(AuditLog))
             db.execute(delete(AdminUser))
             db.commit()
 
@@ -185,6 +189,45 @@ class DashboardFinanceTests(unittest.TestCase):
                         created_at=now - timedelta(days=40),
                         updated_at=now - timedelta(days=40),
                     ),
+                    StatusHistory(
+                        request_id=req_a_closed.id,
+                        from_status="IN_PROGRESS",
+                        to_status="CLOSED",
+                        changed_by_admin_id=None,
+                        created_at=current_month_event + timedelta(hours=3),
+                        updated_at=current_month_event + timedelta(hours=3),
+                    ),
+                ]
+            )
+            db.add_all(
+                [
+                    AuditLog(
+                        actor_admin_id=None,
+                        entity="requests",
+                        entity_id=str(req_a_active.id),
+                        action="MANUAL_CLAIM",
+                        diff={"assigned_lawyer_id": str(lawyer_a.id)},
+                        created_at=current_month_event,
+                        updated_at=current_month_event,
+                    ),
+                    AuditLog(
+                        actor_admin_id=None,
+                        entity="requests",
+                        entity_id=str(req_a_closed.id),
+                        action="MANUAL_REASSIGN",
+                        diff={"from_lawyer_id": str(lawyer_b.id), "to_lawyer_id": str(lawyer_a.id)},
+                        created_at=current_month_event + timedelta(minutes=10),
+                        updated_at=current_month_event + timedelta(minutes=10),
+                    ),
+                    AuditLog(
+                        actor_admin_id=None,
+                        entity="requests",
+                        entity_id=str(req_b_active.id),
+                        action="MANUAL_CLAIM",
+                        diff={"assigned_lawyer_id": str(lawyer_b.id)},
+                        created_at=current_month_event + timedelta(minutes=20),
+                        updated_at=current_month_event + timedelta(minutes=20),
+                    ),
                 ]
             )
             db.commit()
@@ -194,20 +237,99 @@ class DashboardFinanceTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body.get("scope"), "ADMIN")
         self.assertIn("lawyer_loads", body)
+        self.assertAlmostEqual(float(body.get("month_revenue") or 0.0), 2500.0, places=2)
+        self.assertAlmostEqual(float(body.get("month_expenses") or 0.0), 750.0, places=2)
 
         by_email = {row["email"]: row for row in body["lawyer_loads"]}
         self.assertEqual(by_email["lawyer.a@example.com"]["active_load"], 1)
         self.assertEqual(by_email["lawyer.a@example.com"]["total_assigned"], 2)
         self.assertAlmostEqual(float(by_email["lawyer.a@example.com"]["active_amount"]), 1000.0, places=2)
         self.assertEqual(by_email["lawyer.a@example.com"]["monthly_paid_events"], 3)
+        self.assertEqual(by_email["lawyer.a@example.com"]["monthly_assigned_count"], 2)
+        self.assertEqual(by_email["lawyer.a@example.com"]["monthly_completed_count"], 1)
         self.assertAlmostEqual(float(by_email["lawyer.a@example.com"]["monthly_paid_gross"]), 2500.0, places=2)
         self.assertAlmostEqual(float(by_email["lawyer.a@example.com"]["monthly_salary"]), 750.0, places=2)
 
         self.assertEqual(by_email["lawyer.b@example.com"]["active_load"], 1)
         self.assertAlmostEqual(float(by_email["lawyer.b@example.com"]["active_amount"]), 2000.0, places=2)
+        self.assertEqual(by_email["lawyer.b@example.com"]["monthly_assigned_count"], 1)
+        self.assertEqual(by_email["lawyer.b@example.com"]["monthly_completed_count"], 0)
         self.assertEqual(by_email["lawyer.b@example.com"]["monthly_paid_events"], 0)
         self.assertAlmostEqual(float(by_email["lawyer.b@example.com"]["monthly_paid_gross"]), 0.0, places=2)
         self.assertAlmostEqual(float(by_email["lawyer.b@example.com"]["monthly_salary"]), 0.0, places=2)
+
+    def test_admin_can_get_lawyer_active_requests_dashboard_detail(self):
+        now = datetime.now(timezone.utc)
+        with self.SessionLocal() as db:
+            db.add_all(
+                [
+                    Status(code="NEW", name="Новая", enabled=True, sort_order=0, is_terminal=False),
+                    Status(code="CLOSED", name="Закрыта", enabled=True, sort_order=1, is_terminal=True),
+                    Status(code="PAID", name="Оплачено", enabled=True, sort_order=2, is_terminal=False),
+                ]
+            )
+            lawyer = AdminUser(
+                role="LAWYER",
+                name="Юрист Деталь",
+                email="lawyer.detail@example.com",
+                password_hash="hash",
+                salary_percent=25,
+                default_rate=4000,
+                is_active=True,
+            )
+            db.add(lawyer)
+            db.flush()
+
+            active_req = Request(
+                track_number="TRK-DETAIL-ACTIVE",
+                client_name="Клиент Деталь",
+                client_phone="+79990002001",
+                topic_code="civil",
+                status_code="NEW",
+                assigned_lawyer_id=str(lawyer.id),
+                invoice_amount=1200,
+                extra_fields={},
+            )
+            closed_req = Request(
+                track_number="TRK-DETAIL-CLOSED",
+                client_name="Клиент Закрыт",
+                client_phone="+79990002002",
+                topic_code="civil",
+                status_code="CLOSED",
+                assigned_lawyer_id=str(lawyer.id),
+                invoice_amount=700,
+                extra_fields={},
+            )
+            db.add_all([active_req, closed_req])
+            db.flush()
+            db.add(
+                StatusHistory(
+                    request_id=active_req.id,
+                    from_status="INVOICE",
+                    to_status="PAID",
+                    changed_by_admin_id=None,
+                    created_at=now - timedelta(days=1),
+                    updated_at=now - timedelta(days=1),
+                )
+            )
+            db.commit()
+            lawyer_id = str(lawyer.id)
+
+        response = self.client.get(
+            f"/api/admin/metrics/lawyers/{lawyer_id}/active-requests",
+            headers=self._headers("ADMIN"),
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(int(body.get("total") or 0), 1)
+        self.assertEqual(len(body.get("rows") or []), 1)
+        row = (body.get("rows") or [])[0]
+        self.assertEqual(row.get("track_number"), "TRK-DETAIL-ACTIVE")
+        self.assertEqual(int(row.get("month_paid_events") or 0), 1)
+        self.assertAlmostEqual(float(row.get("month_paid_amount") or 0.0), 1200.0, places=2)
+        self.assertAlmostEqual(float(row.get("month_salary_amount") or 0.0), 300.0, places=2)
+        self.assertAlmostEqual(float((body.get("totals") or {}).get("amount") or 0.0), 1200.0, places=2)
+        self.assertAlmostEqual(float((body.get("totals") or {}).get("salary") or 0.0), 300.0, places=2)
 
     def test_lawyer_dashboard_is_scoped_to_current_lawyer(self):
         with self.SessionLocal() as db:

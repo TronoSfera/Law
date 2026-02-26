@@ -99,6 +99,24 @@
     </div>
   </div>
 
+  <div class="preview-overlay" id="data-request-overlay" aria-hidden="true">
+    <div class="preview-modal data-request-modal" role="dialog" aria-modal="true" aria-labelledby="data-request-title">
+      <div class="preview-head">
+        <h3 id="data-request-title">Запрос данных</h3>
+        <button class="close-btn" id="data-request-close" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="preview-body data-request-body">
+        <form id="data-request-form" class="data-request-form">
+          <div id="data-request-items"></div>
+          <div class="data-request-actions">
+            <button class="btn btn-ghost" id="data-request-save" type="submit">Сохранить</button>
+          </div>
+        </form>
+        <p class="status" id="data-request-status"></p>
+      </div>
+    </div>
+  </div>
+
   <script src="/client.js"></script>
 </body>
 </html>

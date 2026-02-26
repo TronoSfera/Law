@@ -1,9 +1,10 @@
 FROM node:22-alpine AS admin-build
 WORKDIR /build
+COPY app/web/admin ./admin
 COPY app/web/admin.jsx ./admin.jsx
 RUN npm init -y >/dev/null 2>&1 \
   && npm install --silent esbuild@0.25.10 \
-  && npx esbuild admin.jsx --loader:.jsx=jsx --format=iife --target=es2018 --outfile=admin.js
+  && npx esbuild admin/index.jsx --bundle --loader:.jsx=jsx --format=iife --target=es2018 --outfile=admin.js
 
 FROM nginx:1.27-alpine
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf

@@ -4,20 +4,29 @@ const {
   createRequestViaLanding,
   randomPhone,
   loginAdminPanel,
+  trackCleanupPhone,
+  trackCleanupTrack,
+  cleanupTrackedTestData,
 } = require("./helpers");
 
 const LAWYER_EMAIL = process.env.E2E_LAWYER_EMAIL || "ivan@mail.ru";
 const LAWYER_PASSWORD = process.env.E2E_LAWYER_PASSWORD || "LawyerPass-123!";
 
-test("kanban flow via UI: lawyer sees unassigned card, claims and opens request in same tab", async ({ context, page }) => {
+test.afterEach(async ({ page }, testInfo) => {
+  await cleanupTrackedTestData(page, testInfo);
+});
+
+test("kanban flow via UI: lawyer sees unassigned card, claims and opens request in same tab", async ({ context, page }, testInfo) => {
   const appUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
   const phone = randomPhone();
+  trackCleanupPhone(testInfo, phone);
 
   await preparePublicSession(context, page, appUrl, phone);
   const { trackNumber } = await createRequestViaLanding(page, {
     phone,
     description: "Заявка для проверки канбана юриста",
   });
+  trackCleanupTrack(testInfo, trackNumber);
 
   await loginAdminPanel(page, { email: LAWYER_EMAIL, password: LAWYER_PASSWORD });
   await page.locator("aside .menu button[data-section='kanban']").click();

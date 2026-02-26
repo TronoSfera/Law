@@ -18,6 +18,11 @@
 
   const quoteText = document.getElementById("quote-text");
   const quoteMeta = document.getElementById("quote-meta");
+  const featuredTeamSection = document.getElementById("team");
+  const featuredTeamTrack = document.getElementById("featured-team-track");
+  const featuredTeamDots = document.getElementById("featured-team-dots");
+  const featuredTeamPrev = document.getElementById("featured-team-prev");
+  const featuredTeamNext = document.getElementById("featured-team-next");
 
   function setStatus(el, message, kind) {
     if (!el) return;
@@ -132,6 +137,120 @@
     } catch (_) {
       quoteText.textContent = "С вами работает дружный коллектив профессионалов. Мы уверены в вашем успехе.";
       quoteMeta.textContent = "Команда компании";
+    }
+  }
+
+  function renderFeaturedDots(count, activeIndex) {
+    if (!featuredTeamDots) return;
+    featuredTeamDots.innerHTML = "";
+    if (count <= 1) return;
+    for (let index = 0; index < count; index += 1) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "carousel-dot" + (index === activeIndex ? " active" : "");
+      button.setAttribute("aria-label", "Карточка " + (index + 1));
+      button.addEventListener("click", () => {
+        const card = featuredTeamTrack?.children?.[index];
+        if (card && typeof card.scrollIntoView === "function") {
+          card.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+        }
+      });
+      featuredTeamDots.appendChild(button);
+    }
+  }
+
+  function initFeaturedCarouselControls() {
+    if (!featuredTeamTrack) return;
+    const scrollByCards = (dir) => {
+      const card = featuredTeamTrack.querySelector(".featured-card");
+      const step = card ? card.getBoundingClientRect().width + 14 : 320;
+      featuredTeamTrack.scrollBy({ left: dir * step, behavior: "smooth" });
+    };
+
+    if (featuredTeamPrev) featuredTeamPrev.addEventListener("click", () => scrollByCards(-1));
+    if (featuredTeamNext) featuredTeamNext.addEventListener("click", () => scrollByCards(1));
+
+    let rafId = 0;
+    const syncDots = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const cards = Array.from(featuredTeamTrack.children || []);
+        if (!cards.length) return renderFeaturedDots(0, 0);
+        const trackLeft = featuredTeamTrack.getBoundingClientRect().left;
+        let bestIndex = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        cards.forEach((card, index) => {
+          const distance = Math.abs(card.getBoundingClientRect().left - trackLeft);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+          }
+        });
+        renderFeaturedDots(cards.length, bestIndex);
+      });
+    };
+    featuredTeamTrack.addEventListener("scroll", syncDots, { passive: true });
+    window.addEventListener("resize", syncDots);
+    syncDots();
+  }
+
+  async function loadFeaturedStaff() {
+    if (!featuredTeamSection || !featuredTeamTrack) return;
+    try {
+      const response = await fetch("/api/public/featured-staff?limit=24");
+      const data = await parseJsonSafe(response);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      if (!response.ok || items.length === 0) {
+        featuredTeamSection.hidden = true;
+        return;
+      }
+
+      featuredTeamTrack.innerHTML = "";
+      items.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "featured-card";
+
+        const avatar = document.createElement("img");
+        avatar.className = "featured-avatar";
+        avatar.src = String(item.avatar_url || "");
+        avatar.alt = String(item.name || "Сотрудник");
+        avatar.loading = "lazy";
+        card.appendChild(avatar);
+
+        const body = document.createElement("div");
+        body.className = "featured-card-body";
+
+        const top = document.createElement("div");
+        top.className = "featured-card-top";
+        const name = document.createElement("h3");
+        name.textContent = String(item.name || "Сотрудник");
+        top.appendChild(name);
+        if (item.pinned) {
+          const chip = document.createElement("span");
+          chip.className = "featured-chip";
+          chip.textContent = "Рекомендуем";
+          top.appendChild(chip);
+        }
+        body.appendChild(top);
+
+        const meta = document.createElement("p");
+        meta.className = "featured-meta";
+        meta.textContent = [item.role_label, item.primary_topic_name].filter(Boolean).join(" • ");
+        body.appendChild(meta);
+
+        const caption = document.createElement("p");
+        caption.className = "featured-caption";
+        caption.textContent = String(item.caption || "Практический опыт в сложных юридических делах и сопровождении споров.");
+        body.appendChild(caption);
+
+        card.appendChild(body);
+        featuredTeamTrack.appendChild(card);
+      });
+
+      featuredTeamSection.hidden = false;
+      initFeaturedCarouselControls();
+    } catch (_) {
+      featuredTeamSection.hidden = true;
     }
   }
 
@@ -254,4 +373,5 @@
 
   loadTopics();
   loadQuotes();
+  loadFeaturedStaff();
 })();

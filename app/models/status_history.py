@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import String
+from datetime import datetime
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.session import Base
@@ -12,3 +13,4 @@ class StatusHistory(Base, UUIDMixin, TimestampMixin):
     to_status: Mapped[str] = mapped_column(String(50), nullable=False)
     changed_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     comment: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    important_date_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

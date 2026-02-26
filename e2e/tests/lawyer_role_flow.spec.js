@@ -9,14 +9,23 @@ const {
   loginAdminPanel,
   openRequestsSection,
   rowByTrack,
+  buildTinyPdfBuffer,
+  trackCleanupPhone,
+  trackCleanupTrack,
+  cleanupTrackedTestData,
 } = require("./helpers");
 
 const LAWYER_EMAIL = process.env.E2E_LAWYER_EMAIL || "ivan@mail.ru";
 const LAWYER_PASSWORD = process.env.E2E_LAWYER_PASSWORD || "LawyerPass-123!";
 
-test("lawyer flow via UI: claim request -> chat and files in request workspace tab -> change status", async ({ context, page }) => {
+test.afterEach(async ({ page }, testInfo) => {
+  await cleanupTrackedTestData(page, testInfo);
+});
+
+test("lawyer flow via UI: claim request -> chat and files in request workspace tab -> change status", async ({ context, page }, testInfo) => {
   const appUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
   const phone = randomPhone();
+  trackCleanupPhone(testInfo, phone);
 
   await preparePublicSession(context, page, appUrl, phone);
 
@@ -24,6 +33,7 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
     phone,
     description: "Заявка для проверки флоу юриста через UI",
   });
+  trackCleanupTrack(testInfo, trackNumber);
 
   await openPublicCabinet(page, trackNumber);
   await sendCabinetMessage(page, `Сообщение юристу ${Date.now()}`);
@@ -45,7 +55,7 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await expect(page.locator("#section-requests .status")).toContainText(/Заявка взята в работу|Список обновлен/);
 
   const pagesBeforeOpen = context.pages().length;
-  await row.first().getByRole("button", { name: "Открыть заявку" }).click();
+  await row.first().locator(".request-track-link").click();
   await page.waitForTimeout(250);
   await expect.poll(() => context.pages().length).toBe(pagesBeforeOpen);
   const requestPage = page;
@@ -57,7 +67,8 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   const clientFileRow = requestPage.locator("#request-modal-files li").filter({ hasText: clientFileName }).first();
   await clientFileRow.getByRole("button", { name: /Предпросмотр/ }).click();
   await expect(requestPage.locator("#request-file-preview-overlay")).toBeVisible();
-  await expect(requestPage.locator("#request-file-preview-overlay .request-preview-frame")).toBeVisible();
+  await expect(requestPage.locator("#request-file-preview-overlay .request-preview-text")).toBeVisible();
+  await expect(requestPage.locator("#request-file-preview-overlay .request-preview-text")).toContainText("lawyer unread marker");
   await requestPage.locator("#request-file-preview-overlay .close").click();
   await requestPage.getByRole("tab", { name: "Чат" }).click();
 
@@ -73,7 +84,7 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
     {
       name: lawyerFileName,
       mimeType: "application/pdf",
-      buffer: Buffer.from("lawyer file from admin modal", "utf-8"),
+      buffer: buildTinyPdfBuffer("lawyer file from admin modal"),
     },
     {
       name: droppedFileName,

@@ -23,6 +23,19 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
 
+FRAMEABLE_FILE_SECURITY_HEADERS = {
+    **SECURITY_HEADERS,
+    "X-Frame-Options": "SAMEORIGIN",
+    "Content-Security-Policy": "default-src 'self'; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+}
+
+_FRAMEABLE_PATH_PATTERNS = (
+    re.compile(r"^/api/public/uploads/object/"),
+    re.compile(r"^/api/admin/uploads/object/"),
+    re.compile(r"^/api/public/requests/[^/]+/invoices/[^/]+/pdf$"),
+    re.compile(r"^/api/admin/invoices/[^/]+/pdf$"),
+)
+
 
 def _request_id_from_header(raw: str | None) -> str:
     value = str(raw or "").strip()
@@ -31,6 +44,14 @@ def _request_id_from_header(raw: str | None) -> str:
     if not _REQUEST_ID_RE.fullmatch(value):
         return uuid4().hex
     return value
+
+
+def _response_security_headers(request: Request) -> dict[str, str]:
+    method = str(request.method or "").upper()
+    path = str(request.url.path or "")
+    if method in {"GET", "HEAD"} and any(pattern.search(path) for pattern in _FRAMEABLE_PATH_PATTERNS):
+        return FRAMEABLE_FILE_SECURITY_HEADERS
+    return SECURITY_HEADERS
 
 
 def install_http_hardening(app: FastAPI) -> None:
@@ -42,7 +63,7 @@ def install_http_hardening(app: FastAPI) -> None:
 
         response = await call_next(request)
 
-        for key, value in SECURITY_HEADERS.items():
+        for key, value in _response_security_headers(request).items():
             response.headers[key] = value
         # Backend serves application data and operational endpoints only.
         # Keep responses non-cacheable to avoid stale or sensitive data reuse.

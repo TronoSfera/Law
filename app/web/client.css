@@ -219,6 +219,99 @@ textarea {
   font-size: 0.78rem;
 }
 
+.request-data-item {
+  border-color: rgba(212, 168, 106, 0.35);
+  background: linear-gradient(160deg, rgba(76, 56, 20, 0.28), rgba(39, 29, 14, 0.34));
+}
+
+.request-data-item.done {
+  border-color: rgba(73, 182, 142, 0.35);
+  background: linear-gradient(160deg, rgba(40, 86, 66, 0.26), rgba(26, 55, 43, 0.32));
+}
+
+.request-data-item-author {
+  color: #a7b8cf;
+  font-size: 0.78rem;
+}
+
+.request-data-message-btn {
+  width: 100%;
+  margin-top: 0.35rem;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #eef3fb;
+  padding: 0.55rem 0.65rem;
+  cursor: pointer;
+}
+
+.request-data-message-btn:hover {
+  border-color: rgba(212, 168, 106, 0.42);
+  background: rgba(212, 168, 106, 0.1);
+}
+
+.request-data-item.done .request-data-message-btn:hover {
+  border-color: rgba(73, 182, 142, 0.42);
+  background: rgba(73, 182, 142, 0.09);
+}
+
+.request-data-message-title {
+  font-weight: 800;
+  color: #ffe0ac;
+}
+
+.request-data-item.done .request-data-message-title {
+  color: #c8eed8;
+}
+
+.request-data-message-list {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.16rem;
+  max-height: 11.6rem;
+  overflow: hidden;
+}
+
+.request-data-message-row {
+  display: flex;
+  gap: 0.3rem;
+  align-items: baseline;
+  color: #e0e9f7;
+  font-size: 0.84rem;
+}
+
+.request-data-message-row.filled .request-data-message-row-label {
+  text-decoration: line-through;
+  color: #b8c4d6;
+}
+
+.request-data-message-row-index {
+  min-width: 1.9rem;
+  color: #ffd5a1;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+}
+
+.request-data-message-row-check {
+  color: #59d182;
+  font-weight: 800;
+}
+
+.request-data-message-more {
+  color: #bac7da;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding-left: 1.95rem;
+}
+
+.muted-inline {
+  margin: 0;
+  color: var(--muted);
+}
+
 .file-actions {
   margin-top: 0.45rem;
   display: flex;
@@ -248,6 +341,63 @@ textarea {
 
 .preview-body .file-link-btn {
   margin: 0.7rem;
+}
+
+.data-request-modal {
+  width: min(760px, 100%);
+}
+
+.data-request-body {
+  width: 100%;
+  min-height: 280px;
+  max-height: calc(92vh - 76px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0f1722;
+  padding: 0.8rem;
+  display: block;
+}
+
+.data-request-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.data-request-form-row {
+  display: grid;
+  grid-template-columns: 28px minmax(180px, 0.9fr) minmax(0, 1.4fr);
+  gap: 0.55rem;
+  align-items: start;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(207, 217, 231, 0.08);
+}
+
+.data-request-form-row:last-child {
+  border-bottom: none;
+}
+
+.data-request-form-index {
+  color: #9fb0c6;
+  font-weight: 700;
+  padding-top: 0.8rem;
+  text-align: center;
+}
+
+.data-request-form-label {
+  color: #e9f1fe;
+  line-height: 1.4;
+  padding-top: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.data-request-form textarea {
+  min-height: 92px;
+}
+
+.data-request-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .preview-overlay {
@@ -338,6 +488,21 @@ textarea {
   text-align: center;
 }
 
+.preview-text {
+  width: 100%;
+  min-height: min(60vh, 520px);
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(10, 16, 24, 0.88);
+  color: #dbe7f8;
+  padding: 0.7rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 500 0.86rem/1.45 "JetBrains Mono", "Fira Code", monospace;
+}
+
 .chat-form {
   margin-top: 0.7rem;
   display: grid;
@@ -374,6 +539,17 @@ textarea {
   .request-switcher {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .data-request-form-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .data-request-form-index,
+  .data-request-form-label {
+    padding-top: 0;
+    text-align: left;
   }
 }
 

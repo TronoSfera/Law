@@ -23,16 +23,29 @@
   const previewTitle = document.getElementById("file-preview-title");
   const previewClose = document.getElementById("file-preview-close");
   const previewBody = document.getElementById("file-preview-body");
+  const dataRequestOverlay = document.getElementById("data-request-overlay");
+  const dataRequestClose = document.getElementById("data-request-close");
+  const dataRequestForm = document.getElementById("data-request-form");
+  const dataRequestItems = document.getElementById("data-request-items");
+  const dataRequestStatus = document.getElementById("data-request-status");
+  const dataRequestTitle = document.getElementById("data-request-title");
+  let previewObjectUrl = "";
 
   let activeTrack = "";
   let activeRequestId = "";
+  let activeDataRequestMessageId = "";
 
   function formatDate(value) {
     if (!value) return "-";
     try {
       const dt = new Date(value);
       if (Number.isNaN(dt.getTime())) return value;
-      return dt.toLocaleString("ru-RU");
+      const day = String(dt.getDate()).padStart(2, "0");
+      const month = String(dt.getMonth() + 1).padStart(2, "0");
+      const year = String(dt.getFullYear()).slice(-2);
+      const hours = String(dt.getHours()).padStart(2, "0");
+      const minutes = String(dt.getMinutes()).padStart(2, "0");
+      return `${day}.${month}.${year} ${hours}:${minutes}`;
     } catch (_) {
       return value;
     }
@@ -43,6 +56,50 @@
     if (kind === "ok") el.classList.add("ok");
     if (kind === "error") el.classList.add("error");
     el.textContent = message;
+  }
+
+  function setDataRequestStatus(message, kind) {
+    if (!dataRequestStatus) return;
+    setStatus(dataRequestStatus, message || "", kind || null);
+  }
+
+  async function uploadPublicRequestAttachment(file, requestId) {
+    const initResponse = await fetch("/api/public/uploads/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_name: file.name,
+        mime_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+        scope: "REQUEST_ATTACHMENT",
+        request_id: requestId,
+      }),
+    });
+    const initData = await parseJsonSafe(initResponse);
+    if (!initResponse.ok) throw new Error(apiErrorDetail(initData, "Не удалось начать загрузку файла"));
+
+    const putResponse = await fetch(initData.presigned_url, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!putResponse.ok) throw new Error("Ошибка передачи файла в хранилище");
+
+    const completeResponse = await fetch("/api/public/uploads/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key: initData.key,
+        file_name: file.name,
+        mime_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+        scope: "REQUEST_ATTACHMENT",
+        request_id: requestId,
+      }),
+    });
+    const completeData = await parseJsonSafe(completeResponse);
+    if (!completeResponse.ok) throw new Error(apiErrorDetail(completeData, "Не удалось завершить загрузку файла"));
+    return completeData;
   }
 
   async function parseJsonSafe(response) {
@@ -79,21 +136,171 @@
   function detectPreviewKind(fileName, mimeType) {
     const name = String(fileName || "").toLowerCase();
     const mime = String(mimeType || "").toLowerCase();
+    if (/\.(txt|md|csv|json|log|xml|ya?ml|ini|cfg)$/i.test(name)) return "text";
+    if (mime.startsWith("text/") || mime === "application/json" || mime === "application/xml" || mime === "text/xml") return "text";
     if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(name)) return "image";
     if (mime.startsWith("video/") || /\.(mp4|webm|ogg|mov|m4v)$/.test(name)) return "video";
     if (mime === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
     return "none";
   }
 
+  function revokePreviewObjectUrl() {
+    if (!previewObjectUrl) return;
+    try {
+      URL.revokeObjectURL(previewObjectUrl);
+    } catch (_) {}
+    previewObjectUrl = "";
+  }
+
+  function decodeTextPreview(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer || new ArrayBuffer(0));
+    const sampleLength = Math.min(bytes.length, 4096);
+    let suspicious = 0;
+    for (let i = 0; i < sampleLength; i += 1) {
+      const byte = bytes[i];
+      if (byte === 0) suspicious += 4;
+      else if (byte < 9 || (byte > 13 && byte < 32)) suspicious += 1;
+    }
+    if (sampleLength && suspicious / sampleLength > 0.08) return null;
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/\u0000/g, "");
+    return text.length > 200000 ? text.slice(0, 200000) + "\n\n[Текст обрезан для предпросмотра]" : text;
+  }
+
   function closePreview() {
     if (!previewOverlay || !previewBody) return;
+    revokePreviewObjectUrl();
     previewOverlay.classList.remove("open");
     previewOverlay.setAttribute("aria-hidden", "true");
     previewBody.innerHTML = "";
   }
 
-  function openPreview(item) {
+  function closeDataRequestModal() {
+    if (!dataRequestOverlay || !dataRequestItems) return;
+    activeDataRequestMessageId = "";
+    dataRequestItems.innerHTML = "";
+    dataRequestOverlay.classList.remove("open");
+    dataRequestOverlay.setAttribute("aria-hidden", "true");
+    setDataRequestStatus("", null);
+  }
+
+  function dataRequestInputType(fieldType) {
+    const type = String(fieldType || "").toLowerCase();
+    if (type === "date") return "date";
+    if (type === "number") return "number";
+    if (type === "file") return "file";
+    return "text";
+  }
+
+  function renderDataRequestItemsForm(items) {
+    if (!dataRequestItems) return;
+    dataRequestItems.innerHTML = "";
+    if (!Array.isArray(items) || !items.length) {
+      const p = document.createElement("p");
+      p.className = "muted-inline";
+      p.textContent = "Нет полей для заполнения.";
+      dataRequestItems.appendChild(p);
+      return;
+    }
+    items
+      .slice()
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+      .forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "data-request-form-row";
+
+        const indexNode = document.createElement("div");
+        indexNode.className = "data-request-form-index";
+        indexNode.textContent = String(index + 1) + ".";
+        row.appendChild(indexNode);
+
+        const labelNode = document.createElement("div");
+        labelNode.className = "data-request-form-label";
+        labelNode.textContent = String(item.label || item.key || "Поле");
+        row.appendChild(labelNode);
+
+        const inputWrap = document.createElement("div");
+        inputWrap.className = "field";
+        let input;
+        const normalizedFieldType = String(item.field_type || "").toLowerCase();
+        if (normalizedFieldType === "text") {
+          input = document.createElement("textarea");
+          input.rows = 3;
+        } else {
+          input = document.createElement("input");
+          input.type = dataRequestInputType(normalizedFieldType);
+          if (normalizedFieldType === "number") input.step = "any";
+        }
+        if (normalizedFieldType === "file") {
+          const currentFile = String(item.value_text || "").trim();
+          if (currentFile) {
+            const existing = document.createElement("div");
+            existing.className = "muted-inline";
+            existing.textContent =
+              "Текущее значение: " + String((item.value_file && item.value_file.file_name) || currentFile);
+            inputWrap.appendChild(existing);
+          }
+          if (item.value_file && item.value_file.download_url) {
+            const fileActions = document.createElement("div");
+            fileActions.className = "file-actions";
+            if (detectPreviewKind(item.value_file.file_name, item.value_file.mime_type) !== "none") {
+              const previewBtn = document.createElement("button");
+              previewBtn.type = "button";
+              previewBtn.className = "file-link-btn";
+              previewBtn.textContent = "Предпросмотр";
+              previewBtn.addEventListener("click", () => openPreview(item.value_file));
+              fileActions.appendChild(previewBtn);
+            }
+            const link = document.createElement("a");
+            link.className = "file-link-btn";
+            link.href = item.value_file.download_url;
+            link.textContent = "Открыть / скачать";
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            fileActions.appendChild(link);
+            inputWrap.appendChild(fileActions);
+          }
+          const hint = document.createElement("div");
+          hint.className = "muted-inline";
+          hint.textContent = "Выберите файл. Он будет загружен и привязан к полю запроса.";
+          inputWrap.appendChild(hint);
+          input.dataset.currentValue = currentFile;
+        } else {
+          input.value = item.value_text == null ? "" : String(item.value_text);
+        }
+        input.dataset.reqId = String(item.id || "");
+        input.dataset.reqKey = String(item.key || "");
+        input.dataset.reqFieldType = normalizedFieldType;
+        inputWrap.appendChild(input);
+        row.appendChild(inputWrap);
+
+        dataRequestItems.appendChild(row);
+      });
+  }
+
+  async function openDataRequestModal(message) {
+    if (!activeTrack || !message?.id || !dataRequestOverlay) return;
+    activeDataRequestMessageId = String(message.id);
+    dataRequestOverlay.classList.add("open");
+    dataRequestOverlay.setAttribute("aria-hidden", "false");
+    if (dataRequestTitle) dataRequestTitle.textContent = "Запрос данных";
+    setDataRequestStatus("Загрузка...", null);
+    try {
+      const response = await fetch(
+        "/api/public/chat/requests/" + encodeURIComponent(activeTrack) + "/data-requests/" + encodeURIComponent(activeDataRequestMessageId)
+      );
+      const data = await parseJsonSafe(response);
+      if (!response.ok) throw new Error(apiErrorDetail(data, "Не удалось открыть запрос данных"));
+      renderDataRequestItemsForm(data?.items || []);
+      setDataRequestStatus("Заполните нужные поля и сохраните.", null);
+    } catch (error) {
+      setDataRequestStatus(error?.message || "Не удалось открыть запрос данных", "error");
+      renderDataRequestItemsForm([]);
+    }
+  }
+
+  async function openPreview(item) {
     if (!previewOverlay || !previewBody || !previewTitle || !item?.download_url) return;
+    revokePreviewObjectUrl();
     previewBody.innerHTML = "";
     previewTitle.textContent = item.file_name || "Предпросмотр файла";
     const kind = detectPreviewKind(item.file_name, item.mime_type);
@@ -111,12 +318,62 @@
       video.controls = true;
       video.preload = "metadata";
       previewBody.appendChild(video);
-    } else if (kind === "pdf") {
-      const frame = document.createElement("iframe");
-      frame.className = "preview-frame";
-      frame.src = item.download_url;
-      frame.title = item.file_name || "PDF";
-      previewBody.appendChild(frame);
+    } else if (kind === "pdf" || kind === "text") {
+      const loading = document.createElement("p");
+      loading.className = "preview-note";
+      loading.textContent = "Загрузка предпросмотра...";
+      previewBody.appendChild(loading);
+      try {
+        const response = await fetch(item.download_url, { credentials: "same-origin" });
+        if (!response.ok) throw new Error("Не удалось загрузить файл для предпросмотра.");
+        const buffer = await response.arrayBuffer();
+        previewBody.innerHTML = "";
+
+        if (kind === "pdf") {
+          const header = new Uint8Array(buffer.slice(0, 5));
+          const isPdf =
+            header.length >= 5 &&
+            header[0] === 0x25 &&
+            header[1] === 0x50 &&
+            header[2] === 0x44 &&
+            header[3] === 0x46 &&
+            header[4] === 0x2d;
+          if (isPdf) {
+            const frame = document.createElement("iframe");
+            frame.className = "preview-frame";
+            frame.src = item.download_url;
+            frame.title = item.file_name || "PDF";
+            previewBody.appendChild(frame);
+          } else {
+            const text = decodeTextPreview(buffer);
+            if (text != null) {
+              const note = document.createElement("p");
+              note.className = "preview-note";
+              note.textContent = "Файл помечен как PDF, но не является валидным PDF. Показан текстовый предпросмотр.";
+              previewBody.appendChild(note);
+              const pre = document.createElement("pre");
+              pre.className = "preview-text";
+              pre.textContent = text || "Файл пуст.";
+              previewBody.appendChild(pre);
+            } else {
+              throw new Error("Файл помечен как PDF, но не является валидным PDF-документом.");
+            }
+          }
+        } else {
+          const text = decodeTextPreview(buffer);
+          if (text == null) throw new Error("Не удалось распознать текстовый файл для предпросмотра.");
+          const pre = document.createElement("pre");
+          pre.className = "preview-text";
+          pre.textContent = text || "Файл пуст.";
+          previewBody.appendChild(pre);
+        }
+      } catch (error) {
+        previewBody.innerHTML = "";
+        const note = document.createElement("p");
+        note.className = "preview-note";
+        note.textContent = error instanceof Error ? error.message : "Не удалось открыть предпросмотр.";
+        previewBody.appendChild(note);
+      }
     } else {
       const note = document.createElement("p");
       note.className = "preview-note";
@@ -150,10 +407,78 @@
       time.textContent = formatDate(item.created_at);
       li.appendChild(time);
 
-      const p = document.createElement("p");
-      const author = item.author_name || item.author_type || "Участник";
-      p.textContent = author + ": " + (item.body || "");
-      li.appendChild(p);
+      if (String(item.message_kind || "") === "REQUEST_DATA") {
+        li.classList.add("request-data-item");
+        if (item.request_data_all_filled) li.classList.add("done");
+
+        const author = document.createElement("div");
+        author.className = "request-data-item-author";
+        author.textContent = String(item.author_name || item.author_type || "Юрист");
+        li.appendChild(author);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "request-data-message-btn";
+        button.addEventListener("click", () => openDataRequestModal(item));
+
+        const title = document.createElement("div");
+        title.className = "request-data-message-title";
+        if (
+          item.request_data_all_filled &&
+          Array.isArray(item.request_data_items) &&
+          item.request_data_items.length === 1 &&
+          String(item.request_data_items[0]?.field_type || "").toLowerCase() === "file"
+        ) {
+          title.textContent = "Файл";
+        } else {
+          title.textContent = "Запрос";
+        }
+        button.appendChild(title);
+
+        if (!item.request_data_all_filled && Array.isArray(item.request_data_items) && item.request_data_items.length) {
+          const list = document.createElement("div");
+          list.className = "request-data-message-list";
+          const visibleItems = item.request_data_items.slice(0, 7);
+          visibleItems.forEach((req, idx) => {
+            const row = document.createElement("div");
+            row.className = "request-data-message-row";
+            if (req.is_filled) row.classList.add("filled");
+
+            const idxNode = document.createElement("span");
+            idxNode.className = "request-data-message-row-index";
+            idxNode.textContent = String(req.index || idx + 1) + ".";
+            row.appendChild(idxNode);
+
+            if (req.is_filled) {
+              const check = document.createElement("span");
+              check.className = "request-data-message-row-check";
+              check.textContent = "✓";
+              idxNode.prepend(check);
+            }
+
+            const labelNode = document.createElement("span");
+            labelNode.className = "request-data-message-row-label";
+            labelNode.textContent = String(req.label_short || req.label || "Поле");
+            row.appendChild(labelNode);
+
+            list.appendChild(row);
+          });
+          if (item.request_data_items.length > visibleItems.length) {
+            const more = document.createElement("div");
+            more.className = "request-data-message-more";
+            more.textContent = "... еще " + String(item.request_data_items.length - visibleItems.length);
+            list.appendChild(more);
+          }
+          button.appendChild(list);
+        }
+
+        li.appendChild(button);
+      } else {
+        const p = document.createElement("p");
+        const author = item.author_name || item.author_type || "Участник";
+        p.textContent = author + ": " + (item.body || "");
+        li.appendChild(p);
+      }
       cabinetMessages.appendChild(li);
     });
   }
@@ -397,7 +722,74 @@
     if (event.key === "Escape" && previewOverlay?.classList.contains("open")) {
       closePreview();
     }
+    if (event.key === "Escape" && dataRequestOverlay?.classList.contains("open")) {
+      closeDataRequestModal();
+    }
   });
+
+  if (dataRequestClose) {
+    dataRequestClose.addEventListener("click", closeDataRequestModal);
+  }
+  if (dataRequestOverlay) {
+    dataRequestOverlay.addEventListener("click", (event) => {
+      if (event.target === dataRequestOverlay) closeDataRequestModal();
+    });
+  }
+  if (dataRequestForm) {
+    dataRequestForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!activeTrack || !activeDataRequestMessageId || !activeRequestId) return;
+      const inputs = Array.from(dataRequestForm.querySelectorAll("input[data-req-id], textarea[data-req-id]"));
+      try {
+        setDataRequestStatus("Сохраняем...", null);
+        const items = [];
+        for (const input of inputs) {
+          const fieldType = String(input.dataset.reqFieldType || "").toLowerCase();
+          if (fieldType === "file") {
+            let attachmentId = "";
+            if (input.files && input.files[0]) {
+              setDataRequestStatus("Загружаем файл для поля...", null);
+              const completeData = await uploadPublicRequestAttachment(input.files[0], activeRequestId);
+              attachmentId = String((completeData && completeData.attachment_id) || "");
+              input.dataset.currentValue = attachmentId;
+            } else {
+              attachmentId = String(input.dataset.currentValue || "");
+            }
+            items.push({
+              id: String(input.dataset.reqId || ""),
+              key: String(input.dataset.reqKey || ""),
+              attachment_id: attachmentId,
+              value_text: attachmentId,
+            });
+            continue;
+          }
+          items.push({
+            id: String(input.dataset.reqId || ""),
+            key: String(input.dataset.reqKey || ""),
+            value_text: String(input.value || ""),
+          });
+        }
+        setDataRequestStatus("Сохраняем...", null);
+        const response = await fetch(
+          "/api/public/chat/requests/" +
+            encodeURIComponent(activeTrack) +
+            "/data-requests/" +
+            encodeURIComponent(activeDataRequestMessageId),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items }),
+          }
+        );
+        const data = await parseJsonSafe(response);
+        if (!response.ok) throw new Error(apiErrorDetail(data, "Не удалось сохранить данные"));
+        setDataRequestStatus("Данные сохранены.", "ok");
+        await refreshCabinetData();
+      } catch (error) {
+        setDataRequestStatus(error?.message || "Не удалось сохранить данные", "error");
+      }
+    });
+  }
 
   cabinetChatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -439,41 +831,7 @@
 
     try {
       setStatus(pageStatus, "Подготавливаем загрузку файла...", null);
-      const initResponse = await fetch("/api/public/uploads/init", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file_name: file.name,
-          mime_type: file.type || "application/octet-stream",
-          size_bytes: file.size,
-          scope: "REQUEST_ATTACHMENT",
-          request_id: activeRequestId,
-        }),
-      });
-      const initData = await parseJsonSafe(initResponse);
-      if (!initResponse.ok) throw new Error(apiErrorDetail(initData, "Не удалось начать загрузку"));
-
-      const putResponse = await fetch(initData.presigned_url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-      if (!putResponse.ok) throw new Error("Ошибка передачи файла в хранилище");
-
-      const completeResponse = await fetch("/api/public/uploads/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: initData.key,
-          file_name: file.name,
-          mime_type: file.type || "application/octet-stream",
-          size_bytes: file.size,
-          scope: "REQUEST_ATTACHMENT",
-          request_id: activeRequestId,
-        }),
-      });
-      const completeData = await parseJsonSafe(completeResponse);
-      if (!completeResponse.ok) throw new Error(apiErrorDetail(completeData, "Не удалось завершить загрузку"));
+      await uploadPublicRequestAttachment(file, activeRequestId);
 
       cabinetFileInput.value = "";
       await refreshCabinetData();

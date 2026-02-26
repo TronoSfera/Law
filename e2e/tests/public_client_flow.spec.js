@@ -6,11 +6,19 @@ const {
   sendCabinetMessage,
   uploadCabinetFile,
   randomPhone,
+  trackCleanupPhone,
+  trackCleanupTrack,
+  cleanupTrackedTestData,
 } = require("./helpers");
 
-test("public flow via UI: landing -> create request -> cabinet -> chat -> upload file", async ({ context, page }) => {
+test.afterEach(async ({ page }, testInfo) => {
+  await cleanupTrackedTestData(page, testInfo);
+});
+
+test("public flow via UI: landing -> create request -> cabinet -> chat -> upload file", async ({ context, page }, testInfo) => {
   const appUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
   const phone = randomPhone();
+  trackCleanupPhone(testInfo, phone);
 
   await preparePublicSession(context, page, appUrl, phone);
 
@@ -18,6 +26,7 @@ test("public flow via UI: landing -> create request -> cabinet -> chat -> upload
     phone,
     description: "Проверка публичного E2E флоу через UI.",
   });
+  trackCleanupTrack(testInfo, trackNumber);
 
   await openPublicCabinet(page, trackNumber);
 

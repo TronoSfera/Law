@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import require_role
 from app.db.session import get_db
 from app.models.admin_user import AdminUser
+from app.models.audit_log import AuditLog
 from app.models.request import Request
 from app.models.status import Status
 from app.models.status_history import StatusHistory
@@ -57,6 +58,33 @@ def _uuid_or_none(value: str | None) -> UUID | None:
         return UUID(str(value or ""))
     except ValueError:
         return None
+
+
+def _extract_assigned_lawyer_from_audit(diff: dict | None, action: str | None) -> str | None:
+    if not isinstance(diff, dict):
+        return None
+    action_code = str(action or "").upper()
+    if action_code == "MANUAL_CLAIM":
+        value = diff.get("assigned_lawyer_id")
+        return str(value).strip() if value else None
+    if action_code == "MANUAL_REASSIGN":
+        value = diff.get("to_lawyer_id")
+        return str(value).strip() if value else None
+    if action_code in {"CREATE", "UPDATE"}:
+        after = diff.get("after")
+        before = diff.get("before")
+        if action_code == "UPDATE":
+            if not isinstance(after, dict) or not isinstance(before, dict):
+                return None
+            prev_value = str(before.get("assigned_lawyer_id") or "").strip()
+            next_value = str(after.get("assigned_lawyer_id") or "").strip()
+            if not next_value or next_value == prev_value:
+                return None
+            return next_value
+        if isinstance(after, dict):
+            value = str(after.get("assigned_lawyer_id") or "").strip()
+            return value or None
+    return None
 
 
 @router.get("/overview")
@@ -123,6 +151,32 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
     paid_events_map = {str(lawyer_id): int(events) for lawyer_id, events, _ in paid_rows if lawyer_id}
     monthly_gross_map = {str(lawyer_id): _to_float(gross) for lawyer_id, _, gross in paid_rows if lawyer_id}
 
+    monthly_completed_rows = (
+        db.query(Request.assigned_lawyer_id, func.count(func.distinct(StatusHistory.request_id)))
+        .join(StatusHistory, StatusHistory.request_id == Request.id)
+        .filter(Request.assigned_lawyer_id.is_not(None))
+        .filter(StatusHistory.created_at >= month_start, StatusHistory.created_at < next_month_start)
+        .filter(func.upper(StatusHistory.to_status).in_({str(code).upper() for code in terminal_codes}))
+        .group_by(Request.assigned_lawyer_id)
+        .all()
+    )
+    monthly_completed_map = {str(lawyer_id): int(count) for lawyer_id, count in monthly_completed_rows if lawyer_id}
+
+    monthly_assigned_map: dict[str, int] = {}
+    audit_rows = (
+        db.query(AuditLog.action, AuditLog.diff)
+        .filter(AuditLog.entity == "requests")
+        .filter(AuditLog.created_at >= month_start, AuditLog.created_at < next_month_start)
+        .all()
+    )
+    for action, diff in audit_rows:
+        assigned_to = _extract_assigned_lawyer_from_audit(diff, action)
+        if not assigned_to:
+            continue
+        monthly_assigned_map[assigned_to] = int(monthly_assigned_map.get(assigned_to, 0)) + 1
+
+    monthly_revenue = round(sum(monthly_gross_map.values()), 2)
+
     lawyers = (
         db.query(AdminUser)
         .filter(AdminUser.role == "LAWYER", AdminUser.is_active.is_(True))
@@ -146,6 +200,8 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
                 "active_load": active_load_map.get(lawyer_id, 0),
                 "total_assigned": total_load_map.get(lawyer_id, 0),
                 "active_amount": round(active_amount_map.get(lawyer_id, 0.0), 2),
+                "monthly_assigned_count": monthly_assigned_map.get(lawyer_id, 0),
+                "monthly_completed_count": monthly_completed_map.get(lawyer_id, 0),
                 "monthly_paid_events": paid_events_map.get(lawyer_id, 0),
                 "monthly_paid_gross": round(monthly_paid_gross, 2),
                 "monthly_salary": round(monthly_salary, 2),
@@ -221,6 +277,18 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         scoped_lawyer_loads = lawyer_loads
 
     sla_snapshot = compute_sla_snapshot(db)
+    next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
+    deadline_alert_query = (
+        db.query(func.count(Request.id))
+        .filter(Request.important_date_at.is_not(None))
+        .filter(Request.important_date_at < next_day_start)
+        .filter(Request.status_code.notin_(terminal_codes))
+    )
+    if role == "LAWYER" and actor_uuid is not None:
+        deadline_alert_query = deadline_alert_query.filter(Request.assigned_lawyer_id == str(actor_uuid))
+    elif role == "LAWYER":
+        deadline_alert_query = deadline_alert_query.filter(Request.id.is_(None))
+    deadline_alert_total = int(deadline_alert_query.scalar() or 0)
     return {
         "scope": role if role in {"ADMIN", "LAWYER"} else "ADMIN",
         "new": int(by_status.get("NEW", 0)),
@@ -230,6 +298,11 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "unassigned_total": unassigned_total,
         "my_unread_updates": my_unread_updates,
         "my_unread_by_event": my_unread_by_event,
+        "deadline_alert_total": deadline_alert_total,
+        "month_revenue": monthly_revenue,
+        "month_expenses": round(sum(_to_float(row.get("monthly_salary")) for row in scoped_lawyer_loads), 2)
+        if role == "LAWYER"
+        else round(sum(_to_float(row.get("monthly_salary")) for row in lawyer_loads), 2),
         "frt_avg_minutes": sla_snapshot.get("frt_avg_minutes"),
         "sla_overdue": sla_snapshot.get("overdue_total", 0),
         "overdue_by_status": sla_snapshot.get("overdue_by_status", {}),
@@ -238,4 +311,80 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "unread_for_clients": int(unread_for_clients),
         "unread_for_lawyers": int(unread_for_lawyers),
         "lawyer_loads": scoped_lawyer_loads,
+    }
+
+
+@router.get("/lawyers/{lawyer_id}/active-requests")
+def lawyer_active_requests(
+    lawyer_id: str,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER")),
+):
+    actor_role = str(admin.get("role") or "").upper()
+    actor_id = str(admin.get("sub") or "").strip()
+    if actor_role == "LAWYER" and str(lawyer_id) != actor_id:
+        return {"rows": [], "total": 0, "totals": {"amount": 0.0, "salary": 0.0}}
+
+    lawyer = db.query(AdminUser).filter(AdminUser.id == _uuid_or_none(lawyer_id), AdminUser.role == "LAWYER").first()
+    if lawyer is None:
+        return {"rows": [], "total": 0, "totals": {"amount": 0.0, "salary": 0.0}}
+
+    terminal_codes = _terminal_status_codes(db)
+    paid_codes = _paid_status_codes()
+    now_utc = datetime.now(timezone.utc)
+    month_start, next_month_start = _month_bounds(now_utc)
+
+    salary_percent = _to_float(lawyer.salary_percent)
+    paid_by_request_rows = (
+        db.query(StatusHistory.request_id, func.count(StatusHistory.id))
+        .join(Request, Request.id == StatusHistory.request_id)
+        .filter(Request.assigned_lawyer_id == str(lawyer.id))
+        .filter(StatusHistory.created_at >= month_start, StatusHistory.created_at < next_month_start)
+        .filter(func.upper(StatusHistory.to_status).in_(paid_codes))
+        .group_by(StatusHistory.request_id)
+        .all()
+    )
+    paid_events_per_request = {str(req_id): int(count) for req_id, count in paid_by_request_rows if req_id}
+
+    request_rows = (
+        db.query(Request)
+        .filter(Request.assigned_lawyer_id == str(lawyer.id))
+        .filter(Request.status_code.notin_(terminal_codes))
+        .order_by(Request.created_at.desc(), Request.track_number.asc())
+        .all()
+    )
+
+    rows = []
+    total_amount = 0.0
+    total_salary = 0.0
+    for req in request_rows:
+        req_id = str(req.id)
+        invoice_amount = _to_float(req.invoice_amount)
+        paid_events = int(paid_events_per_request.get(req_id, 0))
+        month_paid_amount = round(invoice_amount * paid_events, 2)
+        month_salary_amount = round(month_paid_amount * salary_percent / 100.0, 2)
+        total_amount += month_paid_amount
+        total_salary += month_salary_amount
+        rows.append(
+            {
+                "id": req_id,
+                "track_number": req.track_number,
+                "status_code": req.status_code,
+                "client_name": req.client_name,
+                "invoice_amount": round(invoice_amount, 2),
+                "month_paid_events": paid_events,
+                "month_paid_amount": month_paid_amount,
+                "month_salary_amount": month_salary_amount,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "paid_at": req.paid_at.isoformat() if req.paid_at else None,
+            }
+        )
+
+    return {
+        "rows": rows,
+        "total": len(rows),
+        "totals": {
+            "amount": round(total_amount, 2),
+            "salary": round(total_salary, 2),
+        },
     }

@@ -63,14 +63,17 @@ class FormFieldUpsert(BaseModel):
 
 class RequestAdminCreate(BaseModel):
     track_number: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: str
     client_phone: str
     topic_code: Optional[str] = None
     status_code: str = "NEW"
+    important_date_at: Optional[datetime] = None
     description: Optional[str] = None
     extra_fields: dict = Field(default_factory=dict)
     assigned_lawyer_id: Optional[str] = None
     effective_rate: Optional[float] = None
+    request_cost: Optional[float] = None
     invoice_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
     paid_by_admin_id: Optional[str] = None
@@ -79,14 +82,17 @@ class RequestAdminCreate(BaseModel):
 
 class RequestAdminPatch(BaseModel):
     track_number: Optional[str] = None
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     topic_code: Optional[str] = None
     status_code: Optional[str] = None
+    important_date_at: Optional[datetime] = None
     description: Optional[str] = None
     extra_fields: Optional[dict] = None
     assigned_lawyer_id: Optional[str] = None
     effective_rate: Optional[float] = None
+    request_cost: Optional[float] = None
     invoice_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
     paid_by_admin_id: Optional[str] = None
@@ -95,6 +101,12 @@ class RequestAdminPatch(BaseModel):
 
 class RequestReassign(BaseModel):
     lawyer_id: str
+
+
+class RequestStatusChange(BaseModel):
+    status_code: str
+    important_date_at: Optional[datetime] = None
+    comment: Optional[str] = None
 
 
 class RequestDataRequirementCreate(BaseModel):

@@ -1,8 +1,12 @@
 const { test, expect } = require("@playwright/test");
-const { loginAdminPanel, openDictionaryTree } = require("./helpers");
+const { loginAdminPanel, openDictionaryTree, cleanupTrackedTestData } = require("./helpers");
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || "admin@example.com";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || "admin123";
+
+test.afterEach(async ({ page }, testInfo) => {
+  await cleanupTrackedTestData(page, testInfo);
+});
 
 test("admin status designer: open transitions dictionary and prefill topic in create modal", async ({ page }) => {
   await loginAdminPanel(page, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });

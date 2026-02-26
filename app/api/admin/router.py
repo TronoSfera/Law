@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.admin import auth, requests, quotes, meta, config, uploads, metrics, crud, notifications, invoices, chat
+from app.api.admin import auth, requests, quotes, meta, config, uploads, metrics, crud, notifications, invoices, chat, test_utils
 
 router = APIRouter()
 router.include_router(auth.router, prefix="/auth", tags=["AdminAuth"])
@@ -13,3 +13,4 @@ router.include_router(notifications.router, prefix="/notifications", tags=["Admi
 router.include_router(invoices.router, prefix="/invoices", tags=["AdminInvoices"])
 router.include_router(chat.router, prefix="/chat", tags=["AdminChat"])
 router.include_router(crud.router, prefix="/crud", tags=["AdminCrud"])
+router.include_router(test_utils.router, prefix="/test-utils", tags=["AdminTestUtils"])

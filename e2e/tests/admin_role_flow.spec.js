@@ -7,20 +7,30 @@ const {
   openDictionaryTree,
   selectDictionaryNode,
   rowByTrack,
+  trackCleanupPhone,
+  trackCleanupTrack,
+  trackCleanupEmail,
+  cleanupTrackedTestData,
 } = require("./helpers");
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || "admin@example.com";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || "admin123";
 
-test("admin flow via UI: dictionaries + users + topics + invoices", async ({ context, page }) => {
+test.afterEach(async ({ page }, testInfo) => {
+  await cleanupTrackedTestData(page, testInfo);
+});
+
+test("admin flow via UI: dictionaries + users + topics + invoices", async ({ context, page }, testInfo) => {
   const appUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
   const phone = randomPhone();
+  trackCleanupPhone(testInfo, phone);
 
   await preparePublicSession(context, page, appUrl, phone);
   const { trackNumber } = await createRequestViaLanding(page, {
     phone,
     description: "Заявка для проверки админского UI-флоу",
   });
+  trackCleanupTrack(testInfo, trackNumber);
 
   await loginAdminPanel(page, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   await expect(page.locator(".badge")).toContainText("роль: Администратор");
@@ -30,12 +40,12 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
   await openDictionaryTree(page);
   await expect(page.locator("aside .menu .menu-tree")).toContainText("Темы");
   await expect(page.locator("aside .menu .menu-tree")).toContainText("Статусы");
-  await expect(page.locator("aside .menu .menu-tree")).toContainText("Переходы статусов");
   await expect(page.locator("aside .menu .menu-tree")).toContainText("Пользователи");
   await expect(page.locator("aside .menu .menu-tree")).toContainText("Цитаты");
 
   const unique = Date.now();
   const lawyerEmail = `ui-lawyer-${unique}@example.com`;
+  trackCleanupEmail(testInfo, lawyerEmail);
   const topicName = `Тема UI ${unique}`;
 
   await selectDictionaryNode(page, "Пользователи");

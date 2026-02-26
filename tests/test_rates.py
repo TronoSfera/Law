@@ -487,6 +487,7 @@ class RequestRatesTests(unittest.TestCase):
                 description="public",
                 extra_fields={},
                 effective_rate=8800,
+                request_cost=9900,
                 invoice_amount=12500,
             )
             db.add(req)
@@ -503,9 +504,71 @@ class RequestRatesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertNotIn("effective_rate", body)
+        self.assertNotIn("request_cost", body)
         self.assertNotIn("invoice_amount", body)
         self.assertNotIn("paid_at", body)
         self.assertNotIn("paid_by_admin_id", body)
+
+    def test_admin_request_can_bind_existing_client_or_create_new_and_set_request_cost(self):
+        with self.SessionLocal() as db:
+            existing_client = Client(
+                full_name="Существующий клиент",
+                phone="+79990000100",
+                responsible="Администратор системы",
+            )
+            db.add(existing_client)
+            db.commit()
+            existing_client_id = str(existing_client.id)
+
+        admin_headers = self._auth_headers("ADMIN", "root@example.com")
+
+        created = self.client.post(
+            "/api/admin/requests",
+            headers=admin_headers,
+            json={
+                "client_id": existing_client_id,
+                "client_name": "Игнорировать",
+                "client_phone": "+70000000000",
+                "status_code": "NEW",
+                "description": "link existing client",
+                "request_cost": 3450,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        request_id = created.json()["id"]
+
+        with self.SessionLocal() as db:
+            row = db.get(Request, UUID(request_id))
+            self.assertIsNotNone(row)
+            self.assertEqual(str(row.client_id), existing_client_id)
+            self.assertEqual(row.client_name, "Существующий клиент")
+            self.assertEqual(row.client_phone, "+79990000100")
+            self.assertAlmostEqual(float(row.request_cost or 0), 3450.0, places=2)
+
+        updated = self.client.patch(
+            f"/api/admin/requests/{request_id}",
+            headers=admin_headers,
+            json={
+                "client_id": "",
+                "client_name": "Новый клиент из админки",
+                "client_phone": "+79990000101",
+                "request_cost": 4200,
+            },
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+
+        with self.SessionLocal() as db:
+            row = db.get(Request, UUID(request_id))
+            self.assertIsNotNone(row)
+            self.assertEqual(row.client_name, "Новый клиент из админки")
+            self.assertEqual(row.client_phone, "+79990000101")
+            self.assertAlmostEqual(float(row.request_cost or 0), 4200.0, places=2)
+            self.assertIsNotNone(row.client_id)
+            self.assertNotEqual(str(row.client_id), existing_client_id)
+            client = db.get(Client, row.client_id)
+            self.assertIsNotNone(client)
+            self.assertEqual(client.full_name, "Новый клиент из админки")
+            self.assertEqual(client.phone, "+79990000101")
 
 
 if __name__ == "__main__":

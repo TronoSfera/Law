@@ -18,6 +18,8 @@ class TopicDataTemplate(Base, UUIDMixin, TimestampMixin):
     topic_code: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
+    value_type: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
+    document_name: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
