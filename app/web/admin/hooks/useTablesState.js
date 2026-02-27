@@ -4,6 +4,7 @@ function createInitialTablesState() {
   return {
     kanban: createTableState(),
     requests: createTableState(),
+    serviceRequests: createTableState(),
     invoices: createTableState(),
     quotes: createTableState(),
     topics: createTableState(),

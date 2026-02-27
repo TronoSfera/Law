@@ -14,6 +14,7 @@ from app.models.otp_session import OtpSession
 from app.models.request import Request as RequestModel
 from app.schemas.public import OtpSend, OtpVerify
 from app.services.rate_limit import get_rate_limiter
+from app.services.sms_service import SmsDeliveryError, send_otp_message
 
 router = APIRouter()
 
@@ -112,16 +113,6 @@ def _set_public_cookie(response: Response, *, subject: str, purpose: str) -> Non
     )
 
 
-def _mock_sms_send(phone: str, code: str, purpose: str, track_number: str | None = None) -> dict:
-    # Dev-only behavior: emit OTP in console instead of sending real SMS.
-    print(f"[OTP MOCK] purpose={purpose} phone={phone} track={track_number or '-'} code={code}")
-    return {
-        "provider": "mock_sms",
-        "status": "accepted",
-        "message": "SMS provider response mocked",
-    }
-
-
 @router.post("/send")
 def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
     purpose = _normalize_purpose(payload.purpose)
@@ -160,6 +151,11 @@ def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
     )
 
     code = _generate_code()
+    try:
+        sms_response = send_otp_message(phone=phone, code=code, purpose=purpose, track_number=track_number)
+    except SmsDeliveryError as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось отправить OTP: {exc}") from exc
+
     now = _now_utc()
     expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
 
@@ -183,7 +179,6 @@ def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(row)
 
-    sms_response = _mock_sms_send(phone, code, purpose, track_number)
     return {
         "status": "sent",
         "purpose": purpose,

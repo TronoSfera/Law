@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = "change_me"
     TELEGRAM_CHAT_ID: str = "0"
     SMS_PROVIDER: str = "dummy"
+    SMSAERO_EMAIL: str = ""
+    SMSAERO_API_KEY: str = ""
+    OTP_SMS_TEMPLATE: str = "Your verification code: {code}"
     DATA_ENCRYPTION_SECRET: str = "change_me_data_encryption"
     OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300
     OTP_SEND_RATE_LIMIT: int = 8

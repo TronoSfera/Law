@@ -16,6 +16,7 @@ export const OPERATOR_LABELS = {
 export const ROLE_LABELS = {
   ADMIN: "Администратор",
   LAWYER: "Юрист",
+  CURATOR: "Куратор",
 };
 
 export const STATUS_LABELS = {
@@ -46,6 +47,18 @@ export const REQUEST_UPDATE_EVENT_LABELS = {
   STATUS: "статус",
 };
 
+export const SERVICE_REQUEST_TYPE_LABELS = {
+  CURATOR_CONTACT: "Запрос к куратору",
+  LAWYER_CHANGE_REQUEST: "Смена юриста",
+};
+
+export const SERVICE_REQUEST_STATUS_LABELS = {
+  NEW: "Новый",
+  IN_PROGRESS: "В работе",
+  RESOLVED: "Решен",
+  REJECTED: "Отклонен",
+};
+
 export const KANBAN_GROUPS = [
   { key: "NEW", label: "Новые" },
   { key: "IN_PROGRESS", label: "В работе" },
@@ -59,6 +72,11 @@ export const TABLE_SERVER_CONFIG = {
     // Requests use a specialized endpoint because it supports virtual/server-side filters
     // (e.g. deadline alerts and unread notifications) that are not plain table columns.
     endpoint: "/api/admin/requests/query",
+    sort: [{ field: "created_at", dir: "desc" }],
+  },
+  serviceRequests: {
+    table: "request_service_requests",
+    endpoint: "/api/admin/crud/request_service_requests/query",
     sort: [{ field: "created_at", dir: "desc" }],
   },
   invoices: {
@@ -131,6 +149,7 @@ TABLE_MUTATION_CONFIG.invoices = {
 };
 
 export const TABLE_KEY_ALIASES = {
+  request_service_requests: "serviceRequests",
   form_fields: "formFields",
   status_groups: "statusGroups",
   topic_required_fields: "topicRequiredFields",

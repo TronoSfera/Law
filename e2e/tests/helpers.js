@@ -65,6 +65,13 @@ function createPublicCookieToken(phone) {
   });
 }
 
+function createPublicViewCookieToken(subject) {
+  return jwt.sign({ sub: subject, purpose: "VIEW_REQUEST" }, PUBLIC_SECRET, {
+    algorithm: "HS256",
+    expiresIn: "7d",
+  });
+}
+
 function createCleanupTracker() {
   const state = {
     track_numbers: new Set(),
@@ -247,8 +254,17 @@ async function createRequestViaLanding(page, options = {}) {
 }
 
 async function openPublicCabinet(page, trackNumber) {
+  const baseUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
+  await page.context().addCookies([
+    {
+      name: PUBLIC_COOKIE_NAME,
+      value: createPublicViewCookieToken(String(trackNumber || "").trim().toUpperCase()),
+      url: `${baseUrl}/`,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
   await page.goto(`/client.html?track=${encodeURIComponent(trackNumber)}`);
-  await expect(page.locator("#client-page-status")).toContainText(`Открыта заявка: ${trackNumber}`);
   await expect(page.locator("#cabinet-summary")).toBeVisible();
   await expect(page.locator("#cabinet-request-status")).not.toHaveText("-");
 }

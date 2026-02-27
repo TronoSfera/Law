@@ -33,7 +33,7 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
   trackCleanupTrack(testInfo, trackNumber);
 
   await loginAdminPanel(page, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
-  await expect(page.locator(".badge")).toContainText("роль: Администратор");
+  await expect(page.locator("aside .auth-box")).toContainText("Роль: Администратор");
   await expect(page.locator("#section-dashboard h2")).toHaveText("Обзор метрик");
   await expect(page.locator("#section-dashboard")).toContainText("Загрузка юристов");
 

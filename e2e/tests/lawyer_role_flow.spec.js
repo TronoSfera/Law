@@ -41,7 +41,7 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await uploadCabinetFile(page, clientFileName, "lawyer unread marker");
 
   await loginAdminPanel(page, { email: LAWYER_EMAIL, password: LAWYER_PASSWORD });
-  await expect(page.locator(".badge")).toContainText("роль: Юрист");
+  await expect(page.locator("aside .auth-box")).toContainText("Роль: Юрист");
 
   await openRequestsSection(page);
 

@@ -20,6 +20,7 @@ from app.models.request import Request
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.request_data_template import RequestDataTemplate
 from app.models.request_data_template_item import RequestDataTemplateItem
+from app.models.request_service_request import RequestServiceRequest
 from app.models.security_audit_log import SecurityAuditLog
 from app.models.status_history import StatusHistory
 from app.models.topic import Topic
@@ -105,6 +106,7 @@ def cleanup_test_data(db: Session, spec: CleanupSpec | None = None) -> dict[str,
         "invoices": 0,
         "notifications": 0,
         "request_data_requirements": 0,
+        "request_service_requests": 0,
         "security_audit_log": 0,
         "audit_log": 0,
         "otp_sessions": 0,
@@ -119,11 +121,18 @@ def cleanup_test_data(db: Session, spec: CleanupSpec | None = None) -> dict[str,
     }
 
     if request_ids:
+        request_id_strs = {str(item) for item in request_ids}
         deleted_counts["notifications"] += (
             db.query(Notification).filter(Notification.request_id.in_(request_ids)).delete(synchronize_session=False) or 0
         )
         deleted_counts["request_data_requirements"] += (
             db.query(RequestDataRequirement).filter(RequestDataRequirement.request_id.in_(request_ids)).delete(synchronize_session=False) or 0
+        )
+        deleted_counts["request_service_requests"] += (
+            db.query(RequestServiceRequest)
+            .filter(RequestServiceRequest.request_id.in_(list(request_id_strs)))
+            .delete(synchronize_session=False)
+            or 0
         )
         deleted_counts["status_history"] += (
             db.query(StatusHistory).filter(StatusHistory.request_id.in_(request_ids)).delete(synchronize_session=False) or 0
@@ -144,7 +153,6 @@ def cleanup_test_data(db: Session, spec: CleanupSpec | None = None) -> dict[str,
             deleted_counts["security_audit_log"] += (
                 db.query(SecurityAuditLog).filter(SecurityAuditLog.attachment_id.in_(attachment_ids)).delete(synchronize_session=False) or 0
             )
-        request_id_strs = {str(item) for item in request_ids}
         deleted_counts["audit_log"] += (
             db.query(AuditLog)
             .filter(AuditLog.entity == "requests", AuditLog.entity_id.in_(list(request_id_strs)))

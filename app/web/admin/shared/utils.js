@@ -269,7 +269,18 @@ export function buildUniversalQuery(filters, sort, limit, offset) {
 }
 
 export function canAccessSection(role, section) {
-  const allowed = new Set(["dashboard", "kanban", "requests", "requestWorkspace", "invoices", "meta", "quotes", "config", "availableTables"]);
+  const allowed = new Set([
+    "dashboard",
+    "kanban",
+    "requests",
+    "serviceRequests",
+    "requestWorkspace",
+    "invoices",
+    "meta",
+    "quotes",
+    "config",
+    "availableTables",
+  ]);
   if (!allowed.has(section)) return false;
   if (section === "quotes" || section === "config" || section === "availableTables") return role === "ADMIN";
   return true;

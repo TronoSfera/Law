@@ -11,6 +11,7 @@
 
   const cabinetMessages = document.getElementById("cabinet-messages");
   const cabinetFiles = document.getElementById("cabinet-files");
+  const cabinetServiceRequests = document.getElementById("cabinet-service-requests");
   const cabinetInvoices = document.getElementById("cabinet-invoices");
   const cabinetTimeline = document.getElementById("cabinet-timeline");
 
@@ -29,11 +30,31 @@
   const dataRequestItems = document.getElementById("data-request-items");
   const dataRequestStatus = document.getElementById("data-request-status");
   const dataRequestTitle = document.getElementById("data-request-title");
+  const serviceRequestOverlay = document.getElementById("service-request-overlay");
+  const serviceRequestClose = document.getElementById("service-request-close");
+  const serviceRequestForm = document.getElementById("service-request-form");
+  const serviceRequestTitle = document.getElementById("service-request-title");
+  const serviceRequestTypeInput = document.getElementById("service-request-type");
+  const serviceRequestBodyInput = document.getElementById("service-request-body");
+  const serviceRequestStatus = document.getElementById("service-request-status");
+  const openCuratorRequestButton = document.getElementById("cabinet-curator-request-open");
+  const openLawyerChangeButton = document.getElementById("cabinet-lawyer-change-open");
   let previewObjectUrl = "";
 
   let activeTrack = "";
   let activeRequestId = "";
   let activeDataRequestMessageId = "";
+
+  const SERVICE_REQUEST_TYPE_LABELS = {
+    CURATOR_CONTACT: "Запрос к куратору",
+    LAWYER_CHANGE_REQUEST: "Смена юриста",
+  };
+  const SERVICE_REQUEST_STATUS_LABELS = {
+    NEW: "Новый",
+    IN_PROGRESS: "В работе",
+    RESOLVED: "Решен",
+    REJECTED: "Отклонен",
+  };
 
   function formatDate(value) {
     if (!value) return "-";
@@ -61,6 +82,11 @@
   function setDataRequestStatus(message, kind) {
     if (!dataRequestStatus) return;
     setStatus(dataRequestStatus, message || "", kind || null);
+  }
+
+  function setServiceRequestStatus(message, kind) {
+    if (!serviceRequestStatus) return;
+    setStatus(serviceRequestStatus, message || "", kind || null);
   }
 
   async function uploadPublicRequestAttachment(file, requestId) {
@@ -121,6 +147,8 @@
     cabinetFileInput.disabled = !enabled;
     cabinetFileUpload.disabled = !enabled;
     requestSelect.disabled = !enabled;
+    if (openCuratorRequestButton) openCuratorRequestButton.disabled = !enabled;
+    if (openLawyerChangeButton) openLawyerChangeButton.disabled = !enabled;
   }
 
   function clearList(node, emptyMessage) {
@@ -181,6 +209,30 @@
     dataRequestOverlay.classList.remove("open");
     dataRequestOverlay.setAttribute("aria-hidden", "true");
     setDataRequestStatus("", null);
+  }
+
+  function closeServiceRequestModal() {
+    if (!serviceRequestOverlay) return;
+    serviceRequestOverlay.classList.remove("open");
+    serviceRequestOverlay.setAttribute("aria-hidden", "true");
+    if (serviceRequestTypeInput) serviceRequestTypeInput.value = "";
+    if (serviceRequestBodyInput) serviceRequestBodyInput.value = "";
+    setServiceRequestStatus("", null);
+  }
+
+  function openServiceRequestModal(type) {
+    const requestType = String(type || "").trim().toUpperCase();
+    if (!serviceRequestOverlay || !requestType) return;
+    if (serviceRequestTypeInput) serviceRequestTypeInput.value = requestType;
+    if (serviceRequestTitle) {
+      serviceRequestTitle.textContent =
+        requestType === "LAWYER_CHANGE_REQUEST" ? "Запрос на смену юриста" : "Обращение к куратору";
+    }
+    if (serviceRequestBodyInput) serviceRequestBodyInput.value = "";
+    setServiceRequestStatus("", null);
+    serviceRequestOverlay.classList.add("open");
+    serviceRequestOverlay.setAttribute("aria-hidden", "false");
+    if (serviceRequestBodyInput) serviceRequestBodyInput.focus();
   }
 
   function dataRequestInputType(fieldType) {
@@ -525,6 +577,38 @@
     });
   }
 
+  function renderServiceRequests(items) {
+    if (!cabinetServiceRequests) return;
+    cabinetServiceRequests.innerHTML = "";
+    if (!Array.isArray(items) || items.length === 0) {
+      clearList(cabinetServiceRequests, "Обращений пока нет.");
+      return;
+    }
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "simple-item";
+
+      const time = document.createElement("time");
+      time.textContent = formatDate(item.created_at);
+      li.appendChild(time);
+
+      const p = document.createElement("p");
+      const typeCode = String(item.type || "").toUpperCase();
+      const statusCode = String(item.status || "").toUpperCase();
+      const typeLabel = SERVICE_REQUEST_TYPE_LABELS[typeCode] || typeCode || "Запрос";
+      const statusLabel = SERVICE_REQUEST_STATUS_LABELS[statusCode] || statusCode || "NEW";
+      p.textContent = `${typeLabel} • ${statusLabel}`;
+      li.appendChild(p);
+
+      if (item.body) {
+        const bodyNode = document.createElement("p");
+        bodyNode.textContent = String(item.body || "");
+        li.appendChild(bodyNode);
+      }
+      cabinetServiceRequests.appendChild(li);
+    });
+  }
+
   function renderInvoices(items) {
     cabinetInvoices.innerHTML = "";
     if (!Array.isArray(items) || items.length === 0) {
@@ -602,25 +686,29 @@
   async function refreshCabinetData() {
     if (!activeTrack) return;
 
-    const [messagesRes, filesRes, invoicesRes, timelineRes] = await Promise.all([
+    const [messagesRes, filesRes, serviceRequestsRes, invoicesRes, timelineRes] = await Promise.all([
       fetch("/api/public/chat/requests/" + encodeURIComponent(activeTrack) + "/messages"),
       fetch("/api/public/requests/" + encodeURIComponent(activeTrack) + "/attachments"),
+      fetch("/api/public/requests/" + encodeURIComponent(activeTrack) + "/service-requests"),
       fetch("/api/public/requests/" + encodeURIComponent(activeTrack) + "/invoices"),
       fetch("/api/public/requests/" + encodeURIComponent(activeTrack) + "/timeline"),
     ]);
 
     const messagesData = await parseJsonSafe(messagesRes);
     const filesData = await parseJsonSafe(filesRes);
+    const serviceRequestsData = await parseJsonSafe(serviceRequestsRes);
     const invoicesData = await parseJsonSafe(invoicesRes);
     const timelineData = await parseJsonSafe(timelineRes);
 
     if (!messagesRes.ok) throw new Error(apiErrorDetail(messagesData, "Не удалось загрузить сообщения"));
     if (!filesRes.ok) throw new Error(apiErrorDetail(filesData, "Не удалось загрузить файлы"));
+    if (!serviceRequestsRes.ok) throw new Error(apiErrorDetail(serviceRequestsData, "Не удалось загрузить обращения"));
     if (!invoicesRes.ok) throw new Error(apiErrorDetail(invoicesData, "Не удалось загрузить счета"));
     if (!timelineRes.ok) throw new Error(apiErrorDetail(timelineData, "Не удалось загрузить историю"));
 
     renderMessages(messagesData);
     renderFiles(filesData);
+    renderServiceRequests(serviceRequestsData);
     renderInvoices(invoicesData);
     renderTimeline(timelineData);
   }
@@ -685,6 +773,7 @@
       setStatus(pageStatus, "По вашему номеру пока нет заявок.", null);
       clearList(cabinetMessages, "Сообщений пока нет.");
       clearList(cabinetFiles, "Файлы пока не загружены.");
+      if (cabinetServiceRequests) clearList(cabinetServiceRequests, "Обращений пока нет.");
       clearList(cabinetInvoices, "Счета пока не выставлены.");
       clearList(cabinetTimeline, "История пока пуста.");
       return;
@@ -710,6 +799,13 @@
     }
   });
 
+  if (openCuratorRequestButton) {
+    openCuratorRequestButton.addEventListener("click", () => openServiceRequestModal("CURATOR_CONTACT"));
+  }
+  if (openLawyerChangeButton) {
+    openLawyerChangeButton.addEventListener("click", () => openServiceRequestModal("LAWYER_CHANGE_REQUEST"));
+  }
+
   if (previewClose) {
     previewClose.addEventListener("click", closePreview);
   }
@@ -725,6 +821,9 @@
     if (event.key === "Escape" && dataRequestOverlay?.classList.contains("open")) {
       closeDataRequestModal();
     }
+    if (event.key === "Escape" && serviceRequestOverlay?.classList.contains("open")) {
+      closeServiceRequestModal();
+    }
   });
 
   if (dataRequestClose) {
@@ -733,6 +832,48 @@
   if (dataRequestOverlay) {
     dataRequestOverlay.addEventListener("click", (event) => {
       if (event.target === dataRequestOverlay) closeDataRequestModal();
+    });
+  }
+  if (serviceRequestClose) {
+    serviceRequestClose.addEventListener("click", closeServiceRequestModal);
+  }
+  if (serviceRequestOverlay) {
+    serviceRequestOverlay.addEventListener("click", (event) => {
+      if (event.target === serviceRequestOverlay) closeServiceRequestModal();
+    });
+  }
+  if (serviceRequestForm) {
+    serviceRequestForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!activeTrack) {
+        setServiceRequestStatus("Сначала выберите заявку.", "error");
+        return;
+      }
+      const requestType = String(serviceRequestTypeInput?.value || "").trim().toUpperCase();
+      const body = String(serviceRequestBodyInput?.value || "").trim();
+      if (!requestType) {
+        setServiceRequestStatus("Выберите тип обращения.", "error");
+        return;
+      }
+      if (body.length < 3) {
+        setServiceRequestStatus('Сообщение должно содержать минимум 3 символа.', "error");
+        return;
+      }
+      try {
+        setServiceRequestStatus("Отправляем обращение...", null);
+        const response = await fetch("/api/public/requests/" + encodeURIComponent(activeTrack) + "/service-requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: requestType, body }),
+        });
+        const data = await parseJsonSafe(response);
+        if (!response.ok) throw new Error(apiErrorDetail(data, "Не удалось отправить обращение"));
+        await refreshCabinetData();
+        setStatus(pageStatus, "Обращение отправлено.", "ok");
+        closeServiceRequestModal();
+      } catch (error) {
+        setServiceRequestStatus(error?.message || "Не удалось отправить обращение", "error");
+      }
     });
   }
   if (dataRequestForm) {
@@ -848,6 +989,7 @@
     setCabinetEnabled(false);
     clearList(cabinetMessages, "Сообщений пока нет.");
     clearList(cabinetFiles, "Файлы пока не загружены.");
+    if (cabinetServiceRequests) clearList(cabinetServiceRequests, "Обращений пока нет.");
     clearList(cabinetInvoices, "Счета пока не выставлены.");
     clearList(cabinetTimeline, "История пока пуста.");
 

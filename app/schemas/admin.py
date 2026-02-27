@@ -125,3 +125,7 @@ class RequestDataRequirementPatch(BaseModel):
 
 class NotificationsReadAll(BaseModel):
     request_id: Optional[str] = None
+
+
+class RequestServiceRequestPatch(BaseModel):
+    status: str

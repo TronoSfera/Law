@@ -91,6 +91,7 @@ class MigrationTests(unittest.TestCase):
             "request_data_templates",
             "request_data_template_items",
             "request_data_requirements",
+            "request_service_requests",
             "requests",
             "messages",
             "attachments",
@@ -112,7 +113,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0024_featured_staff_carousel")
+        self.assertEqual(version, "0026_srv_req_str_ids")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -128,6 +129,7 @@ class MigrationTests(unittest.TestCase):
             "request_data_templates",
             "request_data_template_items",
             "request_data_requirements",
+            "request_service_requests",
             "requests",
             "messages",
             "attachments",
@@ -262,6 +264,19 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("label", items)
         self.assertIn("value_type", items)
         self.assertIn("sort_order", items)
+
+    def test_request_service_requests_contains_core_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("request_service_requests")}
+        self.assertIn("request_id", columns)
+        self.assertIn("client_id", columns)
+        self.assertIn("assigned_lawyer_id", columns)
+        self.assertIn("type", columns)
+        self.assertIn("status", columns)
+        self.assertIn("body", columns)
+        self.assertIn("admin_unread", columns)
+        self.assertIn("lawyer_unread", columns)
+        self.assertIn("admin_read_at", columns)
+        self.assertIn("lawyer_read_at", columns)
 
     def test_landing_featured_staff_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("landing_featured_staff")}

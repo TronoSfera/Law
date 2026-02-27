@@ -23,6 +23,7 @@ from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
 from app.models.message import Message
 from app.models.request import Request
+from app.models.request_service_request import RequestServiceRequest
 from app.models.status import Status
 from app.models.status_history import StatusHistory
 from app.models.topic_status_transition import TopicStatusTransition
@@ -42,6 +43,7 @@ class DashboardFinanceTests(unittest.TestCase):
         Request.__table__.create(bind=cls.engine)
         Status.__table__.create(bind=cls.engine)
         Message.__table__.create(bind=cls.engine)
+        RequestServiceRequest.__table__.create(bind=cls.engine)
         StatusHistory.__table__.create(bind=cls.engine)
         TopicStatusTransition.__table__.create(bind=cls.engine)
 
@@ -49,6 +51,7 @@ class DashboardFinanceTests(unittest.TestCase):
     def tearDownClass(cls):
         StatusHistory.__table__.drop(bind=cls.engine)
         TopicStatusTransition.__table__.drop(bind=cls.engine)
+        RequestServiceRequest.__table__.drop(bind=cls.engine)
         Message.__table__.drop(bind=cls.engine)
         Status.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
@@ -61,6 +64,7 @@ class DashboardFinanceTests(unittest.TestCase):
             db.execute(delete(StatusHistory))
             db.execute(delete(TopicStatusTransition))
             db.execute(delete(Message))
+            db.execute(delete(RequestServiceRequest))
             db.execute(delete(Request))
             db.execute(delete(Status))
             db.execute(delete(AuditLog))

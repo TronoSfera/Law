@@ -2,16 +2,27 @@ import { OPERATOR_LABELS, REQUEST_UPDATE_EVENT_LABELS, TABLE_SERVER_CONFIG } fro
 import { fmtDate, statusLabel } from "../../shared/utils.js";
 
 function renderRequestUpdatesCell(row, role) {
+  const hasServiceRequestUnread = Boolean(row?.has_service_requests_unread);
+  const serviceRequestCount = Number(row?.service_requests_unread_count || 0);
   if (role === "LAWYER") {
     const has = Boolean(row.lawyer_has_unread_updates);
     const eventType = String(row.lawyer_unread_event_type || "").toUpperCase();
-    return has ? (
-      <span className="request-update-chip" title={"Есть непрочитанное обновление: " + (REQUEST_UPDATE_EVENT_LABELS[eventType] || eventType.toLowerCase())}>
-        <span className="request-update-dot" />
-        {REQUEST_UPDATE_EVENT_LABELS[eventType] || "обновление"}
+    if (!has && !hasServiceRequestUnread) return <span className="request-update-empty">нет</span>;
+    return (
+      <span className="request-updates-stack">
+        {has ? (
+          <span className="request-update-chip" title={"Есть непрочитанное обновление: " + (REQUEST_UPDATE_EVENT_LABELS[eventType] || eventType.toLowerCase())}>
+            <span className="request-update-dot" />
+            {REQUEST_UPDATE_EVENT_LABELS[eventType] || "обновление"}
+          </span>
+        ) : null}
+        {hasServiceRequestUnread ? (
+          <span className="request-update-chip" title={"Непрочитанные запросы клиента: " + String(serviceRequestCount)}>
+            <span className="request-update-dot" />
+            {"Запросы: " + String(serviceRequestCount || 1)}
+          </span>
+        ) : null}
       </span>
-    ) : (
-      <span className="request-update-empty">нет</span>
     );
   }
 
@@ -20,7 +31,7 @@ function renderRequestUpdatesCell(row, role) {
   const lawyerHas = Boolean(row.lawyer_has_unread_updates);
   const lawyerType = String(row.lawyer_unread_event_type || "").toUpperCase();
 
-  if (!clientHas && !lawyerHas) return <span className="request-update-empty">нет</span>;
+  if (!clientHas && !lawyerHas && !hasServiceRequestUnread) return <span className="request-update-empty">нет</span>;
   return (
     <span className="request-updates-stack">
       {clientHas ? (
@@ -33,6 +44,12 @@ function renderRequestUpdatesCell(row, role) {
         <span className="request-update-chip" title={"Юристу: " + (REQUEST_UPDATE_EVENT_LABELS[lawyerType] || lawyerType.toLowerCase())}>
           <span className="request-update-dot" />
           {"Юрист: " + (REQUEST_UPDATE_EVENT_LABELS[lawyerType] || "обновление")}
+        </span>
+      ) : null}
+      {hasServiceRequestUnread ? (
+        <span className="request-update-chip" title={"Непрочитанные запросы клиента: " + String(serviceRequestCount)}>
+          <span className="request-update-dot" />
+          {"Запросы: " + String(serviceRequestCount || 1)}
         </span>
       ) : null}
     </span>

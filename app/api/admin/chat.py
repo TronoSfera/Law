@@ -183,7 +183,7 @@ def _serialize_data_request_items(db: Session, rows: list[RequestDataRequirement
 def list_request_messages(
     request_id: str,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_view_request_or_403(admin, req)
@@ -196,7 +196,7 @@ def create_request_message(
     request_id: str,
     payload: dict,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_manage_request_or_403(admin, req)
@@ -229,7 +229,7 @@ def list_data_request_templates(
     request_id: str,
     document: str | None = None,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_manage_request_or_403(admin, req)
@@ -273,7 +273,7 @@ def get_data_request_batch(
     request_id: str,
     message_id: str,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_view_request_or_403(admin, req)
@@ -306,7 +306,7 @@ def get_data_request_template(
     request_id: str,
     template_id: str,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_manage_request_or_403(admin, req)
@@ -333,7 +333,7 @@ def save_data_request_template(
     request_id: str,
     payload: dict,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_manage_request_or_403(admin, req)
@@ -497,7 +497,7 @@ def upsert_data_request_batch(
     request_id: str,
     payload: dict,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_manage_request_or_403(admin, req)

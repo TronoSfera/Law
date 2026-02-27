@@ -20,6 +20,7 @@ from app.models.admin_user_topic import AdminUserTopic
 from app.models.notification import Notification
 from app.models.invoice import Invoice
 from app.models.security_audit_log import SecurityAuditLog
+from app.models.request_service_request import RequestServiceRequest
 
 config = context.config
 fileConfig(config.config_file_name)

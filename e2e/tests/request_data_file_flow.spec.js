@@ -33,7 +33,7 @@ test("request data file field flow via UI: lawyer requests file -> client upload
   trackCleanupTrack(testInfo, trackNumber);
 
   await loginAdminPanel(page, { email: LAWYER_EMAIL, password: LAWYER_PASSWORD });
-  await expect(page.locator(".badge")).toContainText("роль: Юрист");
+  await expect(page.locator("aside .auth-box")).toContainText("Роль: Юрист");
   await openRequestsSection(page);
 
   const row = rowByTrack(page, "#section-requests", trackNumber);

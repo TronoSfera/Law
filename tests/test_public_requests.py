@@ -2,7 +2,7 @@ import os
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete
@@ -22,9 +22,11 @@ from app.core.config import settings
 from app.core.security import create_jwt, decode_jwt
 from app.db.session import get_db
 from app.models.client import Client
+from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.otp_session import OtpSession
 from app.models.request import Request
+from app.models.request_service_request import RequestServiceRequest
 from app.models.topic_required_field import TopicRequiredField
 
 
@@ -38,26 +40,32 @@ class PublicRequestCreateTests(unittest.TestCase):
         )
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         Client.__table__.create(bind=cls.engine)
+        AuditLog.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
+        RequestServiceRequest.__table__.create(bind=cls.engine)
         Notification.__table__.create(bind=cls.engine)
         OtpSession.__table__.create(bind=cls.engine)
         TopicRequiredField.__table__.create(bind=cls.engine)
 
     @classmethod
     def tearDownClass(cls):
+        RequestServiceRequest.__table__.drop(bind=cls.engine)
         Notification.__table__.drop(bind=cls.engine)
         OtpSession.__table__.drop(bind=cls.engine)
         TopicRequiredField.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
+        AuditLog.__table__.drop(bind=cls.engine)
         Client.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
 
     def setUp(self):
         with self.SessionLocal() as db:
+            db.execute(delete(RequestServiceRequest))
             db.execute(delete(Notification))
             db.execute(delete(OtpSession))
             db.execute(delete(TopicRequiredField))
             db.execute(delete(Request))
+            db.execute(delete(AuditLog))
             db.execute(delete(Client))
             db.commit()
 
@@ -74,6 +82,11 @@ class PublicRequestCreateTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         app.dependency_overrides.clear()
+
+    @staticmethod
+    def _unique_phone() -> str:
+        suffix = f"{uuid4().int % 10_000_000_000:010d}"
+        return f"+79{suffix}"
 
     def _send_and_verify_create_otp(self, phone: str) -> None:
         with patch("app.api.public.otp._generate_code", return_value="123456"):
@@ -135,11 +148,12 @@ class PublicRequestCreateTests(unittest.TestCase):
         self.assertEqual(read.json()["track_number"], body["track_number"])
 
     def test_view_request_requires_view_otp_and_uses_track_cookie(self):
+        track_number = f"TRK-VIEW-{uuid4().hex[:8].upper()}"
         with self.SessionLocal() as db:
             row = Request(
-                track_number="TRK-VIEW-OTP",
+                track_number=track_number,
                 client_name="Клиент",
-                client_phone="+79991112233",
+                client_phone=self._unique_phone(),
                 topic_code="consulting",
                 status_code="NEW",
                 description="Проверка просмотра",
@@ -148,32 +162,32 @@ class PublicRequestCreateTests(unittest.TestCase):
             db.add(row)
             db.commit()
 
-        no_session = self.client.get("/api/public/requests/TRK-VIEW-OTP")
+        no_session = self.client.get(f"/api/public/requests/{track_number}")
         self.assertEqual(no_session.status_code, 401)
 
         with patch("app.api.public.otp._generate_code", return_value="654321"):
             sent = self.client.post(
                 "/api/public/otp/send",
-                json={"purpose": "VIEW_REQUEST", "track_number": "TRK-VIEW-OTP"},
+                json={"purpose": "VIEW_REQUEST", "track_number": track_number},
             )
             self.assertEqual(sent.status_code, 200)
             self.assertEqual(sent.json()["status"], "sent")
 
         wrong_code = self.client.post(
             "/api/public/otp/verify",
-            json={"purpose": "VIEW_REQUEST", "track_number": "TRK-VIEW-OTP", "code": "000000"},
+            json={"purpose": "VIEW_REQUEST", "track_number": track_number, "code": "000000"},
         )
         self.assertEqual(wrong_code.status_code, 400)
 
         verified = self.client.post(
             "/api/public/otp/verify",
-            json={"purpose": "VIEW_REQUEST", "track_number": "TRK-VIEW-OTP", "code": "654321"},
+            json={"purpose": "VIEW_REQUEST", "track_number": track_number, "code": "654321"},
         )
         self.assertEqual(verified.status_code, 200)
 
-        ok = self.client.get("/api/public/requests/TRK-VIEW-OTP")
+        ok = self.client.get(f"/api/public/requests/{track_number}")
         self.assertEqual(ok.status_code, 200)
-        self.assertEqual(ok.json()["track_number"], "TRK-VIEW-OTP")
+        self.assertEqual(ok.json()["track_number"], track_number)
 
         denied_other_track = self.client.get("/api/public/requests/TRK-OTHER")
         self.assertEqual(denied_other_track.status_code, 403)
@@ -321,7 +335,7 @@ class PublicRequestCreateTests(unittest.TestCase):
         self.assertTrue(created.json()["track_number"].startswith("TRK-"))
 
     def test_verify_otp_sets_public_cookie_for_configured_ttl(self):
-        phone = "+79990001234"
+        phone = self._unique_phone()
         with patch("app.api.public.otp._generate_code", return_value="777777"):
             sent = self.client.post(
                 "/api/public/otp/send",
@@ -384,3 +398,62 @@ class PublicRequestCreateTests(unittest.TestCase):
         payload = decode_jwt(token, settings.PUBLIC_JWT_SECRET)
         self.assertEqual(payload.get("sub"), phone)
         self.assertEqual(payload.get("purpose"), "VIEW_REQUEST")
+
+    def test_client_can_create_both_service_request_types_and_audit_is_written(self):
+        phone = "+79997776655"
+        lawyer_id = UUID("11111111-1111-1111-1111-111111111111")
+        with self.SessionLocal() as db:
+            client = Client(full_name="Запросный клиент", phone=phone, responsible="seed")
+            db.add(client)
+            db.flush()
+            req = Request(
+                track_number="TRK-SVC-1",
+                client_id=client.id,
+                client_name=client.full_name,
+                client_phone=client.phone,
+                topic_code="consulting",
+                status_code="IN_PROGRESS",
+                description="Проверка сервисных запросов",
+                extra_fields={},
+                assigned_lawyer_id=str(lawyer_id),
+            )
+            db.add(req)
+            db.commit()
+
+        view_token = create_jwt({"sub": phone, "purpose": "VIEW_REQUEST"}, settings.PUBLIC_JWT_SECRET, timedelta(days=1))
+        cookies = {settings.PUBLIC_COOKIE_NAME: view_token}
+
+        curator = self.client.post(
+            "/api/public/requests/TRK-SVC-1/service-requests",
+            cookies=cookies,
+            json={"type": "CURATOR_CONTACT", "body": "Прошу консультацию администратора"},
+        )
+        self.assertEqual(curator.status_code, 201)
+        self.assertEqual(curator.json()["type"], "CURATOR_CONTACT")
+
+        change = self.client.post(
+            "/api/public/requests/TRK-SVC-1/service-requests",
+            cookies=cookies,
+            json={"type": "LAWYER_CHANGE_REQUEST", "body": "Прошу сменить юриста"},
+        )
+        self.assertEqual(change.status_code, 201)
+        self.assertEqual(change.json()["type"], "LAWYER_CHANGE_REQUEST")
+
+        listed = self.client.get("/api/public/requests/TRK-SVC-1/service-requests", cookies=cookies)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(len(listed.json()), 2)
+
+        with self.SessionLocal() as db:
+            rows = db.query(RequestServiceRequest).order_by(RequestServiceRequest.created_at.asc()).all()
+            self.assertEqual(len(rows), 2)
+            self.assertTrue(rows[0].admin_unread)
+            self.assertTrue(rows[0].lawyer_unread)  # curator-contact visible to assigned lawyer
+            self.assertTrue(rows[1].admin_unread)
+            self.assertFalse(rows[1].lawyer_unread)  # lawyer-change hidden from assigned lawyer
+
+            audits = (
+                db.query(AuditLog)
+                .filter(AuditLog.entity == "request_service_requests", AuditLog.action == "CREATE_CLIENT_REQUEST")
+                .all()
+            )
+            self.assertEqual(len(audits), 2)

@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
 from app.models.request import Request
+from app.models.request_service_request import RequestServiceRequest
 from app.models.status import Status
 from app.models.status_history import StatusHistory
 from app.services.sla_metrics import compute_sla_snapshot
@@ -88,7 +89,7 @@ def _extract_assigned_lawyer_from_audit(diff: dict | None, action: str | None) -
 
 
 @router.get("/overview")
-def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER"))):
+def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR"))):
     role = str(admin.get("role") or "").upper()
     actor_id = str(admin.get("sub") or "").strip()
     actor_uuid = _uuid_or_none(actor_id)
@@ -110,6 +111,26 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         .scalar()
         or 0
     )
+    if role == "LAWYER" and actor_uuid is not None:
+        service_request_unread_total = int(
+            db.query(func.count(RequestServiceRequest.id))
+            .filter(
+                RequestServiceRequest.type == "CURATOR_CONTACT",
+                RequestServiceRequest.assigned_lawyer_id == str(actor_uuid),
+                RequestServiceRequest.lawyer_unread.is_(True),
+            )
+            .scalar()
+            or 0
+        )
+    elif role == "LAWYER":
+        service_request_unread_total = 0
+    else:
+        service_request_unread_total = int(
+            db.query(func.count(RequestServiceRequest.id))
+            .filter(RequestServiceRequest.admin_unread.is_(True))
+            .scalar()
+            or 0
+        )
 
     active_load_rows = (
         db.query(Request.assigned_lawyer_id, func.count(Request.id))
@@ -290,7 +311,7 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         deadline_alert_query = deadline_alert_query.filter(Request.id.is_(None))
     deadline_alert_total = int(deadline_alert_query.scalar() or 0)
     return {
-        "scope": role if role in {"ADMIN", "LAWYER"} else "ADMIN",
+        "scope": role if role in {"ADMIN", "LAWYER", "CURATOR"} else "ADMIN",
         "new": int(by_status.get("NEW", 0)),
         "by_status": by_status,
         "assigned_total": assigned_total,
@@ -310,6 +331,7 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "avg_time_in_status_hours": sla_snapshot.get("avg_time_in_status_hours", {}),
         "unread_for_clients": int(unread_for_clients),
         "unread_for_lawyers": int(unread_for_lawyers),
+        "service_request_unread_total": int(service_request_unread_total),
         "lawyer_loads": scoped_lawyer_loads,
     }
 

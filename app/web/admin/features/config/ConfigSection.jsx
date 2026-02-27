@@ -1,6 +1,25 @@
 import { KNOWN_CONFIG_TABLE_KEYS, OPERATOR_LABELS, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
 import { boolLabel, fmtDate, listPreview, normalizeReferenceMeta, roleLabel, statusKindLabel, statusLabel } from "../../shared/utils.js";
 
+function fmtBalance(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return number.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
+}
+
+function smsBalanceSummary(health) {
+  if (!health || typeof health !== "object") return "Баланс SMS Aero: загрузка...";
+  const provider = String(health.provider || "").toLowerCase();
+  if (provider !== "smsaero") {
+    return "SMS провайдер: " + String(health.provider || "-") + " (баланс недоступен)";
+  }
+  if (health.balance_available) {
+    return "Баланс SMS Aero: " + fmtBalance(health.balance_amount);
+  }
+  const issues = Array.isArray(health.issues) ? health.issues.filter(Boolean) : [];
+  return "Баланс SMS Aero недоступен" + (issues.length ? " • " + String(issues[0]) : "");
+}
+
 export function ConfigSection(props) {
   const {
     token,
@@ -22,6 +41,8 @@ export function ConfigSection(props) {
     resolveTableConfig,
     getStatus,
     loadCurrentConfigTable,
+    onRefreshSmsProviderHealth,
+    smsProviderHealth,
     openCreateRecordModal,
     openFilterModal,
     removeFilterChip,
@@ -55,10 +76,23 @@ export function ConfigSection(props) {
                 <div>
                   <h2>Справочники</h2>
                   <p className="breadcrumbs">{configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран"}</p>
+                  {configActiveKey === "otp_sessions" ? (
+                    <p className="muted">
+                      {smsBalanceSummary(smsProviderHealth)}
+                      {smsProviderHealth?.loaded_at ? " • обновлено " + fmtDate(smsProviderHealth.loaded_at) : ""}
+                    </p>
+                  ) : null}
                 </div>
-                <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
-                  Обновить
-                </button>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {configActiveKey === "otp_sessions" ? (
+                    <button className="btn secondary" type="button" onClick={onRefreshSmsProviderHealth}>
+                      Баланс
+                    </button>
+                  ) : null}
+                  <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
+                    Обновить
+                  </button>
+                </div>
               </div>
               <div className="config-layout">
                 <div className="config-panel">

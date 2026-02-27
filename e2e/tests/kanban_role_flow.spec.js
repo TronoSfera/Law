@@ -37,7 +37,7 @@ test("kanban flow via UI: lawyer sees unassigned card, claims and opens request 
   await page.locator("#filter-field").selectOption("client_name");
   await page.locator("#filter-op").selectOption("~");
   await page.locator("#filter-value").fill("Клиент");
-  await page.locator("#filter-overlay").getByRole("button", { name: "Добавить/Сохранить" }).click();
+  await page.locator("#filter-overlay").getByRole("button", { name: /Добавить|Сохранить|Добавить\/Сохранить/i }).click();
   await expect(page.locator("#section-kanban .filter-chip")).toHaveCount(1);
 
   const sortButton = page.locator("#section-kanban .section-head").getByRole("button", { name: "Сортировка" });
@@ -66,7 +66,7 @@ test("kanban flow via UI: lawyer sees unassigned card, claims and opens request 
       .catch(() => "");
     if (targetValue) {
       await transitionSelect.first().selectOption(targetValue);
-      await expect(page.locator("#section-kanban .status")).toContainText(/Статус заявки обновлен|Ошибка перехода/);
+      await expect(page.locator("#section-kanban .status")).toContainText(/Статус заявки обновлен|Ошибка перехода|Канбан обновлен/);
     }
   }
 

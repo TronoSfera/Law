@@ -17,7 +17,9 @@ from app.models.attachment import Attachment
 from app.models.client import Client
 from app.models.invoice import Invoice
 from app.models.message import Message
+from app.models.audit_log import AuditLog
 from app.models.request import Request
+from app.models.request_service_request import RequestServiceRequest
 from app.models.status_history import StatusHistory
 from app.models.topic import Topic
 from app.services.invoice_crypto import decrypt_requisites
@@ -37,6 +39,8 @@ from app.schemas.public import (
     PublicMessageRead,
     PublicRequestCreate,
     PublicRequestCreated,
+    PublicServiceRequestCreate,
+    PublicServiceRequestRead,
     PublicStatusHistoryRead,
     PublicTimelineEvent,
 )
@@ -50,6 +54,7 @@ INVOICE_STATUS_LABELS = {
     "PAID": "Оплачен",
     "CANCELED": "Отменен",
 }
+SERVICE_REQUEST_TYPES = {"CURATOR_CONTACT", "LAWYER_CHANGE_REQUEST"}
 
 
 def _normalize_phone(raw: str | None) -> str:
@@ -143,6 +148,21 @@ def _upsert_client_by_phone(db: Session, *, full_name: str, phone: str) -> Clien
 
 def _to_iso(value) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _serialize_public_service_request(row: RequestServiceRequest) -> PublicServiceRequestRead:
+    return PublicServiceRequestRead(
+        id=row.id,
+        request_id=row.request_id,
+        client_id=row.client_id,
+        type=str(row.type or ""),
+        status=str(row.status or "NEW"),
+        body=str(row.body or ""),
+        created_by_client=bool(row.created_by_client),
+        created_at=_to_iso(row.created_at),
+        updated_at=_to_iso(row.updated_at),
+        resolved_at=_to_iso(row.resolved_at),
+    )
 
 
 def _public_invoice_payload(row: Invoice, track_number: str) -> dict:
@@ -482,6 +502,81 @@ def list_timeline_by_track(
 
     events.sort(key=_sort_key)
     return events
+
+
+@router.post("/{track_number}/service-requests", response_model=PublicServiceRequestRead, status_code=201)
+def create_service_request_by_track(
+    track_number: str,
+    payload: PublicServiceRequestCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, session, track_number)
+    request_type = str(payload.type or "").strip().upper()
+    if request_type not in SERVICE_REQUEST_TYPES:
+        raise HTTPException(status_code=400, detail="Некорректный тип запроса")
+
+    body = str(payload.body or "").strip()
+    if len(body) < 3:
+        raise HTTPException(status_code=400, detail='Поле "body" должно содержать минимум 3 символа')
+
+    assigned_lawyer_value = None
+    assigned_lawyer_raw = str(req.assigned_lawyer_id or "").strip()
+    if assigned_lawyer_raw:
+        assigned_lawyer_value = assigned_lawyer_raw
+
+    lawyer_unread = request_type == "CURATOR_CONTACT" and assigned_lawyer_value is not None
+    row = RequestServiceRequest(
+        request_id=str(req.id),
+        client_id=str(req.client_id) if req.client_id else None,
+        assigned_lawyer_id=assigned_lawyer_value,
+        type=request_type,
+        status="NEW",
+        body=body,
+        created_by_client=True,
+        admin_unread=True,
+        lawyer_unread=lawyer_unread,
+        responsible="Клиент",
+    )
+    db.add(row)
+    db.flush()
+    db.add(
+        AuditLog(
+            actor_admin_id=None,
+            entity="request_service_requests",
+            entity_id=str(row.id),
+            action="CREATE_CLIENT_REQUEST",
+            diff={
+                "request_id": str(req.id),
+                "track_number": req.track_number,
+                "type": request_type,
+                "status": "NEW",
+            },
+            responsible="Клиент",
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_public_service_request(row)
+
+
+@router.get("/{track_number}/service-requests", response_model=list[PublicServiceRequestRead])
+def list_service_requests_by_track(
+    track_number: str,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, session, track_number)
+    rows = (
+        db.query(RequestServiceRequest)
+        .filter(
+            RequestServiceRequest.request_id == str(req.id),
+            RequestServiceRequest.created_by_client.is_(True),
+        )
+        .order_by(RequestServiceRequest.created_at.desc(), RequestServiceRequest.id.desc())
+        .all()
+    )
+    return [_serialize_public_service_request(row) for row in rows]
 
 
 @router.get("/{track_number}/notifications")

@@ -25,6 +25,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.request import Request
+from app.models.request_data_requirement import RequestDataRequirement
 from app.models.status_history import StatusHistory
 
 
@@ -61,10 +62,12 @@ class PublicCabinetTests(unittest.TestCase):
         Notification.__table__.create(bind=cls.engine)
         Message.__table__.create(bind=cls.engine)
         Attachment.__table__.create(bind=cls.engine)
+        RequestDataRequirement.__table__.create(bind=cls.engine)
         StatusHistory.__table__.create(bind=cls.engine)
 
     @classmethod
     def tearDownClass(cls):
+        RequestDataRequirement.__table__.drop(bind=cls.engine)
         StatusHistory.__table__.drop(bind=cls.engine)
         Attachment.__table__.drop(bind=cls.engine)
         Message.__table__.drop(bind=cls.engine)
@@ -77,6 +80,7 @@ class PublicCabinetTests(unittest.TestCase):
             db.execute(delete(Notification))
             db.execute(delete(StatusHistory))
             db.execute(delete(Attachment))
+            db.execute(delete(RequestDataRequirement))
             db.execute(delete(Message))
             db.execute(delete(Request))
             db.commit()

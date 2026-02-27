@@ -54,6 +54,10 @@
               <b id="cabinet-request-updated">-</b>
             </div>
           </div>
+          <div class="service-request-actions">
+            <button class="btn btn-ghost" id="cabinet-curator-request-open" type="button" disabled>Обратиться к куратору</button>
+            <button class="btn btn-ghost" id="cabinet-lawyer-change-open" type="button" disabled>Запросить смену юриста</button>
+          </div>
         </div>
       </article>
 
@@ -74,6 +78,11 @@
             <input id="cabinet-file-input" type="file" disabled>
             <button class="btn btn-ghost" id="cabinet-file-upload" type="button" disabled>Загрузить файл</button>
           </div>
+        </article>
+
+        <article class="cabinet-card">
+          <h2>Мои обращения</h2>
+          <ul class="simple-list" id="cabinet-service-requests"></ul>
         </article>
 
         <article class="cabinet-card">
@@ -113,6 +122,28 @@
           </div>
         </form>
         <p class="status" id="data-request-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="preview-overlay" id="service-request-overlay" aria-hidden="true">
+    <div class="preview-modal service-request-modal" role="dialog" aria-modal="true" aria-labelledby="service-request-title">
+      <div class="preview-head">
+        <h3 id="service-request-title">Новое обращение</h3>
+        <button class="close-btn" id="service-request-close" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="preview-body service-request-body">
+        <form id="service-request-form" class="service-request-form">
+          <input id="service-request-type" type="hidden" value="">
+          <div class="field">
+            <label for="service-request-body">Сообщение</label>
+            <textarea id="service-request-body" maxlength="4000" placeholder="Опишите обращение"></textarea>
+          </div>
+          <div class="data-request-actions">
+            <button class="btn btn-ghost" id="service-request-send" type="submit">Отправить</button>
+          </div>
+        </form>
+        <p class="status" id="service-request-status"></p>
       </div>
     </div>
   </div>

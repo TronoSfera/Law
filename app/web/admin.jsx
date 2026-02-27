@@ -19,6 +19,7 @@ import { DashboardSection } from "./admin/features/dashboard/DashboardSection.js
 import { InvoicesSection } from "./admin/features/invoices/InvoicesSection.jsx";
 import { RequestsSection } from "./admin/features/requests/RequestsSection.jsx";
 import { QuotesSection } from "./admin/features/quotes/QuotesSection.jsx";
+import { ServiceRequestsSection } from "./admin/features/service-requests/ServiceRequestsSection.jsx";
 import { RequestWorkspace } from "./admin/features/requests/RequestWorkspace.jsx";
 import { AvailableTablesSection } from "./admin/features/tables/AvailableTablesSection.jsx";
 import { useAdminApi } from "./admin/hooks/useAdminApi.js";
@@ -897,6 +898,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       myUnreadTotal: 0,
       unreadForClients: 0,
       unreadForLawyers: 0,
+      serviceRequestUnreadTotal: 0,
       deadlineAlertTotal: 0,
       monthRevenue: 0,
       monthExpenses: 0,
@@ -922,6 +924,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     });
 
     const [statusMap, setStatusMap] = useState({});
+    const [smsProviderHealth, setSmsProviderHealth] = useState(null);
 
     const [recordModal, setRecordModal] = useState({
       open: false,
@@ -1169,6 +1172,19 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             { field: "created_at", label: "Дата создания", type: "date" },
           ];
         }
+        if (tableKey === "serviceRequests") {
+          return [
+            { field: "type", label: "Тип", type: "text" },
+            { field: "status", label: "Статус", type: "text" },
+            { field: "request_id", label: "ID заявки", type: "text" },
+            { field: "client_id", label: "ID клиента", type: "text" },
+            { field: "assigned_lawyer_id", label: "Назначенный юрист", type: "reference", options: getLawyerOptions },
+            { field: "admin_unread", label: "Непрочитано администратором", type: "boolean" },
+            { field: "lawyer_unread", label: "Непрочитано юристом", type: "boolean" },
+            { field: "resolved_at", label: "Дата обработки", type: "date" },
+            { field: "created_at", label: "Дата создания", type: "date" },
+          ];
+        }
         if (tableKey === "invoices") {
           return [
             { field: "invoice_number", label: "Номер счета", type: "text" },
@@ -1314,6 +1330,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     const getTableLabel = useCallback((tableKey) => {
       if (tableKey === "kanban") return "Канбан";
       if (tableKey === "requests") return "Заявки";
+      if (tableKey === "serviceRequests") return "Запросы";
       if (tableKey === "invoices") return "Счета";
       if (tableKey === "quotes") return "Цитаты";
       if (tableKey === "topics") return "Темы";
@@ -1769,6 +1786,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             myUnreadTotal: Number(data.my_unread_updates || 0),
             unreadForClients: Number(data.unread_for_clients || 0),
             unreadForLawyers: Number(data.unread_for_lawyers || 0),
+            serviceRequestUnreadTotal: Number(data.service_request_unread_total || 0),
             deadlineAlertTotal: Number(data.deadline_alert_total || 0),
             monthRevenue: Number(data.month_revenue || 0),
             monthExpenses: Number(data.month_expenses || 0),
@@ -1796,12 +1814,50 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       [api, metaEntity, setStatus]
     );
 
+    const loadSmsProviderHealth = useCallback(
+      async (tokenOverride, options) => {
+        const opts = options || {};
+        const silent = Boolean(opts.silent);
+        const currentRole = String(role || "").toUpperCase();
+        const authToken = tokenOverride !== undefined ? tokenOverride : token;
+        if (!authToken || currentRole !== "ADMIN") {
+          setSmsProviderHealth(null);
+          return null;
+        }
+        if (!silent) setStatus("smsProviderHealth", "Обновляем баланс SMS Aero...", "");
+        try {
+          const payload = await api("/api/admin/system/sms-provider-health", {}, tokenOverride);
+          const enriched = { ...(payload || {}), loaded_at: new Date().toISOString() };
+          setSmsProviderHealth(enriched);
+          if (!silent) setStatus("smsProviderHealth", "Баланс SMS Aero обновлен", "ok");
+          return enriched;
+        } catch (error) {
+          const fallback = {
+            provider: "smsaero",
+            status: "error",
+            mode: "real",
+            can_send: false,
+            balance_available: false,
+            balance_amount: null,
+            balance_currency: "RUB",
+            issues: [error.message],
+            loaded_at: new Date().toISOString(),
+          };
+          setSmsProviderHealth(fallback);
+          if (!silent) setStatus("smsProviderHealth", "Ошибка: " + error.message, "error");
+          return null;
+        }
+      },
+      [api, role, setStatus, token]
+    );
+
     const refreshSection = useCallback(
       async (section, tokenOverride) => {
         if (!(tokenOverride !== undefined ? tokenOverride : token)) return;
         if (section === "dashboard") return loadDashboard(tokenOverride);
         if (section === "kanban") return loadKanban(tokenOverride);
         if (section === "requests") return loadTable("requests", {}, tokenOverride);
+        if (section === "serviceRequests") return loadTable("serviceRequests", {}, tokenOverride);
         if (section === "invoices") return loadTable("invoices", {}, tokenOverride);
         if (section === "quotes" && canAccessSection(role, "quotes")) return loadTable("quotes", {}, tokenOverride);
         if (section === "config" && canAccessSection(role, "config")) return loadCurrentConfigTable(false, tokenOverride);
@@ -2504,6 +2560,55 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       await applyRequestsQuickFilterPreset([{ field: "deadline_alert", op: "=", value: true }], "Показаны заявки с горящими дедлайнами");
     }, [applyRequestsQuickFilterPreset]);
 
+    const applyServiceRequestsQuickFilterPreset = useCallback(
+      async (filters, statusMessage) => {
+        const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
+        resetAdminRoute();
+        setActiveSection("serviceRequests");
+        const currentState = tablesRef.current.serviceRequests || createTableState();
+        setTableState("serviceRequests", {
+          ...currentState,
+          filters: nextFilters,
+          offset: 0,
+          showAll: false,
+        });
+        if (statusMessage) setStatus("serviceRequests", statusMessage, "");
+        await loadTable("serviceRequests", { resetOffset: true, filtersOverride: nextFilters });
+      },
+      [loadTable, resetAdminRoute, setStatus, setTableState, tablesRef]
+    );
+
+    const openServiceRequestsWithUnreadAlerts = useCallback(async () => {
+      if (String(role || "").toUpperCase() === "LAWYER") {
+        await applyServiceRequestsQuickFilterPreset(
+          [{ field: "lawyer_unread", op: "=", value: true }],
+          "Показаны непрочитанные запросы клиента"
+        );
+        return;
+      }
+      await applyServiceRequestsQuickFilterPreset(
+        [{ field: "admin_unread", op: "=", value: true }],
+        "Показаны непрочитанные запросы клиента"
+      );
+    }, [applyServiceRequestsQuickFilterPreset, role]);
+
+    const markServiceRequestRead = useCallback(
+      async (serviceRequestId) => {
+        const rowId = String(serviceRequestId || "").trim();
+        if (!rowId) return;
+        try {
+          setStatus("serviceRequests", "Отмечаем как прочитанный...", "");
+          await api("/api/admin/requests/service-requests/" + encodeURIComponent(rowId) + "/read", { method: "POST" });
+          await Promise.all([loadTable("serviceRequests", { resetOffset: true }), loadDashboard()]);
+          await loadTable("requests", { resetOffset: true });
+          setStatus("serviceRequests", "Запрос отмечен как прочитанный", "ok");
+        } catch (error) {
+          setStatus("serviceRequests", "Ошибка: " + error.message, "error");
+        }
+      },
+      [api, loadDashboard, loadTable, setStatus]
+    );
+
     const logout = useCallback(() => {
       localStorage.removeItem(LS_TOKEN);
       setToken("");
@@ -2524,6 +2629,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         myUnreadTotal: 0,
         unreadForClients: 0,
         unreadForLawyers: 0,
+        serviceRequestUnreadTotal: 0,
         deadlineAlertTotal: 0,
         monthRevenue: 0,
         monthExpenses: 0,
@@ -2540,6 +2646,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         users: [],
       });
       setStatusMap({});
+      setSmsProviderHealth(null);
       setActiveSection("dashboard");
     }, [resetKanbanState, resetRequestWorkspaceState, resetTablesState]);
 
@@ -2629,6 +2736,19 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     }, [isRequestWorkspaceRoute, loadRequestModalData, refreshSection, resetAdminRoute, role, routeInfo.requestId, routeInfo.section, token]);
 
     useEffect(() => {
+      if (!token) {
+        setSmsProviderHealth(null);
+        return;
+      }
+      if (String(role || "").toUpperCase() !== "ADMIN") {
+        setSmsProviderHealth(null);
+        return;
+      }
+      if (activeSection !== "config" || configActiveKey !== "otp_sessions") return;
+      loadSmsProviderHealth(undefined, { silent: true });
+    }, [activeSection, configActiveKey, loadSmsProviderHealth, role, token]);
+
+    useEffect(() => {
       if (!dictionaryTableItems.length) {
         if (configActiveKey) setConfigActiveKey("");
         return;
@@ -2660,6 +2780,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         { key: "dashboard", label: "Обзор" },
         { key: "kanban", label: "Канбан" },
         { key: "requests", label: "Заявки" },
+        { key: "serviceRequests", label: "Запросы" },
         { key: "invoices", label: "Счета" },
       ];
     }, []);
@@ -2671,6 +2792,10 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     }, [dashboardData.myUnreadTotal, dashboardData.unreadForClients, dashboardData.unreadForLawyers, role]);
 
     const topbarDeadlineAlertCount = useMemo(() => Number(dashboardData.deadlineAlertTotal || 0), [dashboardData.deadlineAlertTotal]);
+    const topbarServiceRequestUnreadCount = useMemo(
+      () => Number(dashboardData.serviceRequestUnreadTotal || 0),
+      [dashboardData.serviceRequestUnreadTotal]
+    );
 
     const activeFilterFields = useMemo(() => {
       if (!filterModal.tableKey) return [];
@@ -2793,6 +2918,27 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 <button
                   type="button"
                   className={
+                    "icon-btn topbar-alert-btn" + (topbarServiceRequestUnreadCount > 0 ? " has-alert alert-danger" : "")
+                  }
+                  data-tooltip={
+                    topbarServiceRequestUnreadCount > 0
+                      ? "Новые клиентские запросы: " + String(topbarServiceRequestUnreadCount)
+                      : "Новых клиентских запросов нет"
+                  }
+                  aria-label="Показать непрочитанные запросы клиента"
+                  onClick={openServiceRequestsWithUnreadAlerts}
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                    <path
+                      d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.8a1.5 1.5 0 0 1-1.5 1.5H9.1l-3.7 3.1c-.98.82-2.4.13-2.4-1.14V6a1.5 1.5 0 0 1 1.5-1.5zm1.7 4.2a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm5.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm5.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <span className="topbar-alert-dot" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className={
                     "icon-btn topbar-alert-btn" + (topbarDeadlineAlertCount > 0 ? " has-alert alert-danger" : "")
                   }
                   data-tooltip={
@@ -2897,6 +3043,33 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 onOpenRequest={openRequestDetails}
                 onEditRecord={(row) => openEditRecordModal("requests", row)}
                 onDeleteRecord={(id) => deleteRecord("requests", id)}
+                FilterToolbarComponent={FilterToolbar}
+                DataTableComponent={DataTable}
+                TablePagerComponent={TablePager}
+                StatusLineComponent={StatusLine}
+                IconButtonComponent={IconButton}
+              />
+            </Section>
+
+            <Section active={activeSection === "serviceRequests"} id="section-service-requests">
+              <ServiceRequestsSection
+                role={role}
+                tables={tables}
+                status={getStatus("serviceRequests")}
+                getFieldDef={getFieldDef}
+                getFilterValuePreview={getFilterValuePreview}
+                onRefresh={() => loadTable("serviceRequests", { resetOffset: true })}
+                onOpenFilter={() => openFilterModal("serviceRequests")}
+                onRemoveFilter={(index) => removeFilterChip("serviceRequests", index)}
+                onEditFilter={(index) => openFilterEditModal("serviceRequests", index)}
+                onSort={(field) => toggleTableSort("serviceRequests", field)}
+                onPrev={() => loadPrevPage("serviceRequests")}
+                onNext={() => loadNextPage("serviceRequests")}
+                onLoadAll={() => loadAllRows("serviceRequests")}
+                onOpenRequest={openRequestDetails}
+                onMarkRead={markServiceRequestRead}
+                onEditRecord={(row) => openEditRecordModal("serviceRequests", row)}
+                onDeleteRecord={(id) => deleteRecord("serviceRequests", id)}
                 FilterToolbarComponent={FilterToolbar}
                 DataTableComponent={DataTable}
                 TablePagerComponent={TablePager}
@@ -3034,6 +3207,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 resolveTableConfig={resolveTableConfig}
                 getStatus={getStatus}
                 loadCurrentConfigTable={loadCurrentConfigTable}
+                onRefreshSmsProviderHealth={() => loadSmsProviderHealth(undefined, { silent: false })}
+                smsProviderHealth={smsProviderHealth}
                 openCreateRecordModal={openCreateRecordModal}
                 openFilterModal={openFilterModal}
                 removeFilterChip={removeFilterChip}

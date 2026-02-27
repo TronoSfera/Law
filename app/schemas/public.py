@@ -65,3 +65,21 @@ class PublicTimelineEvent(BaseModel):
     type: Literal["status_change", "message", "attachment"]
     created_at: Optional[str] = None
     payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PublicServiceRequestCreate(BaseModel):
+    type: Literal["CURATOR_CONTACT", "LAWYER_CHANGE_REQUEST"]
+    body: str = Field(min_length=3, max_length=4000)
+
+
+class PublicServiceRequestRead(BaseModel):
+    id: UUID
+    request_id: UUID
+    client_id: Optional[UUID] = None
+    type: str
+    status: str
+    body: str
+    created_by_client: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    resolved_at: Optional[str] = None
