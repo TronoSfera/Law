@@ -5,6 +5,8 @@
   const requestCloseButtons = document.querySelectorAll("[data-close-modal]");
   const accessOpenButtons = document.querySelectorAll("[data-open-access]");
   const accessCloseButtons = document.querySelectorAll("[data-close-access]");
+  const otpModal = document.getElementById("otp-modal");
+  const otpCloseButtons = document.querySelectorAll("[data-close-otp]");
 
   const requestForm = document.getElementById("request-form");
   const requestStatus = document.getElementById("form-status");
@@ -15,6 +17,11 @@
   const accessCodeInput = document.getElementById("access-code");
   const accessSendOtpButton = document.getElementById("access-send-otp");
   const accessStatus = document.getElementById("access-status");
+  const otpModalForm = document.getElementById("otp-modal-form");
+  const otpModalCodeInput = document.getElementById("otp-modal-code");
+  const otpModalCancelButton = document.getElementById("otp-modal-cancel");
+  const otpModalStatus = document.getElementById("otp-modal-status");
+  const otpModalHint = document.getElementById("otp-modal-hint");
 
   const quoteText = document.getElementById("quote-text");
   const quoteMeta = document.getElementById("quote-meta");
@@ -24,6 +31,7 @@
   const featuredTeamDots = document.getElementById("featured-team-dots");
   const featuredTeamPrev = document.getElementById("featured-team-prev");
   const featuredTeamNext = document.getElementById("featured-team-next");
+  let otpModalResolver = null;
 
   function setStatus(el, message, kind) {
     if (!el) return;
@@ -85,6 +93,16 @@
   accessCloseButtons.forEach((button) => {
     button.addEventListener("click", () => closeModal(accessModal));
   });
+  otpCloseButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (otpModalResolver) {
+        const resolve = otpModalResolver;
+        otpModalResolver = null;
+        resolve("");
+      }
+      closeModal(otpModal);
+    });
+  });
 
   [requestModal, accessModal].forEach((modal) => {
     if (!modal) return;
@@ -92,9 +110,68 @@
       if (event.target === modal) closeModal(modal);
     });
   });
+  if (otpModal) {
+    otpModal.addEventListener("click", (event) => {
+      if (event.target !== otpModal) return;
+      if (otpModalResolver) {
+        const resolve = otpModalResolver;
+        otpModalResolver = null;
+        resolve("");
+      }
+      closeModal(otpModal);
+    });
+  }
+
+  function requestOtpCode(hintText) {
+    return new Promise((resolve) => {
+      otpModalResolver = resolve;
+      if (otpModalCodeInput) otpModalCodeInput.value = "";
+      setStatus(otpModalStatus, "", null);
+      if (otpModalHint) otpModalHint.textContent = hintText || "Введите OTP-код из SMS.";
+      openModal(otpModal);
+      setTimeout(() => {
+        if (otpModalCodeInput && typeof otpModalCodeInput.focus === "function") otpModalCodeInput.focus();
+      }, 10);
+    });
+  }
+
+  if (otpModalCancelButton) {
+    otpModalCancelButton.addEventListener("click", () => {
+      if (otpModalResolver) {
+        const resolve = otpModalResolver;
+        otpModalResolver = null;
+        resolve("");
+      }
+      closeModal(otpModal);
+    });
+  }
+
+  if (otpModalForm) {
+    otpModalForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const code = String(otpModalCodeInput?.value || "").trim();
+      if (!code) {
+        setStatus(otpModalStatus, "Введите OTP-код.", "error");
+        return;
+      }
+      setStatus(otpModalStatus, "", null);
+      if (otpModalResolver) {
+        const resolve = otpModalResolver;
+        otpModalResolver = null;
+        resolve(code);
+      }
+      closeModal(otpModal);
+    });
+  }
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
+    if (otpModalResolver && otpModal && otpModal.classList.contains("open")) {
+      const resolve = otpModalResolver;
+      otpModalResolver = null;
+      resolve("");
+    }
+    closeModal(otpModal);
     closeModal(requestModal);
     closeModal(accessModal);
   });
@@ -367,7 +444,10 @@
       const otpSendData = await parseJsonSafe(otpSend);
       if (!otpSend.ok) throw new Error(apiErrorDetail(otpSendData, "Не удалось отправить OTP"));
 
-      const code = window.prompt("Введите OTP-код из SMS (в dev-режиме смотрите backend console):");
+      const isMocked = Boolean(otpSendData?.sms_response?.mocked) || String(otpSendData?.sms_response?.provider || "") === "mock_sms";
+      const code = await requestOtpCode(
+        isMocked ? "Введите OTP-код из SMS (dev-режим: смотрите backend console)." : "Введите OTP-код из SMS."
+      );
       if (!code) throw new Error("Код OTP не введен");
 
       setStatus(requestStatus, "Проверяем OTP...", null);

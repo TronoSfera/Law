@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.deps import get_public_session
 from app.db.session import get_db
 from app.models.attachment import Attachment
+from app.models.message import Message
 from app.models.request import Request
 from app.schemas.uploads import UploadCompletePayload, UploadCompleteResponse, UploadInitPayload, UploadInitResponse, UploadScope
 from app.services.notifications import EVENT_ATTACHMENT as NOTIFICATION_EVENT_ATTACHMENT, notify_request_event
@@ -189,9 +190,18 @@ def upload_complete(
         if int(request.total_attachments_bytes or 0) + actual_size > _max_case_bytes():
             raise HTTPException(status_code=400, detail=f"Превышен лимит вложений заявки ({settings.MAX_CASE_MB} МБ)")
 
+        message_uuid = None
+        if payload.message_id:
+            message_uuid = _uuid_or_400(payload.message_id, "message_id")
+            message = db.get(Message, message_uuid)
+            if message is None or message.request_id != request.id:
+                raise HTTPException(status_code=400, detail="Сообщение не найдено для указанной заявки")
+            if bool(message.immutable):
+                raise HTTPException(status_code=400, detail="Нельзя прикрепить файл к зафиксированному сообщению")
+
         row = Attachment(
             request_id=request.id,
-            message_id=None,
+            message_id=message_uuid,
             file_name=payload.file_name,
             mime_type=payload.mime_type,
             size_bytes=actual_size,

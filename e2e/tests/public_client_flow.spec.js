@@ -35,7 +35,7 @@ test("public flow via UI: landing -> create request -> cabinet -> chat -> upload
 
   const uploadedFile = `public-${Date.now()}.pdf`;
   await uploadCabinetFile(page, uploadedFile, "public file content");
-  const fileRow = page.locator("#cabinet-files .simple-item").filter({ hasText: uploadedFile }).first();
+  const fileRow = page.locator("#cabinet-files li").filter({ hasText: uploadedFile }).first();
   await fileRow.getByRole("button", { name: "Предпросмотр" }).click();
   await page.locator("#file-preview-overlay #file-preview-body").waitFor();
   await page.locator("#file-preview-close").click();

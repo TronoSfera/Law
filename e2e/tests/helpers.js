@@ -245,6 +245,20 @@ async function createRequestViaLanding(page, options = {}) {
   await page.locator("#description").fill(description);
   await page.getByRole("button", { name: "Отправить заявку" }).click();
 
+  const otpModal = page.locator("#otp-modal");
+  const otpCodeInput = page.locator("#otp-modal-code");
+  const otpSubmit = page.locator("#otp-modal-submit");
+  if (await otpModal.isVisible().catch(() => false)) {
+    await otpCodeInput.fill("000000");
+    await otpSubmit.click();
+  } else {
+    await otpModal.waitFor({ state: "visible", timeout: 5000 }).catch(() => null);
+    if (await otpModal.isVisible().catch(() => false)) {
+      await otpCodeInput.fill("000000");
+      await otpSubmit.click();
+    }
+  }
+
   await expect(page.locator("#form-status")).toContainText("Заявка принята. Номер:");
   const statusText = await page.locator("#form-status").innerText();
   const match = statusText.match(/TRK-[A-Z0-9-]+/);
@@ -298,6 +312,10 @@ async function uploadCabinetFile(page, fileName = "e2e.txt", bodyText = "E2E fil
     }
   }
   if (lastError) throw lastError;
+  const filesTab = page.getByRole("tab", { name: /Файлы/ });
+  if (await filesTab.count()) {
+    await filesTab.click();
+  }
   await expect(page.locator("#cabinet-files")).toContainText(fileName);
 }
 

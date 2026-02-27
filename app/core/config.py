@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300
     OTP_SEND_RATE_LIMIT: int = 8
     OTP_VERIFY_RATE_LIMIT: int = 20
+    OTP_DEV_MODE: bool = False
     ADMIN_BOOTSTRAP_ENABLED: bool = True
     ADMIN_BOOTSTRAP_EMAIL: str = "admin@example.com"
     ADMIN_BOOTSTRAP_PASSWORD: str = "admin123"

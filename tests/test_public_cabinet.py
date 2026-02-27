@@ -42,6 +42,15 @@ class _FakeS3Storage:
     def __init__(self):
         self.objects = {}
 
+    def create_presigned_put_url(self, key: str, mime_type: str):
+        return f"http://s3.local/{key}?mime={mime_type}"
+
+    def head_object(self, key: str) -> dict:
+        row = self.objects.get(key)
+        if row is None:
+            raise ClientError({"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject")
+        return {"ContentLength": row["size"]}
+
     def get_object(self, key: str) -> dict:
         row = self.objects.get(key)
         if row is None:
@@ -299,3 +308,82 @@ class PublicCabinetTests(unittest.TestCase):
                 cookies=self._public_cookies("TRK-OTHER"),
             )
             self.assertEqual(denied.status_code, 403)
+
+    def test_public_upload_complete_links_attachment_to_message_when_message_id_provided(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-PUBLIC-UPL-1",
+                client_name="Клиент Файл Сообщение",
+                client_phone="+79995550000",
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка привязки файла к сообщению",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            msg = Message(
+                request_id=req.id,
+                author_type="CLIENT",
+                author_name=req.client_name,
+                body="Сообщение клиента",
+            )
+            db.add(msg)
+            db.commit()
+            db.refresh(req)
+            db.refresh(msg)
+            request_id = str(req.id)
+            message_id = str(msg.id)
+
+        key = f"requests/{request_id}/chat/file.txt"
+        fake_s3.objects[key] = {
+            "content": b"hello",
+            "mime": "text/plain",
+            "size": 5,
+        }
+
+        with patch("app.api.public.uploads.get_s3_storage", return_value=fake_s3):
+            response = self.client.post(
+                "/api/public/uploads/complete",
+                cookies=self._public_cookies("TRK-PUBLIC-UPL-1"),
+                json={
+                    "key": key,
+                    "file_name": "file.txt",
+                    "mime_type": "text/plain",
+                    "size_bytes": 5,
+                    "scope": "REQUEST_ATTACHMENT",
+                    "request_id": request_id,
+                    "message_id": message_id,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        attachment_id = response.json().get("attachment_id")
+        self.assertIsNotNone(attachment_id)
+
+        with self.SessionLocal() as db:
+            row = db.get(Attachment, UUID(attachment_id))
+            self.assertIsNotNone(row)
+            self.assertEqual(str(row.message_id), message_id)
+
+    def test_public_status_route_endpoint_is_available_for_client(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-ROUTE-001",
+                client_name="Клиент Маршрут",
+                client_phone="+79996660000",
+                topic_code="consulting",
+                status_code="IN_PROGRESS",
+                description="Проверка маршрута",
+                extra_fields={},
+            )
+            db.add(req)
+            db.commit()
+
+        response = self.client.get("/api/public/requests/TRK-ROUTE-001/status-route", cookies=self._public_cookies("TRK-ROUTE-001"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("track_number"), "TRK-ROUTE-001")
+        self.assertEqual(payload.get("current_status"), "IN_PROGRESS")
+        self.assertTrue(isinstance(payload.get("nodes"), list))

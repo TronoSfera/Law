@@ -11,6 +11,10 @@ class SmsDeliveryError(Exception):
     pass
 
 
+def _otp_dev_mode_enabled() -> bool:
+    return bool(getattr(settings, "OTP_DEV_MODE", False))
+
+
 def _module_available(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
 
@@ -111,11 +115,26 @@ def _get_sms_aero_balance() -> tuple[float | None, dict[str, Any] | None, str | 
 
 def sms_provider_health() -> dict[str, Any]:
     provider = str(settings.SMS_PROVIDER or "dummy").strip().lower()
+    if _otp_dev_mode_enabled():
+        return {
+            "provider": provider or "dummy",
+            "effective_provider": "mock_sms",
+            "status": "ok",
+            "mode": "mock",
+            "dev_mode": True,
+            "can_send": True,
+            "balance_available": False,
+            "balance_amount": None,
+            "balance_currency": "RUB",
+            "checks": {"otp_dev_mode": True},
+            "issues": ["OTP_DEV_MODE включен: реальная SMS-рассылка отключена"],
+        }
     if provider in {"", "dummy", "mock", "console"}:
         return {
             "provider": "dummy",
             "status": "ok",
             "mode": "mock",
+            "dev_mode": False,
             "can_send": True,
             "balance_available": False,
             "balance_amount": None,
@@ -156,6 +175,7 @@ def sms_provider_health() -> dict[str, Any]:
             "provider": "smsaero",
             "status": "ok" if can_send and balance_available else "degraded",
             "mode": "real",
+            "dev_mode": False,
             "can_send": can_send,
             "balance_available": balance_available,
             "balance_amount": balance_amount,
@@ -169,6 +189,7 @@ def sms_provider_health() -> dict[str, Any]:
         "provider": provider,
         "status": "error",
         "mode": "unknown",
+        "dev_mode": False,
         "can_send": False,
         "balance_available": False,
         "balance_amount": None,
@@ -179,6 +200,11 @@ def sms_provider_health() -> dict[str, Any]:
 
 
 def send_otp_message(*, phone: str, code: str, purpose: str, track_number: str | None = None) -> dict[str, Any]:
+    if _otp_dev_mode_enabled():
+        payload = _mock_sms_send(phone=phone, code=code, purpose=purpose, track_number=track_number)
+        payload["dev_mode"] = True
+        return payload
+
     provider = str(settings.SMS_PROVIDER or "dummy").strip().lower()
     if provider in {"", "dummy", "mock", "console"}:
         return _mock_sms_send(phone=phone, code=code, purpose=purpose, track_number=track_number)

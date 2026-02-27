@@ -31,6 +31,7 @@ SMS_PROVIDER=smsaero
 SMSAERO_EMAIL=your_email@example.com
 SMSAERO_API_KEY=your_api_key
 OTP_SMS_TEMPLATE=Your verification code: {code}
+OTP_DEV_MODE=false
 ```
 
 For local/dev mock mode:
@@ -38,6 +39,12 @@ For local/dev mock mode:
 SMS_PROVIDER=dummy
 ```
 In this mode OTP code is printed to backend logs.
+
+You can also force mock mode with real provider settings:
+```bash
+OTP_DEV_MODE=true
+```
+When enabled, real SMS sending is disabled and OTP code is printed to backend logs.
 
 Admin health-check endpoint (no SMS send):
 `GET /api/admin/system/sms-provider-health`

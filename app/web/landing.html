@@ -236,6 +236,29 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="otp-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="otp-title">
+      <div class="modal-head">
+        <div>
+          <h3 id="otp-title">Подтверждение телефона</h3>
+          <p id="otp-modal-hint">Введите OTP-код из SMS.</p>
+        </div>
+        <button class="close" type="button" data-close-otp aria-label="Закрыть">×</button>
+      </div>
+      <form id="otp-modal-form" class="form">
+        <div class="field full">
+          <label for="otp-modal-code">OTP-код</label>
+          <input id="otp-modal-code" name="otp-modal-code" type="text" inputmode="numeric" pattern="[0-9]{4,8}" placeholder="Введите код из SMS">
+        </div>
+        <div class="form-foot field full">
+          <button class="btn btn-ghost" type="button" id="otp-modal-cancel">Отмена</button>
+          <button class="btn btn-primary" type="submit" id="otp-modal-submit">Подтвердить</button>
+          <p class="status" id="otp-modal-status"></p>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/landing.js"></script>
 </body>
 </html>

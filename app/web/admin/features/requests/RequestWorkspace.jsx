@@ -38,8 +38,11 @@ export function RequestWorkspace({
   onLoadRequestDataTemplateDetails,
   onSaveRequestDataTemplate,
   onSaveRequestDataBatch,
+  onSaveRequestDataValues,
+  onUploadRequestAttachment,
   onChangeStatus,
   onConsumePendingStatusChangePreset,
+  domIds,
   AttachmentPreviewModalComponent,
   StatusLineComponent,
 }) {
@@ -85,8 +88,33 @@ export function RequestWorkspace({
     templateStatus: "",
     error: "",
   });
+  const [clientDataModal, setClientDataModal] = useState({
+    open: false,
+    loading: false,
+    saving: false,
+    messageId: "",
+    items: [],
+    status: "",
+    error: "",
+  });
   const fileInputRef = useRef(null);
   const statusChangeFileInputRef = useRef(null);
+  const idMap = useMemo(
+    () => ({
+      messagesList: "request-modal-messages",
+      filesList: "request-modal-files",
+      messageBody: "request-modal-message-body",
+      sendButton: "request-modal-message-send",
+      fileInput: "request-modal-file-input",
+      fileUploadButton: "",
+      dataRequestOverlay: "data-request-overlay",
+      dataRequestItems: "data-request-items",
+      dataRequestStatus: "data-request-status",
+      dataRequestSave: "data-request-save",
+      ...(domIds || {}),
+    }),
+    [domIds]
+  );
   const requestDataTypeOptions = useMemo(
     () => [
       { value: "string", label: "Строка" },
@@ -130,6 +158,7 @@ export function RequestWorkspace({
   const finance = financeSummary && typeof financeSummary === "object" ? financeSummary : null;
   const viewerRoleCode = String(viewerRole || "").toUpperCase();
   const canRequestData = viewerRoleCode === "LAWYER" || viewerRoleCode === "ADMIN";
+  const canFillRequestData = viewerRoleCode === "CLIENT";
   const canSeeRate = viewerRoleCode !== "CLIENT";
   const safeMessages = Array.isArray(messages) ? messages : [];
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
@@ -142,6 +171,7 @@ export function RequestWorkspace({
   const lawyerPhone = String(row?.assigned_lawyer_phone || "").trim();
   const clientHasPhone = Boolean(clientPhone);
   const lawyerHasPhone = Boolean(lawyerPhone);
+  const messagePlaceholder = canFillRequestData ? "Введите сообщение для юриста" : "Введите сообщение для клиента";
 
   const selectedRequestTemplateCandidate = useMemo(
     () =>
@@ -692,6 +722,123 @@ export function RequestWorkspace({
     }
   };
 
+  const closeClientDataModal = () => {
+    setClientDataModal({
+      open: false,
+      loading: false,
+      saving: false,
+      messageId: "",
+      items: [],
+      status: "",
+      error: "",
+    });
+  };
+
+  const openClientDataRequestModal = async (messageId) => {
+    if (!canFillRequestData || typeof onLoadRequestDataBatch !== "function" || !messageId) return;
+    setClientDataModal({
+      open: true,
+      loading: true,
+      saving: false,
+      messageId: String(messageId),
+      items: [],
+      status: "",
+      error: "",
+    });
+    try {
+      const data = await onLoadRequestDataBatch(String(messageId));
+      const items = Array.isArray(data?.items)
+        ? data.items
+            .slice()
+            .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0))
+            .map((item, index) => ({
+              localId: "client-data-" + String(item?.id || item?.key || index),
+              id: String(item?.id || ""),
+              key: String(item?.key || ""),
+              label: String(item?.label || item?.key || "Поле"),
+              field_type: String(item?.field_type || "string").toLowerCase(),
+              value_text: item?.value_text == null ? "" : String(item.value_text),
+              value_file: item?.value_file || null,
+              pendingFile: null,
+            }))
+        : [];
+      setClientDataModal((prev) => ({ ...prev, loading: false, items }));
+    } catch (error) {
+      setClientDataModal((prev) => ({ ...prev, loading: false, error: error?.message || "Не удалось открыть запрос данных" }));
+    }
+  };
+
+  const updateClientDataItem = (localId, patch) => {
+    setClientDataModal((prev) => ({
+      ...prev,
+      status: "",
+      error: "",
+      items: (prev.items || []).map((item) => (item.localId === localId ? { ...item, ...(patch || {}) } : item)),
+    }));
+  };
+
+  const submitClientDataModal = async (event) => {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    if (!canFillRequestData || typeof onSaveRequestDataValues !== "function") return;
+    const currentMessageId = String(clientDataModal.messageId || "").trim();
+    if (!currentMessageId) return;
+    setClientDataModal((prev) => ({ ...prev, saving: true, status: "", error: "" }));
+    try {
+      const payloadItems = [];
+      for (const item of clientDataModal.items || []) {
+        const fieldType = String(item?.field_type || "string").toLowerCase();
+        if (fieldType === "file") {
+          let attachmentId = String(item?.value_text || "").trim();
+          if (item?.pendingFile) {
+            if (typeof onUploadRequestAttachment !== "function") {
+              throw new Error("Загрузка файла для поля недоступна");
+            }
+            const uploadResult = await onUploadRequestAttachment(item.pendingFile, {
+              source: "data_request",
+              message_id: currentMessageId,
+              key: String(item?.key || ""),
+            });
+            attachmentId = String(
+              (uploadResult && (uploadResult.attachment_id || uploadResult.id || uploadResult.value || uploadResult)) || ""
+            ).trim();
+            if (!attachmentId) throw new Error("Не удалось сохранить файл для поля запроса");
+          }
+          payloadItems.push({
+            id: String(item?.id || ""),
+            key: String(item?.key || ""),
+            attachment_id: attachmentId || "",
+            value_text: attachmentId || "",
+          });
+          continue;
+        }
+        payloadItems.push({
+          id: String(item?.id || ""),
+          key: String(item?.key || ""),
+          value_text: String(item?.value_text || ""),
+        });
+      }
+      await onSaveRequestDataValues({
+        message_id: currentMessageId,
+        items: payloadItems,
+      });
+      setClientDataModal((prev) => ({
+        ...prev,
+        saving: false,
+        status: "Данные сохранены.",
+        items: (prev.items || []).map((item) => ({
+          ...item,
+          pendingFile: null,
+        })),
+      }));
+    } catch (error) {
+      setClientDataModal((prev) => ({
+        ...prev,
+        saving: false,
+        error: error?.message || "Не удалось сохранить данные",
+      }));
+    }
+  };
+
   const handleRequestRowDragStart = (event, rowItem, rowLocked) => {
     if (rowLocked || dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate) {
       event.preventDefault();
@@ -1032,7 +1179,7 @@ export function RequestWorkspace({
           </div>
 
           <input
-            id="request-modal-file-input"
+            id={idMap.fileInput}
             ref={fileInputRef}
             type="file"
             multiple
@@ -1043,7 +1190,7 @@ export function RequestWorkspace({
 
           {chatTab === "chat" ? (
             <>
-              <ul className="simple-list request-modal-list request-chat-list" id="request-modal-messages">
+              <ul className="simple-list request-modal-list request-chat-list" id={idMap.messagesList}>
                 {chatTimelineItems.length ? (
                   chatTimelineItems.map((entry) =>
                     entry.type === "date" ? (
@@ -1077,33 +1224,41 @@ export function RequestWorkspace({
                         </div>
                       </li>
                     ) : (
-                      <li
-                        key={entry.key}
-                        className={
+                      (() => {
+                        const messageKind = String(entry.payload?.message_kind || "");
+                        const isRequestDataMessage = messageKind === "REQUEST_DATA";
+                        const requestDataInteractive = isRequestDataMessage && (canRequestData || canFillRequestData);
+                        const bubbleClass =
+                          "chat-message-bubble" +
+                          (isRequestDataMessage ? " chat-request-data-bubble" : "") +
+                          (entry.payload?.request_data_all_filled ? " all-filled" : "") +
+                          (isRequestDataMessage && canFillRequestData ? " request-data-message-btn" : "");
+                        const itemClass =
                           "chat-message " +
-                          (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing")
-                        }
-                      >
+                          (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing") +
+                          (isRequestDataMessage && canFillRequestData ? " request-data-item" + (entry.payload?.request_data_all_filled ? " done" : "") : "");
+                        return (
+                          <li key={entry.key} className={itemClass}>
                         <div className="chat-message-author">{String(entry.payload?.author_name || entry.payload?.author_type || "Система")}</div>
                         <div
-                          className={
-                            "chat-message-bubble" +
-                            (String(entry.payload?.message_kind || "") === "REQUEST_DATA" ? " chat-request-data-bubble" : "") +
-                            (entry.payload?.request_data_all_filled ? " all-filled" : "")
-                          }
+                          className={bubbleClass}
                           onClick={
-                            String(entry.payload?.message_kind || "") === "REQUEST_DATA" && canRequestData
-                              ? () => openEditDataRequestModal(String(entry.payload?.id || ""))
+                            requestDataInteractive
+                              ? () =>
+                                  canRequestData
+                                    ? openEditDataRequestModal(String(entry.payload?.id || ""))
+                                    : openClientDataRequestModal(String(entry.payload?.id || ""))
                               : undefined
                           }
-                          role={String(entry.payload?.message_kind || "") === "REQUEST_DATA" && canRequestData ? "button" : undefined}
-                          tabIndex={String(entry.payload?.message_kind || "") === "REQUEST_DATA" && canRequestData ? 0 : undefined}
+                          role={requestDataInteractive ? "button" : undefined}
+                          tabIndex={requestDataInteractive ? 0 : undefined}
                           onKeyDown={
-                            String(entry.payload?.message_kind || "") === "REQUEST_DATA" && canRequestData
+                            requestDataInteractive
                               ? (event) => {
                                   if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
-                                    openEditDataRequestModal(String(entry.payload?.id || ""));
+                                    if (canRequestData) openEditDataRequestModal(String(entry.payload?.id || ""));
+                                    else openClientDataRequestModal(String(entry.payload?.id || ""));
                                   }
                                 }
                               : undefined
@@ -1144,7 +1299,9 @@ export function RequestWorkspace({
                           })()}
                           <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
                         </div>
-                      </li>
+                          </li>
+                        );
+                      })()
                     )
                   )
                 ) : (
@@ -1164,10 +1321,10 @@ export function RequestWorkspace({
                   }}
                   onDrop={onDropFiles}
                 >
-                  <label htmlFor="request-modal-message-body">Новое сообщение</label>
+                  <label htmlFor={idMap.messageBody}>Новое сообщение</label>
                   <textarea
-                    id="request-modal-message-body"
-                    placeholder="Введите сообщение для клиента"
+                    id={idMap.messageBody}
+                    placeholder={messagePlaceholder}
                     value={messageDraft}
                     onChange={onMessageChange}
                     disabled={loading || fileUploading}
@@ -1208,6 +1365,17 @@ export function RequestWorkspace({
                       Запросить
                     </button>
                   ) : null}
+                  {canFillRequestData && idMap.fileUploadButton ? (
+                    <button
+                      className="btn secondary btn-sm"
+                      type="button"
+                      id={idMap.fileUploadButton}
+                      onClick={onSendMessage}
+                      disabled={loading || fileUploading || !hasPendingFiles}
+                    >
+                      Загрузить файл
+                    </button>
+                  ) : null}
                   <button
                     className="icon-btn file-action-btn composer-attach-btn"
                     type="button"
@@ -1225,7 +1393,7 @@ export function RequestWorkspace({
                   </button>
                   <button
                     className="btn"
-                    id="request-modal-message-send"
+                    id={idMap.sendButton}
                     type="submit"
                     disabled={loading || fileUploading || !canSubmit}
                   >
@@ -1236,7 +1404,7 @@ export function RequestWorkspace({
             </>
           ) : (
             <div className="request-files-tab">
-              <ul className="simple-list request-modal-list" id="request-modal-files">
+              <ul className="simple-list request-modal-list" id={idMap.filesList}>
                 {safeAttachments.length ? (
                   safeAttachments.map((item) => (
                     <li key={String(item.id)}>
@@ -1251,7 +1419,7 @@ export function RequestWorkspace({
                             type="button"
                             data-tooltip="Предпросмотр"
                             onClick={() => openPreview(item)}
-                            aria-label={"Предпросмотр: " + String(item.file_name || "файл")}
+                            aria-label="Предпросмотр"
                           >
                             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
                               <path
@@ -1305,6 +1473,126 @@ export function RequestWorkspace({
           onClose={closePreview}
         />
       ) : null}
+      <div
+        className={"overlay" + (clientDataModal.open ? " open" : "")}
+        onClick={closeClientDataModal}
+        aria-hidden={clientDataModal.open ? "false" : "true"}
+        id={idMap.dataRequestOverlay}
+      >
+        <div className="modal request-data-summary-modal data-request-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3>Запрос данных</h3>
+              <p className="muted request-finance-subtitle">
+                {row?.track_number ? "Заявка " + String(row.track_number) : "Заполните данные по запросу юриста"}
+              </p>
+            </div>
+            <button className="close" type="button" onClick={closeClientDataModal} aria-label="Закрыть">
+              ×
+            </button>
+          </div>
+          <form className="stack" onSubmit={submitClientDataModal}>
+            <div className="request-data-summary-list" id={idMap.dataRequestItems}>
+              {clientDataModal.loading ? (
+                <p className="muted">Загрузка...</p>
+              ) : (clientDataModal.items || []).length ? (
+                (clientDataModal.items || []).map((item, index) => {
+                  const fieldType = String(item?.field_type || "string").toLowerCase();
+                  const fileMeta = item?.value_file;
+                  return (
+                    <div className="request-data-summary-row" key={String(item.localId || index)}>
+                      <div className="request-data-summary-label">
+                        {String(index + 1) + ". " + String(item?.label || item?.key || "Поле")}
+                      </div>
+                      <div className="request-data-summary-value">
+                        {fieldType === "text" ? (
+                          <textarea
+                            value={String(item?.value_text || "")}
+                            onChange={(event) =>
+                              updateClientDataItem(item.localId, { value_text: event.target.value })
+                            }
+                            rows={3}
+                            disabled={clientDataModal.saving || clientDataModal.loading}
+                          />
+                        ) : fieldType === "date" ? (
+                          <input
+                            type="date"
+                            value={String(item?.value_text || "").slice(0, 10)}
+                            onChange={(event) =>
+                              updateClientDataItem(item.localId, { value_text: event.target.value })
+                            }
+                            disabled={clientDataModal.saving || clientDataModal.loading}
+                          />
+                        ) : fieldType === "number" ? (
+                          <input
+                            type="number"
+                            step="any"
+                            value={String(item?.value_text || "")}
+                            onChange={(event) =>
+                              updateClientDataItem(item.localId, { value_text: event.target.value })
+                            }
+                            disabled={clientDataModal.saving || clientDataModal.loading}
+                          />
+                        ) : fieldType === "file" ? (
+                          <div className="stack">
+                            {fileMeta && fileMeta.download_url ? (
+                              <button
+                                type="button"
+                                className="chat-message-file-chip"
+                                onClick={() => openAttachmentFromMessage(fileMeta)}
+                              >
+                                <span className="chat-message-file-icon" aria-hidden="true">📎</span>
+                                <span className="chat-message-file-name">{String(fileMeta.file_name || "Файл")}</span>
+                              </button>
+                            ) : null}
+                            <input
+                              type="file"
+                              onChange={(event) =>
+                                updateClientDataItem(item.localId, {
+                                  pendingFile: event.target.files && event.target.files[0] ? event.target.files[0] : null,
+                                })
+                              }
+                              disabled={clientDataModal.saving || clientDataModal.loading}
+                            />
+                            {item?.pendingFile ? (
+                              <span className="muted">{String(item.pendingFile.name || "")}</span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={String(item?.value_text || "")}
+                            onChange={(event) =>
+                              updateClientDataItem(item.localId, { value_text: event.target.value })
+                            }
+                            disabled={clientDataModal.saving || clientDataModal.loading}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="muted">Нет полей для заполнения.</p>
+              )}
+            </div>
+            {clientDataModal.error ? <div className="status error">{clientDataModal.error}</div> : null}
+            <div className={"status" + (clientDataModal.status ? " ok" : "")} id={idMap.dataRequestStatus}>
+              {clientDataModal.status || ""}
+            </div>
+            <div className="modal-actions modal-actions-right">
+              <button
+                type="submit"
+                className="btn btn-sm request-data-submit-btn"
+                id={idMap.dataRequestSave}
+                disabled={clientDataModal.loading || clientDataModal.saving}
+              >
+                {clientDataModal.saving ? "Сохранение..." : "Сохранить"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
       <div
         className={"overlay" + (statusChangeModal.open ? " open" : "")}
         onClick={closeStatusChangeModal}

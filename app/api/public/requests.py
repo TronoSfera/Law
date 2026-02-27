@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.deps import get_public_session
@@ -33,6 +34,7 @@ from app.services.notifications import (
 )
 from app.services.request_read_markers import clear_unread_for_client
 from app.services.request_templates import validate_required_topic_fields_or_400
+from app.api.admin.requests_modules.status_flow import get_request_status_route_service
 from app.schemas.public import (
     PublicAttachmentRead,
     PublicMessageCreate,
@@ -263,6 +265,30 @@ def get_request_by_track(
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, session, track_number)
+    topic_name = None
+    if str(req.topic_code or "").strip():
+        try:
+            topic = db.query(Topic).filter(Topic.code == req.topic_code).first()
+            topic_name = topic.name if topic and topic.name else None
+        except SQLAlchemyError:
+            topic_name = None
+    lawyer_name = None
+    lawyer_phone = None
+    lawyer_id = str(req.assigned_lawyer_id or "").strip()
+    if lawyer_id:
+        try:
+            lawyer_uuid = UUID(lawyer_id)
+        except ValueError:
+            lawyer_uuid = None
+        if lawyer_uuid is not None:
+            try:
+                lawyer = db.get(AdminUser, lawyer_uuid)
+            except SQLAlchemyError:
+                lawyer = None
+            if lawyer is not None:
+                lawyer_name = lawyer.name
+                lawyer_phone = lawyer.phone
+
     markers_cleared = clear_unread_for_client(req)
     notifications_cleared = mark_client_notifications_read(
         db,
@@ -282,10 +308,17 @@ def get_request_by_track(
         "client_name": req.client_name,
         "client_phone": req.client_phone,
         "topic_code": req.topic_code,
+        "topic_name": topic_name,
         "status_code": req.status_code,
+        "important_date_at": _to_iso(req.important_date_at),
         "description": req.description,
         "extra_fields": req.extra_fields,
         "assigned_lawyer_id": req.assigned_lawyer_id,
+        "assigned_lawyer_name": lawyer_name or req.assigned_lawyer_id,
+        "assigned_lawyer_phone": lawyer_phone,
+        "request_cost": float(req.request_cost) if req.request_cost is not None else None,
+        "effective_rate": float(req.effective_rate) if req.effective_rate is not None else None,
+        "paid_at": _to_iso(req.paid_at),
         "client_has_unread_updates": req.client_has_unread_updates,
         "client_unread_event_type": req.client_unread_event_type,
         "lawyer_has_unread_updates": req.lawyer_has_unread_updates,
@@ -293,6 +326,59 @@ def get_request_by_track(
         "created_at": _to_iso(req.created_at),
         "updated_at": _to_iso(req.updated_at),
     }
+
+
+@router.get("/{track_number}/status-route")
+def get_status_route_by_track(
+    track_number: str,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, session, track_number)
+    try:
+        payload = get_request_status_route_service(
+            str(req.id),
+            db,
+            {"role": "ADMIN", "sub": "", "email": "Клиент"},
+        )
+        payload["available_statuses"] = []
+        return payload
+    except Exception:
+        current = str(req.status_code or "").strip()
+        changed_at = _to_iso(req.updated_at or req.created_at)
+        return {
+            "request_id": str(req.id),
+            "track_number": req.track_number,
+            "topic_code": req.topic_code,
+            "current_status": current or None,
+            "current_important_date_at": _to_iso(req.important_date_at),
+            "available_statuses": [],
+            "history": [
+                {
+                    "id": "current",
+                    "from_status": None,
+                    "to_status": current or None,
+                    "to_status_name": current or None,
+                    "changed_at": changed_at,
+                    "important_date_at": _to_iso(req.important_date_at),
+                    "comment": None,
+                    "duration_seconds": None,
+                }
+            ],
+            "nodes": [
+                {
+                    "code": current or "",
+                    "name": current or "-",
+                    "kind": "DEFAULT",
+                    "state": "current",
+                    "changed_at": changed_at,
+                    "sla_hours": None,
+                    "note": "Текущий этап обработки заявки",
+                }
+            ]
+            if current
+            else [],
+        }
 
 
 @router.get("/{track_number}/messages", response_model=list[PublicMessageRead])

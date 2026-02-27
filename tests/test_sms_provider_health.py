@@ -25,6 +25,7 @@ class SmsProviderHealthTests(unittest.TestCase):
             "SMS_PROVIDER": settings.SMS_PROVIDER,
             "SMSAERO_EMAIL": settings.SMSAERO_EMAIL,
             "SMSAERO_API_KEY": settings.SMSAERO_API_KEY,
+            "OTP_DEV_MODE": settings.OTP_DEV_MODE,
         }
 
     def tearDown(self):
@@ -113,3 +114,16 @@ class SmsProviderHealthTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body.get("status"), "error")
         self.assertFalse(bool(body.get("can_send")))
+
+    def test_sms_provider_health_dev_mode_forces_mock(self):
+        settings.SMS_PROVIDER = "smsaero"
+        settings.SMSAERO_EMAIL = ""
+        settings.SMSAERO_API_KEY = ""
+        settings.OTP_DEV_MODE = True
+        response = self.client.get("/api/admin/system/sms-provider-health", headers=self._headers("ADMIN"))
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body.get("status"), "ok")
+        self.assertEqual(body.get("mode"), "mock")
+        self.assertTrue(bool(body.get("dev_mode")))
+        self.assertEqual(body.get("effective_provider"), "mock_sms")
