@@ -621,6 +621,41 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
       [activeTrack, apiJson, loadRequestWorkspace]
     );
 
+    const probeLiveState = useCallback(
+      async ({ cursor } = {}) => {
+        const track = String(activeTrack || "").trim();
+        if (!track) return { has_updates: false, typing: [], cursor: null };
+        const query = cursor ? "?cursor=" + encodeURIComponent(String(cursor)) : "";
+        const payload = await apiJson(
+          "/api/public/chat/requests/" + encodeURIComponent(track) + "/live" + query,
+          null,
+          "Не удалось получить live-обновления чата"
+        );
+        if (payload && payload.has_updates) {
+          await loadRequestWorkspace(track, false);
+        }
+        return payload || { has_updates: false, typing: [], cursor: null };
+      },
+      [activeTrack, apiJson, loadRequestWorkspace]
+    );
+
+    const setTypingSignal = useCallback(
+      async ({ typing } = {}) => {
+        const track = String(activeTrack || "").trim();
+        if (!track) return { status: "skipped", typing: false };
+        return apiJson(
+          "/api/public/chat/requests/" + encodeURIComponent(track) + "/typing",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ typing: Boolean(typing) }),
+          },
+          "Не удалось обновить статус набора"
+        );
+      },
+      [activeTrack, apiJson]
+    );
+
     const openServiceRequestModal = useCallback((type) => {
       const normalized = String(type || "").trim().toUpperCase();
       if (!normalized) return;
@@ -797,6 +832,8 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
               onSaveRequestDataValues={saveRequestDataValues}
               onUploadRequestAttachment={uploadPublicRequestAttachment}
               onChangeStatus={() => Promise.resolve(null)}
+              onLiveProbe={probeLiveState}
+              onTypingSignal={setTypingSignal}
               AttachmentPreviewModalComponent={AttachmentPreviewModal}
               StatusLineComponent={StatusLine}
               domIds={{
@@ -805,7 +842,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
                 messageBody: "cabinet-chat-body",
                 sendButton: "cabinet-chat-send",
                 fileInput: "cabinet-file-input",
-                fileUploadButton: "cabinet-file-upload",
                 dataRequestOverlay: "data-request-overlay",
                 dataRequestItems: "data-request-items",
                 dataRequestStatus: "data-request-status",

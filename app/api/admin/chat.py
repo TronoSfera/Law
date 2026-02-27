@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,13 +18,51 @@ from app.models.request_data_template_item import RequestDataTemplateItem
 from app.models.topic_data_template import TopicDataTemplate
 from app.services.chat_service import (
     create_admin_or_lawyer_message,
+    get_chat_activity_summary,
     list_messages_for_request,
     serialize_message,
     serialize_messages_for_request,
 )
+from app.services.chat_presence import list_typing_presence, set_typing_presence
 
 router = APIRouter()
 ALLOWED_VALUE_TYPES = {"string", "text", "date", "number", "file"}
+
+
+def _parse_cursor(raw: str | None) -> datetime | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _iso_or_none(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat()
+
+
+def _as_utc_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        return _parse_cursor(value)
+    return None
 
 
 def _request_uuid_or_400(request_id: str) -> UUID:
@@ -222,6 +261,62 @@ def create_request_message(
         actor_admin_user_id=actor_admin_user_id,
     )
     return serialize_message(row)
+
+
+@router.get("/requests/{request_id}/live")
+def get_request_live_state(
+    request_id: str,
+    cursor: str | None = None,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    req = _request_for_id_or_404(db, request_id)
+    _ensure_lawyer_can_view_request_or_403(admin, req)
+    summary = get_chat_activity_summary(db, req.id)
+    latest_activity_at = _as_utc_datetime(summary.get("latest_activity_at"))
+    latest_activity_iso = _iso_or_none(latest_activity_at)
+    cursor_dt = _parse_cursor(cursor)
+    has_updates = bool(latest_activity_at and (cursor_dt is None or latest_activity_at > cursor_dt))
+
+    actor_sub = str(admin.get("sub") or "").strip() or "unknown"
+    actor_role = str(admin.get("role") or "").strip().upper() or "UNKNOWN"
+    actor_key = f"{actor_role}:{actor_sub}"
+    typing_rows = list_typing_presence(request_key=str(req.id), exclude_actor_key=actor_key)
+    return {
+        "request_id": str(req.id),
+        "cursor": latest_activity_iso,
+        "has_updates": has_updates,
+        "message_count": int(summary.get("message_count") or 0),
+        "attachment_count": int(summary.get("attachment_count") or 0),
+        "latest_message_at": _iso_or_none(_as_utc_datetime(summary.get("latest_message_at"))),
+        "latest_attachment_at": _iso_or_none(_as_utc_datetime(summary.get("latest_attachment_at"))),
+        "typing": typing_rows,
+    }
+
+
+@router.post("/requests/{request_id}/typing")
+def set_request_typing_state(
+    request_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    req = _request_for_id_or_404(db, request_id)
+    _ensure_lawyer_can_manage_request_or_403(admin, req)
+    actor_role = str(admin.get("role") or "").strip().upper() or "UNKNOWN"
+    actor_sub = str(admin.get("sub") or "").strip() or "unknown"
+    actor_email = str(admin.get("email") or "").strip()
+    actor_key = f"{actor_role}:{actor_sub}"
+    actor_label = actor_email or ("Юрист" if actor_role == "LAWYER" else "Администратор")
+    typing = bool((payload or {}).get("typing"))
+    set_typing_presence(
+        request_key=str(req.id),
+        actor_key=actor_key,
+        actor_label=actor_label,
+        actor_role=actor_role,
+        typing=typing,
+    )
+    return {"status": "ok", "typing": typing}
 
 
 @router.get("/requests/{request_id}/data-request-templates")

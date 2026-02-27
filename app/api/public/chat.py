@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,10 +12,53 @@ from app.models.message import Message
 from app.models.request import Request
 from app.models.request_data_requirement import RequestDataRequirement
 from app.schemas.public import PublicMessageCreate
-from app.services.chat_service import create_client_message, list_messages_for_request, serialize_message, serialize_messages_for_request
+from app.services.chat_presence import list_typing_presence, set_typing_presence
+from app.services.chat_service import (
+    create_client_message,
+    get_chat_activity_summary,
+    list_messages_for_request,
+    serialize_message,
+    serialize_messages_for_request,
+)
 from app.services.request_read_markers import EVENT_MESSAGE, mark_unread_for_lawyer
 
 router = APIRouter()
+
+
+def _parse_cursor(raw: str | None) -> datetime | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _iso_or_none(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat()
+
+
+def _as_utc_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        return _parse_cursor(value)
+    return None
 
 
 def _attachment_meta_for_public(req: Request, value_text: str | None, db: Session) -> dict | None:
@@ -99,6 +143,58 @@ def create_message_by_track(
     _ensure_view_access_or_403(session, req)
     row = create_client_message(db, request=req, body=payload.body)
     return serialize_message(row)
+
+
+@router.get("/requests/{track_number}/live")
+def get_live_chat_state_by_track(
+    track_number: str,
+    cursor: str | None = None,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, track_number)
+    _ensure_view_access_or_403(session, req)
+    summary = get_chat_activity_summary(db, req.id)
+    latest_activity_at = _as_utc_datetime(summary.get("latest_activity_at"))
+    latest_activity_iso = _iso_or_none(latest_activity_at)
+    cursor_dt = _parse_cursor(cursor)
+    has_updates = bool(latest_activity_at and (cursor_dt is None or latest_activity_at > cursor_dt))
+
+    subject = _require_view_session_or_403(session)
+    actor_key = f"CLIENT:{_normalize_track(subject) or _normalize_phone(subject)}"
+    typing_rows = list_typing_presence(request_key=str(req.id), exclude_actor_key=actor_key)
+    return {
+        "track_number": req.track_number,
+        "cursor": latest_activity_iso,
+        "has_updates": has_updates,
+        "message_count": int(summary.get("message_count") or 0),
+        "attachment_count": int(summary.get("attachment_count") or 0),
+        "latest_message_at": _iso_or_none(_as_utc_datetime(summary.get("latest_message_at"))),
+        "latest_attachment_at": _iso_or_none(_as_utc_datetime(summary.get("latest_attachment_at"))),
+        "typing": typing_rows,
+    }
+
+
+@router.post("/requests/{track_number}/typing")
+def set_live_chat_typing_by_track(
+    track_number: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, track_number)
+    _ensure_view_access_or_403(session, req)
+    subject = _require_view_session_or_403(session)
+    typing = bool((payload or {}).get("typing"))
+    actor_key = f"CLIENT:{_normalize_track(subject) or _normalize_phone(subject)}"
+    set_typing_presence(
+        request_key=str(req.id),
+        actor_key=actor_key,
+        actor_label=str(req.client_name or "Клиент"),
+        actor_role="CLIENT",
+        typing=typing,
+    )
+    return {"status": "ok", "typing": typing}
 
 
 @router.get("/requests/{track_number}/data-requests/{message_id}")

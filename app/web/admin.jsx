@@ -981,6 +981,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       clearPendingStatusChangePreset,
       submitRequestStatusChange,
       submitRequestModalMessage,
+      probeRequestLive,
+      setRequestTyping,
       loadRequestDataTemplates,
       loadRequestDataBatch,
       loadRequestDataTemplateDetails,
@@ -3129,6 +3131,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 onSaveRequestDataBatch={saveRequestDataBatch}
                 onChangeStatus={submitRequestStatusChange}
                 onConsumePendingStatusChangePreset={clearPendingStatusChangePreset}
+                onLiveProbe={probeRequestLive}
+                onTypingSignal={setRequestTyping}
                 AttachmentPreviewModalComponent={AttachmentPreviewModal}
                 StatusLineComponent={StatusLine}
               />

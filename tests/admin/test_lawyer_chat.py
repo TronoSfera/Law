@@ -1,7 +1,16 @@
 from tests.admin.base import *  # noqa: F401,F403
+from app.services.chat_presence import clear_presence_for_tests
 
 
 class AdminLawyerChatTests(AdminUniversalCrudBase):
+    def setUp(self):
+        super().setUp()
+        clear_presence_for_tests()
+
+    def tearDown(self):
+        clear_presence_for_tests()
+        super().tearDown()
+
     def test_lawyer_permissions_and_request_crud(self):
         lawyer_headers = self._auth_headers("LAWYER")
 
@@ -417,3 +426,103 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(admin_create.status_code, 201)
         self.assertEqual(admin_create.json()["author_type"], "SYSTEM")
 
+    def test_admin_chat_live_and_typing_endpoints_follow_rbac(self):
+        with self.SessionLocal() as db:
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Live Свой",
+                email="lawyer.live.self@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_other = AdminUser(
+                role="LAWYER",
+                name="Юрист Live Чужой",
+                email="lawyer.live.other@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer_self, lawyer_other])
+            db.flush()
+            self_id = str(lawyer_self.id)
+            other_id = str(lawyer_other.id)
+
+            own = Request(
+                track_number="TRK-CHAT-LIVE-OWN",
+                client_name="Клиент Live Свой",
+                client_phone="+79995550101",
+                status_code="IN_PROGRESS",
+                description="own",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            foreign = Request(
+                track_number="TRK-CHAT-LIVE-FOREIGN",
+                client_name="Клиент Live Чужой",
+                client_phone="+79995550102",
+                status_code="IN_PROGRESS",
+                description="foreign",
+                extra_fields={},
+                assigned_lawyer_id=other_id,
+            )
+            unassigned = Request(
+                track_number="TRK-CHAT-LIVE-UNASSIGNED",
+                client_name="Клиент Live Без назначения",
+                client_phone="+79995550103",
+                status_code="NEW",
+                description="unassigned",
+                extra_fields={},
+                assigned_lawyer_id=None,
+            )
+            db.add_all([own, foreign, unassigned])
+            db.flush()
+            db.add(Message(request_id=own.id, author_type="CLIENT", author_name="Клиент", body="live start"))
+            db.commit()
+            own_id = str(own.id)
+            foreign_id = str(foreign.id)
+            unassigned_id = str(unassigned.id)
+
+        lawyer_headers = self._auth_headers("LAWYER", email="lawyer.live.self@example.com", sub=self_id)
+        admin_headers = self._auth_headers("ADMIN", email="root@example.com")
+
+        own_live = self.client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
+        self.assertEqual(own_live.status_code, 200)
+        own_cursor = str(own_live.json().get("cursor") or "")
+        own_live_no_delta = self.client.get(
+            f"/api/admin/chat/requests/{own_id}/live",
+            headers=lawyer_headers,
+            params={"cursor": own_cursor},
+        )
+        self.assertEqual(own_live_no_delta.status_code, 200)
+        self.assertFalse(bool(own_live_no_delta.json().get("has_updates")))
+
+        foreign_live = self.client.get(f"/api/admin/chat/requests/{foreign_id}/live", headers=lawyer_headers)
+        self.assertEqual(foreign_live.status_code, 403)
+
+        own_typing = self.client.post(
+            f"/api/admin/chat/requests/{own_id}/typing",
+            headers=lawyer_headers,
+            json={"typing": True},
+        )
+        self.assertEqual(own_typing.status_code, 200)
+        self.assertTrue(bool(own_typing.json().get("typing")))
+
+        unassigned_typing = self.client.post(
+            f"/api/admin/chat/requests/{unassigned_id}/typing",
+            headers=lawyer_headers,
+            json={"typing": True},
+        )
+        self.assertEqual(unassigned_typing.status_code, 403)
+
+        admin_typing = self.client.post(
+            f"/api/admin/chat/requests/{own_id}/typing",
+            headers=admin_headers,
+            json={"typing": True},
+        )
+        self.assertEqual(admin_typing.status_code, 200)
+        self.assertTrue(bool(admin_typing.json().get("typing")))
+
+        own_live_with_typing = self.client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
+        self.assertEqual(own_live_with_typing.status_code, 200)
+        typing_rows = own_live_with_typing.json().get("typing") or []
+        self.assertTrue(any(str(item.get("actor_role")) == "ADMIN" for item in typing_rows))

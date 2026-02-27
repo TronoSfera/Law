@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.message import Message
@@ -212,3 +213,31 @@ def create_admin_or_lawyer_message(
     db.commit()
     db.refresh(row)
     return row
+
+
+def get_chat_activity_summary(db: Session, request_id: Any) -> dict[str, Any]:
+    message_count, latest_message_at = (
+        db.query(
+            func.count(Message.id),
+            func.max(func.coalesce(Message.updated_at, Message.created_at)),
+        )
+        .filter(Message.request_id == request_id)
+        .one()
+    )
+    attachment_count, latest_attachment_at = (
+        db.query(
+            func.count(Attachment.id),
+            func.max(func.coalesce(Attachment.updated_at, Attachment.created_at)),
+        )
+        .filter(Attachment.request_id == request_id)
+        .one()
+    )
+    latest_candidates = [value for value in (latest_message_at, latest_attachment_at) if value is not None]
+    latest_activity_at = max(latest_candidates) if latest_candidates else None
+    return {
+        "message_count": int(message_count or 0),
+        "attachment_count": int(attachment_count or 0),
+        "latest_message_at": latest_message_at,
+        "latest_attachment_at": latest_attachment_at,
+        "latest_activity_at": latest_activity_at,
+    }

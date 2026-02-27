@@ -27,6 +27,7 @@ from app.models.notification import Notification
 from app.models.request import Request
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.status_history import StatusHistory
+from app.services.chat_presence import clear_presence_for_tests, set_typing_presence
 
 
 class _FakeBody:
@@ -85,6 +86,7 @@ class PublicCabinetTests(unittest.TestCase):
         cls.engine.dispose()
 
     def setUp(self):
+        clear_presence_for_tests()
         with self.SessionLocal() as db:
             db.execute(delete(Notification))
             db.execute(delete(StatusHistory))
@@ -107,6 +109,7 @@ class PublicCabinetTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         app.dependency_overrides.clear()
+        clear_presence_for_tests()
 
     @staticmethod
     def _public_cookies(track_number: str) -> dict[str, str]:
@@ -243,6 +246,66 @@ class PublicCabinetTests(unittest.TestCase):
 
         denied = self.client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
         self.assertEqual(denied.status_code, 403)
+
+    def test_public_live_endpoint_and_typing_state(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-LIVE-001",
+                client_name="Клиент Live",
+                client_phone="+79997771234",
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка live",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            db.add(
+                Message(
+                    request_id=req.id,
+                    author_type="LAWYER",
+                    author_name="Юрист",
+                    body="Первое сообщение",
+                )
+            )
+            db.commit()
+            request_id = str(req.id)
+
+        cookies = self._public_cookies("TRK-LIVE-001")
+        live_initial = self.client.get("/api/public/chat/requests/TRK-LIVE-001/live", cookies=cookies)
+        self.assertEqual(live_initial.status_code, 200)
+        live_body = live_initial.json()
+        self.assertTrue(bool(live_body.get("has_updates")))
+        self.assertTrue(bool(live_body.get("cursor")))
+
+        set_typing_presence(
+            request_key=request_id,
+            actor_key="LAWYER:test",
+            actor_label="Юрист Тест",
+            actor_role="LAWYER",
+            typing=True,
+        )
+        live_with_typing = self.client.get("/api/public/chat/requests/TRK-LIVE-001/live", cookies=cookies)
+        self.assertEqual(live_with_typing.status_code, 200)
+        typing_rows = live_with_typing.json().get("typing") or []
+        self.assertTrue(any(str(item.get("actor_label")) == "Юрист Тест" for item in typing_rows))
+
+        current_cursor = str(live_with_typing.json().get("cursor") or "")
+        live_no_delta = self.client.get(
+            "/api/public/chat/requests/TRK-LIVE-001/live",
+            params={"cursor": current_cursor},
+            cookies=cookies,
+        )
+        self.assertEqual(live_no_delta.status_code, 200)
+        self.assertFalse(bool(live_no_delta.json().get("has_updates")))
+
+        typing_on = self.client.post(
+            "/api/public/chat/requests/TRK-LIVE-001/typing",
+            cookies=cookies,
+            json={"typing": True},
+        )
+        self.assertEqual(typing_on.status_code, 200)
+        self.assertTrue(bool(typing_on.json().get("typing")))
 
     def test_public_cabinet_respects_track_access(self):
         with self.SessionLocal() as db:

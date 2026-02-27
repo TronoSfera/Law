@@ -337,6 +337,32 @@ export function useRequestWorkspace(options) {
     setRequestModal((prev) => ({ ...prev, pendingStatusChangePreset: null }));
   }, []);
 
+  const probeRequestLive = useCallback(
+    async ({ cursor } = {}) => {
+      const requestId = requestModal.requestId;
+      if (!api || !requestId) return { has_updates: false, typing: [], cursor: null };
+      const query = cursor ? "?cursor=" + encodeURIComponent(String(cursor)) : "";
+      const payload = await api("/api/admin/chat/requests/" + requestId + "/live" + query);
+      if (payload && payload.has_updates) {
+        await loadRequestModalData(requestId, { showLoading: false });
+      }
+      return payload || { has_updates: false, typing: [], cursor: null };
+    },
+    [api, loadRequestModalData, requestModal.requestId]
+  );
+
+  const setRequestTyping = useCallback(
+    async ({ typing } = {}) => {
+      const requestId = requestModal.requestId;
+      if (!api || !requestId) return { status: "skipped", typing: false };
+      return api("/api/admin/chat/requests/" + requestId + "/typing", {
+        method: "POST",
+        body: { typing: Boolean(typing) },
+      });
+    },
+    [api, requestModal.requestId]
+  );
+
   const submitRequestStatusChange = useCallback(
     async ({ requestId, statusCode, importantDateAt, comment, files } = {}) => {
       if (!api) throw new Error("API недоступен");
@@ -425,6 +451,8 @@ export function useRequestWorkspace(options) {
     clearPendingStatusChangePreset,
     submitRequestStatusChange,
     submitRequestModalMessage,
+    probeRequestLive,
+    setRequestTyping,
     loadRequestDataTemplates,
     loadRequestDataBatch,
     loadRequestDataTemplateDetails,

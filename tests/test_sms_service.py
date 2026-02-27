@@ -33,6 +33,7 @@ class SmsServiceTests(unittest.TestCase):
         payload = send_otp_message(phone="+79990000000", code="111111", purpose="CREATE_REQUEST")
         self.assertEqual(payload.get("provider"), "mock_sms")
         self.assertTrue(bool(payload.get("dev_mode")))
+        self.assertEqual(payload.get("debug_code"), "111111")
 
     def test_unknown_provider_raises(self):
         settings.SMS_PROVIDER = "unknown"

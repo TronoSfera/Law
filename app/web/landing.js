@@ -379,6 +379,10 @@
       });
       const data = await parseJsonSafe(response);
       if (!response.ok) throw new Error(apiErrorDetail(data, "Не удалось отправить OTP"));
+      const debugCode = String(data?.sms_response?.debug_code || "").trim();
+      if (debugCode) {
+        console.info("[OTP DEV] VIEW_REQUEST code:", debugCode);
+      }
       setStatus(accessStatus, "Код отправлен. Проверьте SMS.", "ok");
     } catch (error) {
       setStatus(accessStatus, error?.message || "Не удалось отправить OTP", "error");
@@ -443,6 +447,10 @@
       });
       const otpSendData = await parseJsonSafe(otpSend);
       if (!otpSend.ok) throw new Error(apiErrorDetail(otpSendData, "Не удалось отправить OTP"));
+      const debugCode = String(otpSendData?.sms_response?.debug_code || "").trim();
+      if (debugCode) {
+        console.info("[OTP DEV] CREATE_REQUEST code:", debugCode);
+      }
 
       const isMocked = Boolean(otpSendData?.sms_response?.mocked) || String(otpSendData?.sms_response?.provider || "") === "mock_sms";
       const code = await requestOtpCode(

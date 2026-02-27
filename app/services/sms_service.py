@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import logging
 from typing import Any
 
 from app.core.config import settings
@@ -9,6 +10,9 @@ from app.core.config import settings
 
 class SmsDeliveryError(Exception):
     pass
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def _otp_dev_mode_enabled() -> bool:
@@ -39,7 +43,8 @@ def _build_otp_message(*, code: str, purpose: str, track_number: str | None) -> 
 
 
 def _mock_sms_send(*, phone: str, code: str, purpose: str, track_number: str | None) -> dict[str, Any]:
-    print(f"[OTP MOCK] purpose={purpose} phone={phone} track={track_number or '-'} code={code}")
+    line = f"[OTP MOCK] purpose={purpose} phone={phone} track={track_number or '-'} code={code}"
+    logger.warning(line)
     return {
         "provider": "mock_sms",
         "status": "accepted",
@@ -203,6 +208,7 @@ def send_otp_message(*, phone: str, code: str, purpose: str, track_number: str |
     if _otp_dev_mode_enabled():
         payload = _mock_sms_send(phone=phone, code=code, purpose=purpose, track_number=track_number)
         payload["dev_mode"] = True
+        payload["debug_code"] = str(code)
         return payload
 
     provider = str(settings.SMS_PROVIDER or "dummy").strip().lower()

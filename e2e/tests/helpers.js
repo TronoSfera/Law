@@ -300,7 +300,7 @@ async function uploadCabinetFile(page, fileName = "e2e.txt", bodyText = "E2E fil
       mimeType,
       buffer,
     });
-    await page.locator("#cabinet-file-upload").click();
+    await page.locator("#cabinet-chat-send").click();
 
     try {
       await expect(page.locator("#client-page-status")).toContainText("Файл загружен.", { timeout: 20_000 });

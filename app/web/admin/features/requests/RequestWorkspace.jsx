@@ -42,6 +42,8 @@ export function RequestWorkspace({
   onUploadRequestAttachment,
   onChangeStatus,
   onConsumePendingStatusChangePreset,
+  onLiveProbe,
+  onTypingSignal,
   domIds,
   AttachmentPreviewModalComponent,
   StatusLineComponent,
@@ -97,8 +99,19 @@ export function RequestWorkspace({
     status: "",
     error: "",
   });
+  const [composerFocused, setComposerFocused] = useState(false);
+  const [typingPeers, setTypingPeers] = useState([]);
+  const [liveMode, setLiveMode] = useState("online");
   const fileInputRef = useRef(null);
   const statusChangeFileInputRef = useRef(null);
+  const chatListRef = useRef(null);
+  const liveCursorRef = useRef("");
+  const liveTimerRef = useRef(null);
+  const liveInFlightRef = useRef(false);
+  const liveFailCountRef = useRef(0);
+  const typingHeartbeatRef = useRef(null);
+  const typingActiveRef = useRef(false);
+  const lastAutoScrollCursorRef = useRef("");
   const idMap = useMemo(
     () => ({
       messagesList: "request-modal-messages",
@@ -367,6 +380,40 @@ export function RequestWorkspace({
     return map;
   }, [safeAttachments]);
 
+  const localActivityCursor = useMemo(() => {
+    let latestTs = 0;
+    const pickLatest = (value) => {
+      if (!value) return;
+      const ts = new Date(value).getTime();
+      if (Number.isFinite(ts) && ts > latestTs) latestTs = ts;
+    };
+    safeMessages.forEach((item) => {
+      pickLatest(item?.updated_at);
+      pickLatest(item?.created_at);
+    });
+    safeAttachments.forEach((item) => {
+      pickLatest(item?.updated_at);
+      pickLatest(item?.created_at);
+    });
+    return latestTs > 0 ? new Date(latestTs).toISOString() : "";
+  }, [safeAttachments, safeMessages]);
+
+  const typingHintText = useMemo(() => {
+    const rows = Array.isArray(typingPeers) ? typingPeers : [];
+    if (!rows.length) return "";
+    const labels = rows
+      .map((item) => String(item?.actor_label || item?.label || "").trim())
+      .filter(Boolean);
+    if (!labels.length) return "Собеседник печатает...";
+    const unique = [];
+    labels.forEach((label) => {
+      if (!unique.includes(label)) unique.push(label);
+    });
+    if (unique.length === 1) return unique[0] + " печатает...";
+    if (unique.length === 2) return unique[0] + " и " + unique[1] + " печатают...";
+    return unique[0] + ", " + unique[1] + " и еще " + String(unique.length - 2) + " печатают...";
+  }, [typingPeers]);
+
   const openAttachmentFromMessage = (item) => {
     if (!item?.download_url) return;
     const kind = detectAttachmentPreviewKind(item.file_name, item.mime_type);
@@ -376,6 +423,121 @@ export function RequestWorkspace({
     }
     openPreview(item);
   };
+
+  useEffect(() => {
+    liveCursorRef.current = localActivityCursor || "";
+  }, [localActivityCursor, row?.id]);
+
+  useEffect(() => {
+    if (!row || typeof onLiveProbe !== "function") {
+      setTypingPeers([]);
+      setLiveMode("online");
+      if (liveTimerRef.current) {
+        clearTimeout(liveTimerRef.current);
+        liveTimerRef.current = null;
+      }
+      liveInFlightRef.current = false;
+      liveFailCountRef.current = 0;
+      return undefined;
+    }
+
+    let cancelled = false;
+    const scheduleNext = (ms) => {
+      if (cancelled) return;
+      if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+      liveTimerRef.current = setTimeout(runProbe, ms);
+    };
+
+    const runProbe = async () => {
+      if (cancelled || liveInFlightRef.current) return;
+      liveInFlightRef.current = true;
+      try {
+        const payload = await onLiveProbe({ cursor: liveCursorRef.current });
+        const cursor = String(payload?.cursor || "").trim();
+        if (cursor) liveCursorRef.current = cursor;
+        setTypingPeers(Array.isArray(payload?.typing) ? payload.typing : []);
+        liveFailCountRef.current = 0;
+        setLiveMode("online");
+      } catch (_) {
+        liveFailCountRef.current += 1;
+        setLiveMode(liveFailCountRef.current >= 3 ? "degraded" : "online");
+      } finally {
+        liveInFlightRef.current = false;
+        const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+        const baseInterval = hidden ? 8000 : 2500;
+        const failStep = Math.min(5, Math.max(0, liveFailCountRef.current));
+        const backoffInterval = failStep > 0 ? Math.min(30000, baseInterval * Math.pow(2, failStep - 1)) : baseInterval;
+        scheduleNext(backoffInterval);
+      }
+    };
+
+    runProbe();
+    return () => {
+      cancelled = true;
+      if (liveTimerRef.current) {
+        clearTimeout(liveTimerRef.current);
+        liveTimerRef.current = null;
+      }
+      liveInFlightRef.current = false;
+      liveFailCountRef.current = 0;
+      setTypingPeers([]);
+      setLiveMode("online");
+    };
+  }, [onLiveProbe, row, trackNumber]);
+
+  const typingEnabled = Boolean(
+    row &&
+      typeof onTypingSignal === "function" &&
+      !loading &&
+      !fileUploading &&
+      composerFocused &&
+      String(messageDraft || "").trim()
+  );
+
+  useEffect(() => {
+    if (typeof onTypingSignal !== "function" || !row) {
+      if (typingHeartbeatRef.current) {
+        clearInterval(typingHeartbeatRef.current);
+        typingHeartbeatRef.current = null;
+      }
+      typingActiveRef.current = false;
+      return;
+    }
+    if (typingEnabled) {
+      if (!typingActiveRef.current) {
+        typingActiveRef.current = true;
+        void onTypingSignal({ typing: true }).catch(() => null);
+      }
+      if (!typingHeartbeatRef.current) {
+        typingHeartbeatRef.current = setInterval(() => {
+          void onTypingSignal({ typing: true }).catch(() => null);
+        }, 2500);
+      }
+      return;
+    }
+    if (typingHeartbeatRef.current) {
+      clearInterval(typingHeartbeatRef.current);
+      typingHeartbeatRef.current = null;
+    }
+    if (typingActiveRef.current) {
+      typingActiveRef.current = false;
+      void onTypingSignal({ typing: false }).catch(() => null);
+    }
+  }, [onTypingSignal, row, typingEnabled]);
+
+  useEffect(
+    () => () => {
+      if (typingHeartbeatRef.current) {
+        clearInterval(typingHeartbeatRef.current);
+        typingHeartbeatRef.current = null;
+      }
+      if (typingActiveRef.current && typeof onTypingSignal === "function") {
+        typingActiveRef.current = false;
+        void onTypingSignal({ typing: false }).catch(() => null);
+      }
+    },
+    [onTypingSignal]
+  );
 
   const newDataRequestRow = (source) => {
     const item = source || {};
@@ -392,6 +554,7 @@ export function RequestWorkspace({
       field_type: fieldType,
       document_name: String(item.document_name || "").trim(),
       value_text: item.value_text == null ? "" : String(item.value_text),
+      value_file: item.value_file || null,
       is_filled: Boolean(item.is_filled),
     };
   };
@@ -821,15 +984,7 @@ export function RequestWorkspace({
         message_id: currentMessageId,
         items: payloadItems,
       });
-      setClientDataModal((prev) => ({
-        ...prev,
-        saving: false,
-        status: "Данные сохранены.",
-        items: (prev.items || []).map((item) => ({
-          ...item,
-          pendingFile: null,
-        })),
-      }));
+      closeClientDataModal();
     } catch (error) {
       setClientDataModal((prev) => ({
         ...prev,
@@ -956,6 +1111,20 @@ export function RequestWorkspace({
     chatTimelineItems.push(entry);
   });
 
+  useEffect(() => {
+    if (chatTab !== "chat") return;
+    const listNode = chatListRef.current;
+    if (!listNode) return;
+    const cursor = String(localActivityCursor || "");
+    if (!cursor || cursor === lastAutoScrollCursorRef.current) return;
+    lastAutoScrollCursorRef.current = cursor;
+    const raf = window.requestAnimationFrame(() => {
+      if (!chatListRef.current) return;
+      chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [chatTab, localActivityCursor]);
+
   const routeNodes =
     Array.isArray(statusRouteNodes) && statusRouteNodes.length
       ? statusRouteNodes
@@ -972,7 +1141,7 @@ export function RequestWorkspace({
     if (!items.length) return <p className="chat-message-text">Запрос</p>;
     if (allFilled) {
       const fileOnly = items.length === 1 && String(items[0]?.field_type || "").toLowerCase() === "file";
-      return <p className="chat-message-text chat-request-data-collapsed">{fileOnly ? "Файл" : "Запрос"}</p>;
+      return <p className="chat-message-text chat-request-data-collapsed">{fileOnly ? "Файл" : "Заполнен"}</p>;
     }
     const visibleItems = items.slice(0, 7);
     const hiddenCount = Math.max(0, items.length - visibleItems.length);
@@ -1013,6 +1182,13 @@ export function RequestWorkspace({
     const text = String(item?.value_text || "").trim();
     return text || "Не заполнено";
   };
+
+  const dataRequestProgress = useMemo(() => {
+    const rows = Array.isArray(dataRequestModal.rows) ? dataRequestModal.rows : [];
+    const total = rows.length;
+    const filled = rows.filter((rowItem) => Boolean(rowItem?.is_filled || String(rowItem?.value_text || "").trim())).length;
+    return { total, filled };
+  }, [dataRequestModal.rows]);
 
   return (
     <div className="block">
@@ -1177,6 +1353,10 @@ export function RequestWorkspace({
               </button>
             </div>
           </div>
+          <div className="request-chat-live-row" aria-live="polite">
+            <span className={"chat-live-dot" + (liveMode === "degraded" ? " degraded" : "")} />
+            <span className="request-chat-live-text">{typingHintText || (liveMode === "degraded" ? "Связь нестабильна, включен backoff" : "Онлайн")}</span>
+          </div>
 
           <input
             id={idMap.fileInput}
@@ -1190,7 +1370,7 @@ export function RequestWorkspace({
 
           {chatTab === "chat" ? (
             <>
-              <ul className="simple-list request-modal-list request-chat-list" id={idMap.messagesList}>
+              <ul className="simple-list request-modal-list request-chat-list" id={idMap.messagesList} ref={chatListRef}>
                 {chatTimelineItems.length ? (
                   chatTimelineItems.map((entry) =>
                     entry.type === "date" ? (
@@ -1327,6 +1507,8 @@ export function RequestWorkspace({
                     placeholder={messagePlaceholder}
                     value={messageDraft}
                     onChange={onMessageChange}
+                    onFocus={() => setComposerFocused(true)}
+                    onBlur={() => setComposerFocused(false)}
                     disabled={loading || fileUploading}
                   />
                   <div className="request-drop-hint muted">Перетащите файлы сюда или прикрепите скрепкой</div>
@@ -1363,17 +1545,6 @@ export function RequestWorkspace({
                       disabled={loading || fileUploading}
                     >
                       Запросить
-                    </button>
-                  ) : null}
-                  {canFillRequestData && idMap.fileUploadButton ? (
-                    <button
-                      className="btn secondary btn-sm"
-                      type="button"
-                      id={idMap.fileUploadButton}
-                      onClick={onSendMessage}
-                      disabled={loading || fileUploading || !hasPendingFiles}
-                    >
-                      Загрузить файл
                     </button>
                   ) : null}
                   <button
@@ -1956,6 +2127,13 @@ export function RequestWorkspace({
               </div>
             </div>
             {dataRequestModal.templateStatus ? <div className="status ok">{dataRequestModal.templateStatus}</div> : null}
+            {canRequestData && dataRequestModal.messageId ? (
+              <div className="request-data-progress-line">
+                <span className="request-data-progress-chip">
+                  {"Заполнено клиентом: " + String(dataRequestProgress.filled) + " / " + String(dataRequestProgress.total)}
+                </span>
+              </div>
+            ) : null}
 
             <div className="request-data-modal-grid">
               <div className="field">
@@ -2122,6 +2300,31 @@ export function RequestWorkspace({
                         ×
                       </button>
                     </div>
+                    {canRequestData && (rowItem?.is_filled || String(rowItem?.value_text || "").trim()) ? (
+                      <div className="request-data-row-client-value">
+                        <span className="request-data-row-client-label">Заполнено клиентом:</span>
+                        {String(rowItem?.field_type || "").toLowerCase() === "file" ? (
+                          rowItem?.value_file && rowItem.value_file.download_url ? (
+                            <button
+                              type="button"
+                              className="chat-message-file-chip"
+                              onClick={() => openAttachmentFromMessage(rowItem.value_file)}
+                            >
+                              <span className="chat-message-file-icon" aria-hidden="true">📎</span>
+                              <span className="chat-message-file-name">{String(rowItem.value_file.file_name || "Файл")}</span>
+                            </button>
+                          ) : (
+                            <span className="muted">Файл добавлен</span>
+                          )
+                        ) : (
+                          <span className="request-data-row-client-text">
+                            {String(rowItem?.field_type || "").toLowerCase() === "date"
+                              ? fmtDateOnly(rowItem?.value_text)
+                              : String(rowItem?.value_text || "").trim().slice(0, 140)}
+                          </span>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 ))
               ) : (
