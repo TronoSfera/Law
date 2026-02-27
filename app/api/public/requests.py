@@ -157,6 +157,7 @@ def _serialize_public_service_request(row: RequestServiceRequest) -> PublicServi
         id=row.id,
         request_id=row.request_id,
         client_id=row.client_id,
+        assigned_lawyer_id=row.assigned_lawyer_id,
         type=str(row.type or ""),
         status=str(row.status or "NEW"),
         body=str(row.body or ""),

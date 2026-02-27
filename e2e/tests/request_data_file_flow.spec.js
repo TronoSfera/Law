@@ -88,7 +88,7 @@ test("request data file field flow via UI: lawyer requests file -> client upload
   });
 
   await page.locator("#data-request-save").click();
-  await expect(page.locator("#data-request-status")).toContainText("Данные сохранены.");
+  await expect(page.locator("#data-request-overlay")).not.toHaveClass(/open/);
   await expect(page.locator("#cabinet-messages .request-data-item.done").last()).toBeVisible();
 
   await page.goto("/admin");

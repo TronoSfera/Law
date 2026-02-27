@@ -5,17 +5,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
 (function () {
   const { useCallback, useEffect, useMemo, useRef, useState } = React;
 
-  const SERVICE_REQUEST_TYPE_LABELS = {
-    CURATOR_CONTACT: "Запрос к куратору",
-    LAWYER_CHANGE_REQUEST: "Смена юриста",
-  };
-  const SERVICE_REQUEST_STATUS_LABELS = {
-    NEW: "Новый",
-    IN_PROGRESS: "В работе",
-    RESOLVED: "Решен",
-    REJECTED: "Отклонен",
-  };
-
   function StatusLine({ status }) {
     return <p className={"status" + (status?.kind ? " " + status.kind : "")}>{status?.message || ""}</p>;
   }
@@ -270,63 +259,73 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
     );
   }
 
-  function ServiceRequestModal({ open, type, body, status, loading, onBodyChange, onClose, onSubmit }) {
-    const title = type === "LAWYER_CHANGE_REQUEST" ? "Запрос на смену юриста" : "Обращение к куратору";
+  function ClientHelpModal({
+    open,
+    status,
+    loadingType,
+    lawyerChangeReason,
+    curatorBlocked,
+    lawyerChangeBlocked,
+    onClose,
+    onReasonChange,
+    onSubmitCurator,
+    onSubmitLawyerChange,
+  }) {
     return (
-      <div className={"overlay" + (open ? " open" : "")} id="service-request-overlay" onClick={(event) => event.target.id === "service-request-overlay" && onClose()}>
-        <div className="modal service-request-modal" onClick={(event) => event.stopPropagation()}>
+      <div className={"overlay" + (open ? " open" : "")} id="client-help-overlay" onClick={(event) => event.target.id === "client-help-overlay" && onClose()}>
+        <div className="modal client-help-modal" onClick={(event) => event.stopPropagation()}>
           <div className="modal-head">
             <div>
-              <h3 id="service-request-title">{title}</h3>
+              <h3 id="client-help-title">Помощь по заявке</h3>
             </div>
-            <button className="close" type="button" id="service-request-close" onClick={onClose} aria-label="Закрыть">
+            <button className="close" type="button" id="client-help-close" onClick={onClose} aria-label="Закрыть">
               ×
             </button>
           </div>
-          <form id="service-request-form" className="stack service-request-form" onSubmit={onSubmit}>
-            <div className="field">
-              <label htmlFor="service-request-body">Сообщение</label>
-              <textarea
-                id="service-request-body"
-                value={body}
-                onChange={onBodyChange}
-                maxLength={4000}
-                placeholder="Опишите обращение"
-                disabled={loading}
-              />
-            </div>
-            <div className="modal-actions modal-actions-right">
-              <button className="btn btn-sm" id="service-request-send" type="submit" disabled={loading}>
-                {loading ? "Отправка..." : "Отправить"}
+          <div className="client-help-stack">
+            <section className="client-help-block">
+              <p className="client-help-description">
+                Если нужна дополнительная поддержка по делу, можно обратиться к куратору. Запрос отправляется администратору платформы.
+              </p>
+              <button
+                className="btn secondary btn-sm"
+                id="cabinet-curator-request-open"
+                type="button"
+                disabled={curatorBlocked || loadingType === "CURATOR_CONTACT"}
+                onClick={onSubmitCurator}
+              >
+                {loadingType === "CURATOR_CONTACT" ? "Отправка..." : "Обратиться к куратору"}
               </button>
-            </div>
+            </section>
+            <section className="client-help-block">
+              <p className="client-help-description">
+                Если текущий юрист не устраивает, можно запросить его смену. Укажите причину для администратора.
+              </p>
+              <div className="field">
+                <label htmlFor="service-request-body">Причина смены юриста</label>
+                <textarea
+                  id="service-request-body"
+                  value={lawyerChangeReason}
+                  onChange={onReasonChange}
+                  maxLength={4000}
+                  placeholder="Опишите причину"
+                  disabled={lawyerChangeBlocked || loadingType === "LAWYER_CHANGE_REQUEST"}
+                />
+              </div>
+              <button
+                className="btn secondary btn-sm"
+                id="cabinet-lawyer-change-open"
+                type="button"
+                disabled={lawyerChangeBlocked || loadingType === "LAWYER_CHANGE_REQUEST"}
+                onClick={onSubmitLawyerChange}
+              >
+                {loadingType === "LAWYER_CHANGE_REQUEST" ? "Отправка..." : "Запросить смену"}
+              </button>
+            </section>
             <StatusLine status={status} />
-          </form>
+          </div>
         </div>
       </div>
-    );
-  }
-
-  function ServiceRequestList({ rows }) {
-    const safeRows = Array.isArray(rows) ? rows : [];
-    return (
-      <ul className="simple-list request-modal-list" id="cabinet-service-requests">
-        {safeRows.length ? (
-          safeRows.map((item) => {
-            const typeCode = String(item?.type || "").toUpperCase();
-            const statusCode = String(item?.status || "").toUpperCase();
-            return (
-              <li key={String(item.id)} className="simple-item">
-                <div>{(SERVICE_REQUEST_TYPE_LABELS[typeCode] || typeCode || "Запрос") + " • " + (SERVICE_REQUEST_STATUS_LABELS[statusCode] || statusCode || "NEW")}</div>
-                <div className="muted request-modal-item-meta">{fmtShortDateTime(item?.created_at)}</div>
-                {item?.body ? <p>{String(item.body)}</p> : null}
-              </li>
-            );
-          })
-        ) : (
-          <li className="muted">Обращений пока нет</li>
-        )}
-      </ul>
     );
   }
 
@@ -336,14 +335,15 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
     const [activeTrack, setActiveTrack] = useState("");
     const [status, setStatus] = useState({ message: "", kind: "" });
     const [serviceRequests, setServiceRequests] = useState([]);
-    const [serviceRequestModal, setServiceRequestModal] = useState({ open: false, type: "", body: "", loading: false, status: { message: "", kind: "" } });
+    const [clientHelpModal, setClientHelpModal] = useState({
+      open: false,
+      loadingType: "",
+      lawyerChangeReason: "",
+      status: { message: "", kind: "" },
+    });
 
     const setPageStatus = useCallback((message, kind) => {
       setStatus({ message: String(message || ""), kind: kind || "" });
-    }, []);
-
-    const setServiceStatus = useCallback((message, kind) => {
-      setServiceRequestModal((prev) => ({ ...prev, status: { message: String(message || ""), kind: kind || "" } }));
     }, []);
 
     const apiError = (data, fallback) => {
@@ -656,60 +656,103 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
       [activeTrack, apiJson]
     );
 
-    const openServiceRequestModal = useCallback((type) => {
-      const normalized = String(type || "").trim().toUpperCase();
-      if (!normalized) return;
-      setServiceRequestModal({
+    const openClientHelpModal = useCallback(() => {
+      setClientHelpModal((prev) => ({
+        ...prev,
         open: true,
-        type: normalized,
-        body: "",
-        loading: false,
         status: { message: "", kind: "" },
-      });
+      }));
     }, []);
 
-    const closeServiceRequestModal = useCallback(() => {
-      setServiceRequestModal({ open: false, type: "", body: "", loading: false, status: { message: "", kind: "" } });
+    const closeClientHelpModal = useCallback(() => {
+      setClientHelpModal((prev) => ({
+        ...prev,
+        open: false,
+        loadingType: "",
+        status: { message: "", kind: "" },
+      }));
     }, []);
+
+    const normalizedCurrentLawyerId = String(requestModal.requestData?.assigned_lawyer_id || "")
+      .trim()
+      .toLowerCase();
+
+    const serviceRequestState = useMemo(() => {
+      const rows = Array.isArray(serviceRequests) ? serviceRequests : [];
+      const curatorRows = rows.filter((item) => String(item?.type || "").toUpperCase() === "CURATOR_CONTACT");
+      const lawyerRows = rows.filter((item) => String(item?.type || "").toUpperCase() === "LAWYER_CHANGE_REQUEST");
+      const latestLawyerChange = lawyerRows[0] || null;
+      const hasCuratorRequest = curatorRows.length > 0;
+
+      let lawyerChangeDisabledByState = false;
+      if (latestLawyerChange) {
+        const hasLawyerSnapshot = Object.prototype.hasOwnProperty.call(latestLawyerChange, "assigned_lawyer_id");
+        if (hasLawyerSnapshot) {
+          const requestedForLawyer = String(latestLawyerChange?.assigned_lawyer_id || "")
+            .trim()
+            .toLowerCase();
+          lawyerChangeDisabledByState = requestedForLawyer === normalizedCurrentLawyerId;
+        } else {
+          const statusCode = String(latestLawyerChange?.status || "").toUpperCase();
+          lawyerChangeDisabledByState = statusCode === "NEW" || statusCode === "IN_PROGRESS";
+        }
+      }
+
+      return {
+        hasCuratorRequest,
+        lawyerChangeDisabledByState,
+      };
+    }, [normalizedCurrentLawyerId, serviceRequests]);
+
+    const canInteract = Boolean(requestModal.requestData && !requestModal.loading);
+    const curatorBlocked = !canInteract || serviceRequestState.hasCuratorRequest;
+    const lawyerChangeBlocked = !canInteract || serviceRequestState.lawyerChangeDisabledByState;
 
     const submitServiceRequest = useCallback(
-      async (event) => {
-        if (event && typeof event.preventDefault === "function") event.preventDefault();
+      async ({ type, body }) => {
         const track = String(activeTrack || "").trim();
+        const requestType = String(type || "").trim().toUpperCase();
+        const message = String(body || "").trim();
         if (!track) {
-          setServiceStatus("Сначала выберите заявку.", "error");
+          setClientHelpModal((prev) => ({ ...prev, status: { message: "Сначала выберите заявку.", kind: "error" } }));
           return;
         }
-        const requestType = String(serviceRequestModal.type || "").trim().toUpperCase();
-        const body = String(serviceRequestModal.body || "").trim();
         if (!requestType) {
-          setServiceStatus("Выберите тип обращения.", "error");
+          setClientHelpModal((prev) => ({ ...prev, status: { message: "Не указан тип запроса.", kind: "error" } }));
           return;
         }
-        if (body.length < 3) {
-          setServiceStatus("Сообщение должно содержать минимум 3 символа.", "error");
+        if (message.length < 3) {
+          setClientHelpModal((prev) => ({ ...prev, status: { message: "Сообщение должно содержать минимум 3 символа.", kind: "error" } }));
           return;
         }
         try {
-          setServiceRequestModal((prev) => ({ ...prev, loading: true, status: { message: "", kind: "" } }));
+          setClientHelpModal((prev) => ({ ...prev, loadingType: requestType, status: { message: "", kind: "" } }));
           await apiJson(
             "/api/public/requests/" + encodeURIComponent(track) + "/service-requests",
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ type: requestType, body }),
+              body: JSON.stringify({ type: requestType, body: message }),
             },
             "Не удалось отправить обращение"
           );
           await loadRequestWorkspace(track, false);
           setPageStatus("Обращение отправлено.", "ok");
-          closeServiceRequestModal();
+          setClientHelpModal((prev) => ({
+            ...prev,
+            loadingType: "",
+            status: { message: "Обращение отправлено.", kind: "ok" },
+            lawyerChangeReason: requestType === "LAWYER_CHANGE_REQUEST" ? "" : prev.lawyerChangeReason,
+          }));
         } catch (error) {
-          setServiceRequestModal((prev) => ({ ...prev, loading: false }));
-          setServiceStatus(error?.message || "Не удалось отправить обращение", "error");
+          setClientHelpModal((prev) => ({
+            ...prev,
+            loadingType: "",
+            status: { message: error?.message || "Не удалось отправить обращение", kind: "error" },
+          }));
         }
       },
-      [activeTrack, apiJson, closeServiceRequestModal, loadRequestWorkspace, serviceRequestModal.body, serviceRequestModal.type, setPageStatus, setServiceStatus]
+      [activeTrack, apiJson, loadRequestWorkspace, setPageStatus]
     );
 
     useEffect(() => {
@@ -721,7 +764,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
     }, [loadMyRequests, setPageStatus]);
 
     const summary = requestModal.requestData || null;
-    const canInteract = Boolean(summary && !requestModal.loading);
 
     return (
       <div className="client-page-shell">
@@ -731,9 +773,17 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
               <h1>Кабинет клиента</h1>
               <p className="muted">Работа с заявками: статусы, чат, файлы и обращения.</p>
             </div>
-            <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
-              <a className="btn secondary btn-sm" href="/">На лендинг</a>
-            </div>
+            <button
+              className="icon-btn workspace-head-icon"
+              id="cabinet-help-open"
+              type="button"
+              data-tooltip="Помощь и обращения"
+              aria-label="Помощь и обращения"
+              disabled={!canInteract}
+              onClick={openClientHelpModal}
+            >
+              ?
+            </button>
           </div>
 
           <section className="section active client-section">
@@ -795,14 +845,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
                   <span className="request-field-value" id="cabinet-request-updated">{summary ? fmtShortDateTime(summary.updated_at) : "-"}</span>
                 </div>
               </div>
-              <div className="client-summary-actions">
-                <button className="btn secondary btn-sm" id="cabinet-curator-request-open" type="button" disabled={!canInteract} onClick={() => openServiceRequestModal("CURATOR_CONTACT")}>
-                  Обратиться к куратору
-                </button>
-                <button className="btn secondary btn-sm" id="cabinet-lawyer-change-open" type="button" disabled={!canInteract} onClick={() => openServiceRequestModal("LAWYER_CHANGE_REQUEST")}>
-                  Запросить смену юриста
-                </button>
-              </div>
             </div>
 
             <RequestWorkspace
@@ -848,23 +890,26 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
                 dataRequestSave: "data-request-save",
               }}
             />
-
-            <div className="block client-service-requests">
-              <h3>Мои обращения</h3>
-              <ServiceRequestList rows={serviceRequests} />
-            </div>
           </section>
           <p className="status" id="client-page-status">{status.message}</p>
         </main>
-        <ServiceRequestModal
-          open={serviceRequestModal.open}
-          type={serviceRequestModal.type}
-          body={serviceRequestModal.body}
-          status={serviceRequestModal.status}
-          loading={serviceRequestModal.loading}
-          onBodyChange={(event) => setServiceRequestModal((prev) => ({ ...prev, body: event.target.value }))}
-          onClose={closeServiceRequestModal}
-          onSubmit={submitServiceRequest}
+        <ClientHelpModal
+          open={clientHelpModal.open}
+          status={clientHelpModal.status}
+          loadingType={clientHelpModal.loadingType}
+          lawyerChangeReason={clientHelpModal.lawyerChangeReason}
+          curatorBlocked={curatorBlocked}
+          lawyerChangeBlocked={lawyerChangeBlocked}
+          onClose={closeClientHelpModal}
+          onReasonChange={(event) =>
+            setClientHelpModal((prev) => ({
+              ...prev,
+              lawyerChangeReason: event.target.value,
+              status: { message: "", kind: "" },
+            }))
+          }
+          onSubmitCurator={() => submitServiceRequest({ type: "CURATOR_CONTACT", body: "Прошу подключить куратора к текущей заявке." })}
+          onSubmitLawyerChange={() => submitServiceRequest({ type: "LAWYER_CHANGE_REQUEST", body: clientHelpModal.lawyerChangeReason })}
         />
         <GlobalTooltipLayer />
       </div>

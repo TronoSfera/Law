@@ -76,6 +76,7 @@ class PublicServiceRequestRead(BaseModel):
     id: UUID
     request_id: UUID
     client_id: Optional[UUID] = None
+    assigned_lawyer_id: Optional[UUID] = None
     type: str
     status: str
     body: str

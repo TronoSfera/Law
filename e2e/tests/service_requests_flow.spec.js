@@ -35,23 +35,21 @@ test("service requests UI flow: client creates requests -> admin sees them in Re
   trackCleanupTrack(testInfo, trackNumber);
   await openPublicCabinet(page, trackNumber);
 
-  await page.locator("#cabinet-curator-request-open").click();
-  await expect(page.locator("#service-request-overlay")).toHaveClass(/open/);
-  await page.locator("#service-request-body").fill("Нужна консультация куратора по делу.");
-  await page.locator("#service-request-send").click();
-  await expect(page.locator("#client-page-status")).toContainText("Обращение отправлено.");
-  await expect(page.locator("#cabinet-service-requests")).toContainText("Запрос к куратору");
+  await page.locator("#cabinet-help-open").click();
+  await expect(page.locator("#client-help-overlay")).toHaveClass(/open/);
 
-  await page.locator("#cabinet-lawyer-change-open").click();
-  await expect(page.locator("#service-request-overlay")).toHaveClass(/open/);
-  await page.locator("#service-request-body").fill("Прошу рассмотреть смену юриста.");
-  await page.locator("#service-request-send").click();
+  await page.locator("#cabinet-curator-request-open").click();
   await expect(page.locator("#client-page-status")).toContainText("Обращение отправлено.");
-  await expect(page.locator("#cabinet-service-requests")).toContainText("Смена юриста");
+  await expect(page.locator("#cabinet-curator-request-open")).toBeDisabled();
+
+  await page.locator("#service-request-body").fill("Прошу рассмотреть смену юриста.");
+  await page.locator("#cabinet-lawyer-change-open").click();
+  await expect(page.locator("#client-page-status")).toContainText("Обращение отправлено.");
+  await expect(page.locator("#cabinet-lawyer-change-open")).toBeDisabled();
 
   await loginAdminPanel(page, { email: "admin@example.com", password: "admin123" });
   await page.locator("aside .menu button[data-section='serviceRequests']").click();
   await expect(page.locator("#section-service-requests h2")).toHaveText("Запросы");
-  await expect(page.locator("#section-service-requests table")).toContainText("Нужна консультация куратора");
+  await expect(page.locator("#section-service-requests table")).toContainText("Прошу подключить куратора к текущей заявке.");
   await expect(page.locator("#section-service-requests table")).toContainText("Прошу рассмотреть смену юриста");
 });

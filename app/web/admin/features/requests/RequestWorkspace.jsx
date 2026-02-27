@@ -173,6 +173,7 @@ export function RequestWorkspace({
   const canRequestData = viewerRoleCode === "LAWYER" || viewerRoleCode === "ADMIN";
   const canFillRequestData = viewerRoleCode === "CLIENT";
   const canSeeRate = viewerRoleCode !== "CLIENT";
+  const canSeeCreatedUpdatedInCard = viewerRoleCode !== "CLIENT";
   const safeMessages = Array.isArray(messages) ? messages : [];
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
   const safeStatusHistory = Array.isArray(statusHistory) ? statusHistory : [];
@@ -422,6 +423,20 @@ export function RequestWorkspace({
       return;
     }
     openPreview(item);
+  };
+
+  const downloadAttachment = (item) => {
+    const url = String(item?.download_url || "").trim();
+    if (!url) return;
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    const fileName = String(item?.file_name || "").trim();
+    if (fileName) link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   useEffect(() => {
@@ -1287,14 +1302,18 @@ export function RequestWorkspace({
                       {lawyerLabel}
                     </span>
                   </div>
-                  <div className="request-field">
-                    <span className="request-field-label">Создана</span>
-                    <span className="request-field-value">{fmtShortDateTime(row.created_at)}</span>
-                  </div>
-                  <div className="request-field">
-                    <span className="request-field-label">Изменена</span>
-                    <span className="request-field-value">{fmtShortDateTime(row.updated_at)}</span>
-                  </div>
+                  {canSeeCreatedUpdatedInCard ? (
+                    <>
+                      <div className="request-field">
+                        <span className="request-field-label">Создана</span>
+                        <span className="request-field-value">{fmtShortDateTime(row.created_at)}</span>
+                      </div>
+                      <div className="request-field">
+                        <span className="request-field-label">Изменена</span>
+                        <span className="request-field-value">{fmtShortDateTime(row.updated_at)}</span>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
                 <div className="request-status-route">
                   <h4>Маршрут статусов</h4>
@@ -2372,7 +2391,7 @@ export function RequestWorkspace({
                       {isFile ? (
                         value && typeof value === "object" ? (
                           <div className="request-data-summary-file">
-                            <button type="button" className="chat-message-file-chip" onClick={() => openAttachmentFromMessage(value)}>
+                            <button type="button" className="chat-message-file-chip" onClick={() => downloadAttachment(value)}>
                               <span className="chat-message-file-icon" aria-hidden="true">📎</span>
                               <span className="chat-message-file-name">{String(value.file_name || "Файл")}</span>
                             </button>
