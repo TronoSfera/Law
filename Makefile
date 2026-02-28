@@ -3,6 +3,7 @@
 	local-up local-down local-logs local-migrate local-test local-seed \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
 	prod-cert-init prod-cert-renew \
+	check-prod-files check-cert-files \
 	run migrate test seed-quotes
 
 DOMAIN ?= ruakb.ru
@@ -47,33 +48,41 @@ local-test:
 local-seed:
 	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_quotes
 
-prod-up:
+check-prod-files:
+	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)
+
+check-cert-files: check-prod-files
+	@test -f docker-compose.prod.cert.yml || (echo "[ERROR] Missing docker-compose.prod.cert.yml. Run: git pull"; exit 1)
+	@test -f deploy/nginx/edge-http-only.conf || (echo "[ERROR] Missing deploy/nginx/edge-http-only.conf. Run: git pull"; exit 1)
+	@test -f deploy/nginx/edge-https.conf || (echo "[ERROR] Missing deploy/nginx/edge-https.conf. Run: git pull"; exit 1)
+
+prod-up: check-prod-files
 	$(PROD_COMPOSE) up -d --build
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
 
-prod-down:
+prod-down: check-prod-files
 	$(PROD_COMPOSE) down
 
-prod-logs:
+prod-logs: check-prod-files
 	$(PROD_COMPOSE) logs -f --tail=200
 
-prod-ps:
+prod-ps: check-prod-files
 	$(PROD_COMPOSE) ps
 
-prod-migrate:
+prod-migrate: check-prod-files
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
 
 # Initial certificate bootstrap:
 # 1) Start stack with edge nginx on port 80 only.
 # 2) Obtain cert via certbot webroot challenge.
 # 3) Restart stack in regular prod mode (80/443).
-prod-cert-init:
+prod-cert-init: check-cert-files
 	$(CERT_COMPOSE) up -d --build db redis minio backend chat-service worker beat frontend edge
 	$(CERT_COMPOSE) run --rm certbot certonly --webroot -w /var/www/certbot --email "$(LETSENCRYPT_EMAIL)" --agree-tos --no-eff-email -d "$(DOMAIN)" -d "$(WWW_DOMAIN)"
 	$(PROD_COMPOSE) up -d --build edge
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
 
-prod-cert-renew:
+prod-cert-renew: check-prod-files
 	$(PROD_COMPOSE) run --rm certbot renew --webroot -w /var/www/certbot
 	$(PROD_COMPOSE) exec -T edge nginx -s reload
 
