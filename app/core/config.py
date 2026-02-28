@@ -1,7 +1,13 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     APP_ENV: str = "local"
     APP_NAME: str = "legal-case-tracker"
 
@@ -42,12 +48,13 @@ class Settings(BaseSettings):
     ADMIN_BOOTSTRAP_PASSWORD: str = "admin123"
     ADMIN_BOOTSTRAP_NAME: str = "Администратор системы"
 
+    # Compose/infra vars that may exist in shared .env
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_DB: str = "legal"
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 settings = Settings()
