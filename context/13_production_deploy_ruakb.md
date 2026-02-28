@@ -4,11 +4,15 @@
 Развернуть платформу на сервере `45.150.36.116` c HTTPS на `80/443` для домена `ruakb.ru`.
 
 ## Что добавлено
-- `docker-compose.prod.yml` — production override:
-  - добавлен edge proxy (`caddy`) на `80/443`
+- `docker-compose.prod.nginx.yml` — production override:
+  - edge nginx на `80/443`
+  - certbot volume для сертификатов
   - отключены внешние порты у внутренних сервисов
-- `deploy/caddy/Caddyfile` — TLS (Let's Encrypt) + reverse proxy
-- `scripts/ops/deploy_prod.sh` — запуск стека и миграций
+- `docker-compose.prod.cert.yml` — bootstrap override для первичного выпуска сертификата
+  - edge nginx только на `80`
+- `deploy/nginx/edge-http-only.conf` — nginx конфиг только под `80` + ACME challenge
+- `deploy/nginx/edge-https.conf` — nginx конфиг для `80/443` + TLS + reverse proxy
+- `Makefile` — цели локального и production запуска
 
 ## Предусловия
 1. DNS:
@@ -17,10 +21,16 @@
 2. Открыты порты сервера:
    - `80/tcp`, `443/tcp`
 
-## Запуск
+## Первичный выпуск сертификата (nginx только 80)
 ```bash
 cd /opt/law
-./scripts/ops/deploy_prod.sh
+make prod-cert-init LETSENCRYPT_EMAIL=you@example.com DOMAIN=ruakb.ru WWW_DOMAIN=www.ruakb.ru
+```
+
+## Запуск production
+```bash
+cd /opt/law
+make prod-up
 ```
 
 ## Проверка
@@ -34,11 +44,16 @@ curl -fsS https://ruakb.ru/chat-health
 ## Обновление
 ```bash
 git pull
-./scripts/ops/deploy_prod.sh
+make prod-up
+```
+
+## Обновление сертификата
+```bash
+make prod-cert-renew
 ```
 
 ## Откат
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+make prod-down
 # и вернуть предыдущий git tag/commit
 ```

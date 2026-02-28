@@ -12,23 +12,27 @@ API (backend): http://localhost:8002
 Swagger: http://localhost:8002/docs
 Chat service health (via nginx): http://localhost:8081/chat-health
 
-## Production (ruakb.ru, 80/443, TLS)
-Production is configured with a dedicated edge proxy (Caddy) in `docker-compose.prod.yml`.
+## Production (ruakb.ru, 80/443, TLS via Nginx + Certbot)
+Production stack uses dedicated edge nginx (`docker-compose.prod.nginx.yml`).
 
 Prerequisites:
 - DNS `A` record: `ruakb.ru -> 45.150.36.116`
 - Optional DNS `A` record: `www.ruakb.ru -> 45.150.36.116`
 - Open server ports: `80/tcp`, `443/tcp`
 
-Start/update production:
+Initial certificate issue (bootstrap with nginx on port 80 only):
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend alembic upgrade head
+make prod-cert-init LETSENCRYPT_EMAIL=you@example.com DOMAIN=ruakb.ru WWW_DOMAIN=www.ruakb.ru
 ```
 
-Or use helper script:
+Regular production start/update:
 ```bash
-./scripts/ops/deploy_prod.sh
+make prod-up
+```
+
+Certificate renew:
+```bash
+make prod-cert-renew
 ```
 
 Checks:
