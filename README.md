@@ -19,6 +19,9 @@ Prerequisites:
 - DNS `A` record: `ruakb.ru -> 45.150.36.116`
 - Optional DNS `A` record: `www.ruakb.ru -> 45.150.36.116`
 - Open server ports: `80/tcp`, `443/tcp`
+- DB credentials in `.env` must be consistent:
+  - `DATABASE_URL=postgresql+psycopg://postgres:<password>@db:5432/legal`
+  - `POSTGRES_PASSWORD=<same password>`
 
 Initial certificate issue (bootstrap with nginx on port 80 only):
 ```bash
