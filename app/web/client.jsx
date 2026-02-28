@@ -809,7 +809,10 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
                 >
                   {requestsList.map((row) => (
                     <option value={String(row.track_number || "")} key={String(row.id || row.track_number || "")}>
-                      {String(row.track_number || "Без номера") + " • " + String(row.status_code || "-")}
+                      {String(row.track_number || "Без номера") +
+                        " • " +
+                        String(row.status_code || "-") +
+                        (Number(row?.viewer_unread_total || 0) > 0 ? " • непрочитано: " + String(row.viewer_unread_total) : "")}
                     </option>
                   ))}
                 </select>

@@ -1767,7 +1767,7 @@ export function RequestWorkspace({
               )}
             </div>
             {clientDataModal.error ? <div className="status error">{clientDataModal.error}</div> : null}
-            <div className={"status" + (clientDataModal.status ? " ok" : "")} id={idMap.dataRequestStatus}>
+            <div className={"request-data-status" + (clientDataModal.status ? " ok" : "")} id={idMap.dataRequestStatus}>
               {clientDataModal.status || ""}
             </div>
             <div className="modal-actions modal-actions-right">

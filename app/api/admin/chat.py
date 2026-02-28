@@ -16,7 +16,9 @@ from app.models.request_data_requirement import RequestDataRequirement
 from app.models.request_data_template import RequestDataTemplate
 from app.models.request_data_template_item import RequestDataTemplateItem
 from app.models.topic_data_template import TopicDataTemplate
-from app.services.chat_service import (
+from app.services.notifications import EVENT_REQUEST_DATA as NOTIFICATION_EVENT_REQUEST_DATA, notify_request_event, unread_admin_summary
+from app.services.request_read_markers import EVENT_REQUEST_DATA, mark_unread_for_client
+from app.services.chat_secure_service import (
     create_admin_or_lawyer_message,
     get_chat_activity_summary,
     list_messages_for_request,
@@ -291,6 +293,11 @@ def get_request_live_state(
         "latest_message_at": _iso_or_none(_as_utc_datetime(summary.get("latest_message_at"))),
         "latest_attachment_at": _iso_or_none(_as_utc_datetime(summary.get("latest_attachment_at"))),
         "typing": typing_rows,
+        "unread": unread_admin_summary(
+            db,
+            admin_user_id=str(admin.get("sub") or ""),
+            request_id=req.id,
+        ),
     }
 
 
@@ -597,6 +604,7 @@ def upsert_data_request_batch(
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_manage_request_or_403(admin, req)
     actor_role = str(admin.get("role") or "").strip().upper()
+    responsible = str(admin.get("email") or "").strip() or "Администратор системы"
 
     body = payload or {}
     raw_items = body.get("items")
@@ -639,6 +647,7 @@ def upsert_data_request_batch(
             actor_role=role,
             actor_name=actor_name,
             actor_admin_user_id=actor_admin_user_id,
+            event_type=NOTIFICATION_EVENT_REQUEST_DATA,
         )
 
     message_uuid = existing_message.id
@@ -770,6 +779,18 @@ def upsert_data_request_batch(
         for row in existing_message_rows:
             if row.key not in touched_keys:
                 db.delete(row)
+        mark_unread_for_client(req, EVENT_REQUEST_DATA)
+        req.responsible = responsible
+        db.add(req)
+        notify_request_event(
+            db,
+            request=req,
+            event_type=NOTIFICATION_EVENT_REQUEST_DATA,
+            actor_role=actor_role,
+            actor_admin_user_id=admin.get("sub"),
+            body=f"Обновлен запрос дополнительных данных ({len(normalized_rows)})",
+            responsible=responsible,
+        )
 
     db.commit()
     fresh_messages = list_messages_for_request(db, req.id)

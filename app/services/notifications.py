@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -20,12 +20,18 @@ EVENT_MESSAGE = "MESSAGE"
 EVENT_ATTACHMENT = "ATTACHMENT"
 EVENT_STATUS = "STATUS"
 EVENT_SLA_OVERDUE = "SLA_OVERDUE"
+EVENT_REQUEST_DATA = "REQUEST_DATA"
+EVENT_ASSIGNMENT = "ASSIGNMENT"
+EVENT_REASSIGNMENT = "REASSIGNMENT"
 
 _EVENT_LABELS = {
     EVENT_MESSAGE: "Новое сообщение",
     EVENT_ATTACHMENT: "Новый файл",
     EVENT_STATUS: "Изменен статус",
     EVENT_SLA_OVERDUE: "SLA просрочен",
+    EVENT_REQUEST_DATA: "Запрос/обновление данных",
+    EVENT_ASSIGNMENT: "Заявка назначена",
+    EVENT_REASSIGNMENT: "Заявка переназначена",
 }
 
 
@@ -231,7 +237,7 @@ def notify_request_event(
             if row is not None:
                 internal_created += 1
 
-    if event in {EVENT_MESSAGE, EVENT_ATTACHMENT}:
+    if event in {EVENT_MESSAGE, EVENT_ATTACHMENT, EVENT_REQUEST_DATA}:
         if actor == "CLIENT":
             _notify_lawyer_if_any()
             _notify_admins()
@@ -241,6 +247,10 @@ def notify_request_event(
         _notify_client()
         if actor == "ADMIN":
             _notify_lawyer_if_any()
+    elif event in {EVENT_ASSIGNMENT, EVENT_REASSIGNMENT}:
+        _notify_client()
+        _notify_lawyer_if_any()
+        _notify_admins()
     elif event == EVENT_SLA_OVERDUE:
         _notify_lawyer_if_any()
         _notify_admins()
@@ -434,3 +444,98 @@ def get_client_notification(
         )
         .first()
     )
+
+
+def unread_admin_summary(
+    db: Session,
+    *,
+    admin_user_id: str | uuid.UUID,
+    request_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    admin_uuid = _as_uuid_or_none(admin_user_id)
+    if admin_uuid is None:
+        return {"total": 0, "by_event": {}}
+    query = db.query(Notification.event_type, func.count(Notification.id)).filter(
+        Notification.recipient_type == RECIPIENT_ADMIN_USER,
+        Notification.recipient_admin_user_id == admin_uuid,
+        Notification.is_read.is_(False),
+    )
+    if request_id is not None:
+        query = query.filter(Notification.request_id == request_id)
+    try:
+        rows = query.group_by(Notification.event_type).all()
+    except SQLAlchemyError:
+        return {"total": 0, "by_event": {}}
+    by_event = {str(event_type): int(count or 0) for event_type, count in rows if event_type}
+    total = int(sum(by_event.values()))
+    return {"total": total, "by_event": by_event}
+
+
+def unread_client_summary(
+    db: Session,
+    *,
+    track_number: str,
+    request_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    track = _normalize_track(track_number)
+    if not track:
+        return {"total": 0, "by_event": {}}
+    query = db.query(Notification.event_type, func.count(Notification.id)).filter(
+        Notification.recipient_type == RECIPIENT_CLIENT,
+        Notification.recipient_track_number == track,
+        Notification.is_read.is_(False),
+    )
+    if request_id is not None:
+        query = query.filter(Notification.request_id == request_id)
+    try:
+        rows = query.group_by(Notification.event_type).all()
+    except SQLAlchemyError:
+        return {"total": 0, "by_event": {}}
+    by_event = {str(event_type): int(count or 0) for event_type, count in rows if event_type}
+    total = int(sum(by_event.values()))
+    return {"total": total, "by_event": by_event}
+
+
+def unread_global_summary_for_clients(
+    db: Session,
+    *,
+    request_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    query = db.query(Notification.event_type, func.count(Notification.id)).filter(
+        Notification.recipient_type == RECIPIENT_CLIENT,
+        Notification.is_read.is_(False),
+    )
+    if request_id is not None:
+        query = query.filter(Notification.request_id == request_id)
+    try:
+        rows = query.group_by(Notification.event_type).all()
+    except SQLAlchemyError:
+        return {"total": 0, "by_event": {}}
+    by_event = {str(event_type): int(count or 0) for event_type, count in rows if event_type}
+    total = int(sum(by_event.values()))
+    return {"total": total, "by_event": by_event}
+
+
+def unread_global_summary_for_lawyers(
+    db: Session,
+    *,
+    request_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    query = (
+        db.query(Notification.event_type, func.count(Notification.id))
+        .join(AdminUser, Notification.recipient_admin_user_id == AdminUser.id)
+        .filter(
+            Notification.recipient_type == RECIPIENT_ADMIN_USER,
+            Notification.is_read.is_(False),
+            AdminUser.role == "LAWYER",
+        )
+    )
+    if request_id is not None:
+        query = query.filter(Notification.request_id == request_id)
+    try:
+        rows = query.group_by(Notification.event_type).all()
+    except SQLAlchemyError:
+        return {"total": 0, "by_event": {}}
+    by_event = {str(event_type): int(count or 0) for event_type, count in rows if event_type}
+    total = int(sum(by_event.values()))
+    return {"total": total, "by_event": by_event}

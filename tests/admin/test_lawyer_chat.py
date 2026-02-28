@@ -1,4 +1,6 @@
 from tests.admin.base import *  # noqa: F401,F403
+from app.chat_main import app as chat_app
+from app.db.session import get_db
 from app.services.chat_presence import clear_presence_for_tests
 
 
@@ -6,8 +8,18 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
     def setUp(self):
         super().setUp()
         clear_presence_for_tests()
+        def override_get_db():
+            db = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+        chat_app.dependency_overrides[get_db] = override_get_db
+        self.chat_client = TestClient(chat_app)
 
     def tearDown(self):
+        self.chat_client.close()
+        chat_app.dependency_overrides.clear()
         clear_presence_for_tests()
         super().tearDown()
 
@@ -396,14 +408,14 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         lawyer_headers = self._auth_headers("LAWYER", email="lawyer.chat.self@example.com", sub=self_id)
         admin_headers = self._auth_headers("ADMIN", email="root@example.com")
 
-        own_list = self.client.get(f"/api/admin/chat/requests/{own_id}/messages", headers=lawyer_headers)
+        own_list = self.chat_client.get(f"/api/admin/chat/requests/{own_id}/messages", headers=lawyer_headers)
         self.assertEqual(own_list.status_code, 200)
         self.assertEqual(own_list.json()["total"], 1)
 
-        foreign_list = self.client.get(f"/api/admin/chat/requests/{foreign_id}/messages", headers=lawyer_headers)
+        foreign_list = self.chat_client.get(f"/api/admin/chat/requests/{foreign_id}/messages", headers=lawyer_headers)
         self.assertEqual(foreign_list.status_code, 403)
 
-        own_create = self.client.post(
+        own_create = self.chat_client.post(
             f"/api/admin/chat/requests/{own_id}/messages",
             headers=lawyer_headers,
             json={"body": "Ответ из chat service"},
@@ -411,14 +423,14 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(own_create.status_code, 201)
         self.assertEqual(own_create.json()["author_type"], "LAWYER")
 
-        unassigned_create = self.client.post(
+        unassigned_create = self.chat_client.post(
             f"/api/admin/chat/requests/{unassigned_id}/messages",
             headers=lawyer_headers,
             json={"body": "Нельзя в неназначенную"},
         )
         self.assertEqual(unassigned_create.status_code, 403)
 
-        admin_create = self.client.post(
+        admin_create = self.chat_client.post(
             f"/api/admin/chat/requests/{foreign_id}/messages",
             headers=admin_headers,
             json={"body": "Сообщение администратора"},
@@ -485,10 +497,10 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         lawyer_headers = self._auth_headers("LAWYER", email="lawyer.live.self@example.com", sub=self_id)
         admin_headers = self._auth_headers("ADMIN", email="root@example.com")
 
-        own_live = self.client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
+        own_live = self.chat_client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
         self.assertEqual(own_live.status_code, 200)
         own_cursor = str(own_live.json().get("cursor") or "")
-        own_live_no_delta = self.client.get(
+        own_live_no_delta = self.chat_client.get(
             f"/api/admin/chat/requests/{own_id}/live",
             headers=lawyer_headers,
             params={"cursor": own_cursor},
@@ -496,10 +508,10 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(own_live_no_delta.status_code, 200)
         self.assertFalse(bool(own_live_no_delta.json().get("has_updates")))
 
-        foreign_live = self.client.get(f"/api/admin/chat/requests/{foreign_id}/live", headers=lawyer_headers)
+        foreign_live = self.chat_client.get(f"/api/admin/chat/requests/{foreign_id}/live", headers=lawyer_headers)
         self.assertEqual(foreign_live.status_code, 403)
 
-        own_typing = self.client.post(
+        own_typing = self.chat_client.post(
             f"/api/admin/chat/requests/{own_id}/typing",
             headers=lawyer_headers,
             json={"typing": True},
@@ -507,14 +519,14 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(own_typing.status_code, 200)
         self.assertTrue(bool(own_typing.json().get("typing")))
 
-        unassigned_typing = self.client.post(
+        unassigned_typing = self.chat_client.post(
             f"/api/admin/chat/requests/{unassigned_id}/typing",
             headers=lawyer_headers,
             json={"typing": True},
         )
         self.assertEqual(unassigned_typing.status_code, 403)
 
-        admin_typing = self.client.post(
+        admin_typing = self.chat_client.post(
             f"/api/admin/chat/requests/{own_id}/typing",
             headers=admin_headers,
             json={"typing": True},
@@ -522,7 +534,7 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(admin_typing.status_code, 200)
         self.assertTrue(bool(admin_typing.json().get("typing")))
 
-        own_live_with_typing = self.client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
+        own_live_with_typing = self.chat_client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
         self.assertEqual(own_live_with_typing.status_code, 200)
         typing_rows = own_live_with_typing.json().get("typing") or []
         self.assertTrue(any(str(item.get("actor_role")) == "ADMIN" for item in typing_rows))

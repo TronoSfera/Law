@@ -46,6 +46,18 @@ docker compose exec -T backend python -m app.data.cleanup_test_artifacts
 docker compose exec -T backend python -m app.data.manual_test_seed
 ```
 Доступы и список тестовых заявок сохраняются в `/Users/tronosfera/Develop/Law/context/15_manual_test_access.md`.
+8. Проверка health всех контейнеров после деплоя/рестарта:
+```bash
+docker compose up -d
+docker compose ps
+curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8081/chat-health
+```
+9. Оперативная проверка и alert-код для `backend/chat-service` (под cron/CI):
+```bash
+./scripts/ops/check_chat_health.sh
+echo $?  # 0=OK, >0=ALERT
+```
 
 ## Матрица проверок по задачам
 | ID | Что проверяем | Где тесты | Как запускать |
@@ -82,7 +94,7 @@ docker compose exec -T backend python -m app.data.manual_test_seed
 | P30 | Отдельная страница работы с заявкой клиента | новые e2e для client workspace route + `tests/test_public_cabinet.py` | добавить e2e route-flow + прогон `test_public_cabinet` |
 | P31 | Вход клиента через phone+OTP модалку | новые e2e OTP modal flow + `tests/test_otp_rate_limit.py`, `tests/test_public_requests.py` | e2e + backend OTP тесты |
 | P32 | Переключение между заявками клиента | новые e2e multi-request flow + `tests/test_public_cabinet.py` | e2e multi-request + backend regression |
-| P33 | Чат в отдельном сервисе | `tests/test_public_cabinet.py`, `tests/admin/*` (chat service cases) + UI smoke (`client.js`, `admin.jsx`) | `docker compose run --rm backend python -m unittest tests.test_public_cabinet -v` + `tests/admin/*` (discover) + фронт-сборка admin entrypoint |
+| P33 | Чат в отдельном сервисе | `tests/test_public_cabinet.py`, `tests/admin/*` (chat service cases) + UI smoke (`client.js`, `admin.jsx`) + container health | `docker compose run --rm backend python -m unittest tests.test_public_cabinet -v` + `tests/admin/*` (discover) + фронт-сборка admin entrypoint + базовые команды 8-9 |
 | P34 | Ненавязчивые цитаты в блоке «Первая консультация» | UI e2e/smoke лендинга | визуальная регрессия лендинга + Playwright public smoke |
 | P35 | Предпросмотр документов | `tests/test_uploads_s3.py` (`test_public_attachment_object_preview_returns_inline_response`) + Playwright (`e2e/tests/public_client_flow.spec.js`, `e2e/tests/lawyer_role_flow.spec.js`) | `docker compose run --rm backend python -m unittest tests.test_uploads_s3 -v` + Playwright UI-прогон preview в клиенте и во вкладке работы с заявкой юриста/админа через сервис `e2e` |
 | P36 | Навигация в админку и редиректы | `e2e/tests/admin_entry_flow.spec.js` + redirect checks | Playwright `admin_entry_flow` + `curl -I -H 'Host: localhost:8081' http://localhost:8081/admin` (ожидается `302` и `Location: /admin.html`) + `curl -I http://localhost:8081/admin.html` |

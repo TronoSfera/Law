@@ -1,5 +1,5 @@
 # Legal Case Tracker (FastAPI)
-Backend skeleton: public requests + OTP + public JWT cookie + admin (admin/lawyer) + files (self-hosted S3) + SLA/auto-assign (Celery) + quotes.
+Backend skeleton: public requests + OTP + public JWT cookie + admin (admin/lawyer) + files (self-hosted S3) + SLA/auto-assign (Celery) + quotes + dedicated chat microservice.
 
 ## Run (Docker)
 ```bash
@@ -10,6 +10,33 @@ Landing (frontend): http://localhost:8081
 Admin UI: http://localhost:8081/admin
 API (backend): http://localhost:8002
 Swagger: http://localhost:8002/docs
+Chat service health (via nginx): http://localhost:8081/chat-health
+
+## Production (ruakb.ru, 80/443, TLS)
+Production is configured with a dedicated edge proxy (Caddy) in `docker-compose.prod.yml`.
+
+Prerequisites:
+- DNS `A` record: `ruakb.ru -> 45.150.36.116`
+- Optional DNS `A` record: `www.ruakb.ru -> 45.150.36.116`
+- Open server ports: `80/tcp`, `443/tcp`
+
+Start/update production:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend alembic upgrade head
+```
+
+Or use helper script:
+```bash
+./scripts/ops/deploy_prod.sh
+```
+
+Checks:
+```bash
+curl -I https://ruakb.ru
+curl -fsS https://ruakb.ru/health
+curl -fsS https://ruakb.ru/chat-health
+```
 
 ## Migrations
 ```bash
@@ -48,3 +75,45 @@ When enabled, real SMS sending is disabled and OTP code is printed to backend lo
 
 Admin health-check endpoint (no SMS send):
 `GET /api/admin/system/sms-provider-health`
+
+## Secure Chat (encrypted at rest)
+Chat logic is isolated in `app/services/chat_secure_service.py`.
+
+- Message bodies are encrypted before storing in DB (`messages.body`) and transparently decrypted on read.
+- Encryption key priority:
+  1. `CHAT_ENCRYPTION_SECRET`
+  2. `DATA_ENCRYPTION_SECRET`
+  3. JWT secrets fallback (not recommended for production)
+
+Recommended production config:
+```bash
+CHAT_ENCRYPTION_SECRET=<long-random-secret>
+DATA_ENCRYPTION_SECRET=<long-random-secret>
+```
+
+Chat API runs in a dedicated container (`chat-service`) with separate FastAPI entrypoint:
+`app/chat_main.py`
+
+Nginx routes only chat API prefixes to the chat container:
+- `/api/public/chat/*`
+- `/api/admin/chat/*`
+
+## Container health and alerting
+Docker Compose is configured with:
+- `restart: unless-stopped` for core services
+- `healthcheck` for `db`, `redis`, `backend`, `chat-service`, `frontend`
+- startup ordering via `depends_on: condition: service_healthy`
+
+Quick checks:
+```bash
+docker compose up -d
+docker compose ps
+curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8081/chat-health
+```
+
+Alert-ready smoke script (for cron/CI):
+```bash
+./scripts/ops/check_chat_health.sh
+```
+Exit code `0` means healthy, non-zero means alert condition.

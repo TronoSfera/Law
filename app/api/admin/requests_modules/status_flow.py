@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.models.notification import Notification
 from app.models.request import Request
 from app.models.status import Status
 from app.models.status_group import StatusGroup
@@ -76,13 +78,31 @@ def apply_request_special_filters(
             raise HTTPException(status_code=400, detail=f'Оператор "{op}" не поддерживается для фильтра "{field}"')
         expected = coerce_request_bool_filter_or_400(clause.value)
         if field == "has_unread_updates":
+            actor_expr = None
+            try:
+                actor_uuid = UUID(str(actor_id or "").strip())
+            except ValueError:
+                actor_uuid = None
+            if actor_uuid is not None:
+                actor_expr = Request.id.in_(
+                    db.query(Notification.request_id).filter(
+                        Notification.recipient_type == "ADMIN_USER",
+                        Notification.recipient_admin_user_id == actor_uuid,
+                        Notification.is_read.is_(False),
+                        Notification.request_id.is_not(None),
+                    )
+                )
             if role == "LAWYER":
                 expr = Request.lawyer_has_unread_updates.is_(True)
+                if actor_expr is not None:
+                    expr = or_(expr, actor_expr)
             else:
                 expr = or_(
                     Request.lawyer_has_unread_updates.is_(True),
                     Request.client_has_unread_updates.is_(True),
                 )
+                if actor_expr is not None:
+                    expr = or_(expr, actor_expr)
         elif field == "deadline_alert":
             now_utc = datetime.now(timezone.utc)
             next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,7 +20,8 @@ os.environ.setdefault("S3_BUCKET", "test")
 from app.core.config import settings
 from app.core.security import create_jwt
 from app.db.session import get_db
-from app.main import app
+from app.chat_main import app as chat_app
+from app.main import app as main_app
 from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.notification import Notification
@@ -103,12 +104,16 @@ class PublicCabinetTests(unittest.TestCase):
             finally:
                 db.close()
 
-        app.dependency_overrides[get_db] = override_get_db
-        self.client = TestClient(app)
+        main_app.dependency_overrides[get_db] = override_get_db
+        chat_app.dependency_overrides[get_db] = override_get_db
+        self.client = TestClient(main_app)
+        self.chat_client = TestClient(chat_app)
 
     def tearDown(self):
+        self.chat_client.close()
         self.client.close()
-        app.dependency_overrides.clear()
+        chat_app.dependency_overrides.clear()
+        main_app.dependency_overrides.clear()
         clear_presence_for_tests()
 
     @staticmethod
@@ -231,7 +236,7 @@ class PublicCabinetTests(unittest.TestCase):
             db.commit()
 
         cookies = self._public_cookies("TRK-CHAT-001")
-        created = self.client.post(
+        created = self.chat_client.post(
             "/api/public/chat/requests/TRK-CHAT-001/messages",
             cookies=cookies,
             json={"body": "Сообщение через выделенный сервис"},
@@ -239,13 +244,78 @@ class PublicCabinetTests(unittest.TestCase):
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json()["author_type"], "CLIENT")
 
-        listed = self.client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=cookies)
+        listed = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=cookies)
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(len(listed.json()), 1)
         self.assertIn("выделенный сервис", listed.json()[0]["body"])
 
-        denied = self.client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
+        denied = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
         self.assertEqual(denied.status_code, 403)
+
+    def test_chat_message_is_encrypted_at_rest(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-CHAT-ENC",
+                client_name="Клиент Шифрование",
+                client_phone="+79997779999",
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка шифрования чата",
+                extra_fields={},
+            )
+            db.add(req)
+            db.commit()
+
+        payload_body = "Секретное сообщение клиента"
+        cookies = self._public_cookies("TRK-CHAT-ENC")
+        created = self.chat_client.post(
+            "/api/public/chat/requests/TRK-CHAT-ENC/messages",
+            cookies=cookies,
+            json={"body": payload_body},
+        )
+        self.assertEqual(created.status_code, 201)
+
+        with self.SessionLocal() as db:
+            raw_encrypted = db.execute(text("SELECT body FROM messages ORDER BY created_at DESC LIMIT 1")).scalar_one()
+            self.assertTrue(str(raw_encrypted).startswith("chatenc:v1:"))
+            self.assertNotEqual(str(raw_encrypted), payload_body)
+
+        listed = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-ENC/messages", cookies=cookies)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()[0]["body"], payload_body)
+
+    def test_chat_supports_legacy_plaintext_rows(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-CHAT-LEGACY",
+                client_name="Клиент Legacy",
+                client_phone="+79997778888",
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка legacy формата",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            message = Message(
+                request_id=req.id,
+                author_type="LAWYER",
+                author_name="Юрист",
+                body="legacy placeholder",
+            )
+            db.add(message)
+            db.flush()
+            db.execute(
+                text("UPDATE messages SET body = :body WHERE rowid = (SELECT rowid FROM messages ORDER BY created_at DESC LIMIT 1)"),
+                {"body": "LEGACY_PLAINTEXT_MESSAGE"},
+            )
+            db.commit()
+
+        cookies = self._public_cookies("TRK-CHAT-LEGACY")
+        listed = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-LEGACY/messages", cookies=cookies)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(len(listed.json()), 1)
+        self.assertEqual(listed.json()[0]["body"], "LEGACY_PLAINTEXT_MESSAGE")
 
     def test_public_live_endpoint_and_typing_state(self):
         with self.SessionLocal() as db:
@@ -272,7 +342,7 @@ class PublicCabinetTests(unittest.TestCase):
             request_id = str(req.id)
 
         cookies = self._public_cookies("TRK-LIVE-001")
-        live_initial = self.client.get("/api/public/chat/requests/TRK-LIVE-001/live", cookies=cookies)
+        live_initial = self.chat_client.get("/api/public/chat/requests/TRK-LIVE-001/live", cookies=cookies)
         self.assertEqual(live_initial.status_code, 200)
         live_body = live_initial.json()
         self.assertTrue(bool(live_body.get("has_updates")))
@@ -285,13 +355,13 @@ class PublicCabinetTests(unittest.TestCase):
             actor_role="LAWYER",
             typing=True,
         )
-        live_with_typing = self.client.get("/api/public/chat/requests/TRK-LIVE-001/live", cookies=cookies)
+        live_with_typing = self.chat_client.get("/api/public/chat/requests/TRK-LIVE-001/live", cookies=cookies)
         self.assertEqual(live_with_typing.status_code, 200)
         typing_rows = live_with_typing.json().get("typing") or []
         self.assertTrue(any(str(item.get("actor_label")) == "Юрист Тест" for item in typing_rows))
 
         current_cursor = str(live_with_typing.json().get("cursor") or "")
-        live_no_delta = self.client.get(
+        live_no_delta = self.chat_client.get(
             "/api/public/chat/requests/TRK-LIVE-001/live",
             params={"cursor": current_cursor},
             cookies=cookies,
@@ -299,7 +369,7 @@ class PublicCabinetTests(unittest.TestCase):
         self.assertEqual(live_no_delta.status_code, 200)
         self.assertFalse(bool(live_no_delta.json().get("has_updates")))
 
-        typing_on = self.client.post(
+        typing_on = self.chat_client.post(
             "/api/public/chat/requests/TRK-LIVE-001/typing",
             cookies=cookies,
             json={"typing": True},

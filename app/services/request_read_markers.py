@@ -5,6 +5,9 @@ from app.models.request import Request
 EVENT_MESSAGE = "MESSAGE"
 EVENT_ATTACHMENT = "ATTACHMENT"
 EVENT_STATUS = "STATUS"
+EVENT_REQUEST_DATA = "REQUEST_DATA"
+EVENT_ASSIGNMENT = "ASSIGNMENT"
+EVENT_REASSIGNMENT = "REASSIGNMENT"
 
 
 def mark_unread_for_client(request: Request, event_type: str) -> None:

@@ -13,14 +13,15 @@ from app.models.request import Request
 from app.models.request_data_requirement import RequestDataRequirement
 from app.schemas.public import PublicMessageCreate
 from app.services.chat_presence import list_typing_presence, set_typing_presence
-from app.services.chat_service import (
+from app.services.notifications import EVENT_REQUEST_DATA as NOTIFICATION_EVENT_REQUEST_DATA, notify_request_event, unread_client_summary
+from app.services.chat_secure_service import (
     create_client_message,
     get_chat_activity_summary,
     list_messages_for_request,
     serialize_message,
     serialize_messages_for_request,
 )
-from app.services.request_read_markers import EVENT_MESSAGE, mark_unread_for_lawyer
+from app.services.request_read_markers import EVENT_REQUEST_DATA, mark_unread_for_lawyer
 
 router = APIRouter()
 
@@ -172,6 +173,11 @@ def get_live_chat_state_by_track(
         "latest_message_at": _iso_or_none(_as_utc_datetime(summary.get("latest_message_at"))),
         "latest_attachment_at": _iso_or_none(_as_utc_datetime(summary.get("latest_attachment_at"))),
         "typing": typing_rows,
+        "unread": unread_client_summary(
+            db,
+            track_number=req.track_number,
+            request_id=req.id,
+        ),
     }
 
 
@@ -312,8 +318,16 @@ def save_data_request_values(
         updated += 1
 
     if updated:
-        mark_unread_for_lawyer(req, EVENT_MESSAGE)
+        mark_unread_for_lawyer(req, EVENT_REQUEST_DATA)
         req.responsible = "Клиент"
+        notify_request_event(
+            db,
+            request=req,
+            event_type=NOTIFICATION_EVENT_REQUEST_DATA,
+            actor_role="CLIENT",
+            body=f"Клиент обновил дополнительные данные ({updated})",
+            responsible="Клиент",
+        )
         db.add(req)
         db.commit()
     else:

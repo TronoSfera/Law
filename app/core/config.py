@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     SMSAERO_API_KEY: str = ""
     OTP_SMS_TEMPLATE: str = "Your verification code: {code}"
     DATA_ENCRYPTION_SECRET: str = "change_me_data_encryption"
+    CHAT_ENCRYPTION_SECRET: str = ""
     OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300
     OTP_SEND_RATE_LIMIT: int = 8
     OTP_VERIFY_RATE_LIMIT: int = 20

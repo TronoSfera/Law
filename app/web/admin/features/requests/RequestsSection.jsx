@@ -4,12 +4,30 @@ import { fmtDate, statusLabel } from "../../shared/utils.js";
 function renderRequestUpdatesCell(row, role) {
   const hasServiceRequestUnread = Boolean(row?.has_service_requests_unread);
   const serviceRequestCount = Number(row?.service_requests_unread_count || 0);
+  const viewerUnreadTotal = Number(row?.viewer_unread_total || 0);
+  const viewerUnreadByEvent = row?.viewer_unread_by_event && typeof row.viewer_unread_by_event === "object" ? row.viewer_unread_by_event : {};
+  const viewerUnreadLabel =
+    viewerUnreadTotal > 0
+      ? Object.entries(viewerUnreadByEvent)
+          .map(([eventType, count]) => {
+            const code = String(eventType || "").toUpperCase();
+            const label = REQUEST_UPDATE_EVENT_LABELS[code] || code.toLowerCase();
+            return label + ": " + String(count || 0);
+          })
+          .join(", ")
+      : "";
   if (role === "LAWYER") {
     const has = Boolean(row.lawyer_has_unread_updates);
     const eventType = String(row.lawyer_unread_event_type || "").toUpperCase();
-    if (!has && !hasServiceRequestUnread) return <span className="request-update-empty">нет</span>;
+    if (!has && !hasServiceRequestUnread && !viewerUnreadTotal) return <span className="request-update-empty">нет</span>;
     return (
       <span className="request-updates-stack">
+        {viewerUnreadTotal > 0 ? (
+          <span className="request-update-chip" title={"Мои непрочитанные: " + (viewerUnreadLabel || String(viewerUnreadTotal))}>
+            <span className="request-update-dot" />
+            {"Мне: " + String(viewerUnreadTotal)}
+          </span>
+        ) : null}
         {has ? (
           <span className="request-update-chip" title={"Есть непрочитанное обновление: " + (REQUEST_UPDATE_EVENT_LABELS[eventType] || eventType.toLowerCase())}>
             <span className="request-update-dot" />
@@ -31,9 +49,15 @@ function renderRequestUpdatesCell(row, role) {
   const lawyerHas = Boolean(row.lawyer_has_unread_updates);
   const lawyerType = String(row.lawyer_unread_event_type || "").toUpperCase();
 
-  if (!clientHas && !lawyerHas && !hasServiceRequestUnread) return <span className="request-update-empty">нет</span>;
+  if (!clientHas && !lawyerHas && !hasServiceRequestUnread && !viewerUnreadTotal) return <span className="request-update-empty">нет</span>;
   return (
     <span className="request-updates-stack">
+      {viewerUnreadTotal > 0 ? (
+        <span className="request-update-chip" title={"Мои непрочитанные: " + (viewerUnreadLabel || String(viewerUnreadTotal))}>
+          <span className="request-update-dot" />
+          {"Мне: " + String(viewerUnreadTotal)}
+        </span>
+      ) : null}
       {clientHas ? (
         <span className="request-update-chip" title={"Клиенту: " + (REQUEST_UPDATE_EVENT_LABELS[clientType] || clientType.toLowerCase())}>
           <span className="request-update-dot" />

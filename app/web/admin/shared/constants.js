@@ -44,6 +44,9 @@ export const STATUS_KIND_LABELS = {
 export const REQUEST_UPDATE_EVENT_LABELS = {
   MESSAGE: "сообщение",
   ATTACHMENT: "файл",
+  REQUEST_DATA: "данные",
+  ASSIGNMENT: "назначение",
+  REASSIGNMENT: "переназначение",
   STATUS: "статус",
 };
 

@@ -16,6 +16,11 @@ from app.models.request import Request
 from app.models.request_service_request import RequestServiceRequest
 from app.models.status import Status
 from app.models.status_history import StatusHistory
+from app.services.notifications import (
+    unread_admin_summary,
+    unread_global_summary_for_clients,
+    unread_global_summary_for_lawyers,
+)
 from app.services.sla_metrics import compute_sla_snapshot
 
 router = APIRouter()
@@ -99,17 +104,24 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
     now_utc = datetime.now(timezone.utc)
     month_start, next_month_start = _month_bounds(now_utc)
 
-    unread_for_clients = (
+    unread_for_clients_flags = (
         db.query(func.count(Request.id))
         .filter(Request.client_has_unread_updates.is_(True))
         .scalar()
         or 0
     )
-    unread_for_lawyers = (
+    unread_for_lawyers_flags = (
         db.query(func.count(Request.id))
         .filter(Request.lawyer_has_unread_updates.is_(True))
         .scalar()
         or 0
+    )
+    unread_for_clients_notifications = unread_global_summary_for_clients(db)
+    unread_for_lawyers_notifications = unread_global_summary_for_lawyers(db)
+    unread_for_clients = max(int(unread_for_clients_flags), int(unread_for_clients_notifications.get("total") or 0))
+    unread_for_lawyers = max(int(unread_for_lawyers_flags), int(unread_for_lawyers_notifications.get("total") or 0))
+    my_unread_notifications = (
+        unread_admin_summary(db, admin_user_id=str(actor_uuid), request_id=None) if actor_uuid is not None else {"total": 0, "by_event": {}}
     )
     if role == "LAWYER" and actor_uuid is not None:
         service_request_unread_total = int(
@@ -267,6 +279,11 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
             .all()
         )
         my_unread_by_event = {str(event_type): int(count) for event_type, count in my_unread_by_event_rows if event_type}
+        notif_total = int(my_unread_notifications.get("total") or 0)
+        notif_by_event = dict(my_unread_notifications.get("by_event") or {})
+        if notif_total > my_unread_updates:
+            my_unread_updates = notif_total
+            my_unread_by_event = notif_by_event
         scoped_lawyer_loads = [row for row in lawyer_loads if str(row["lawyer_id"]) == str(actor_uuid)]
     elif role == "LAWYER":
         by_status = {}
@@ -293,8 +310,8 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
             or 0
         )
         unassigned_total = int(db.query(func.count(Request.id)).filter(Request.assigned_lawyer_id.is_(None)).scalar() or 0)
-        my_unread_updates = 0
-        my_unread_by_event = {}
+        my_unread_updates = int(my_unread_notifications.get("total") or 0)
+        my_unread_by_event = dict(my_unread_notifications.get("by_event") or {})
         scoped_lawyer_loads = lawyer_loads
 
     sla_snapshot = compute_sla_snapshot(db)
@@ -319,6 +336,8 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "unassigned_total": unassigned_total,
         "my_unread_updates": my_unread_updates,
         "my_unread_by_event": my_unread_by_event,
+        "my_unread_notifications_total": int(my_unread_notifications.get("total") or 0),
+        "my_unread_notifications_by_event": dict(my_unread_notifications.get("by_event") or {}),
         "deadline_alert_total": deadline_alert_total,
         "month_revenue": monthly_revenue,
         "month_expenses": round(sum(_to_float(row.get("monthly_salary")) for row in scoped_lawyer_loads), 2)
@@ -331,6 +350,10 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "avg_time_in_status_hours": sla_snapshot.get("avg_time_in_status_hours", {}),
         "unread_for_clients": int(unread_for_clients),
         "unread_for_lawyers": int(unread_for_lawyers),
+        "unread_for_clients_by_event": dict(unread_for_clients_notifications.get("by_event") or {}),
+        "unread_for_lawyers_by_event": dict(unread_for_lawyers_notifications.get("by_event") or {}),
+        "unread_for_clients_notifications_total": int(unread_for_clients_notifications.get("total") or 0),
+        "unread_for_lawyers_notifications_total": int(unread_for_lawyers_notifications.get("total") or 0),
         "service_request_unread_total": int(service_request_unread_total),
         "lawyer_loads": scoped_lawyer_loads,
     }

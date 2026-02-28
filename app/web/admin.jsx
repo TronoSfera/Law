@@ -896,6 +896,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       lawyerLoads: [],
       myUnreadByEvent: {},
       myUnreadTotal: 0,
+      myUnreadNotificationsTotal: 0,
       unreadForClients: 0,
       unreadForLawyers: 0,
       serviceRequestUnreadTotal: 0,
@@ -1762,7 +1763,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                   { label: "Мои заявки", value: data.assigned_total ?? 0 },
                   { label: "Мои активные", value: data.active_assigned_total ?? 0 },
                   { label: "Неназначенные", value: data.unassigned_total ?? 0 },
-                  { label: "Мои непрочитанные", value: data.my_unread_updates ?? 0 },
+                  { label: "Мои непрочитанные", value: data.my_unread_notifications_total ?? data.my_unread_updates ?? 0 },
                   { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
                 ]
               : [
@@ -1770,6 +1771,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                   { label: "Назначенные", value: data.assigned_total ?? 0 },
                   { label: "Неназначенные", value: data.unassigned_total ?? 0 },
                   { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
+                  { label: "Мои непрочитанные", value: data.my_unread_notifications_total ?? data.my_unread_updates ?? 0 },
                   { label: "Выручка (мес.)", value: Number(data.month_revenue ?? 0).toFixed(2) },
                   { label: "Расходы (мес.)", value: Number(data.month_expenses ?? 0).toFixed(2) },
                   { label: "Непрочитано юристами", value: data.unread_for_lawyers ?? 0 },
@@ -1786,8 +1788,9 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             lawyerLoads: data.lawyer_loads || [],
             myUnreadByEvent: data.my_unread_by_event || {},
             myUnreadTotal: Number(data.my_unread_updates || 0),
-            unreadForClients: Number(data.unread_for_clients || 0),
-            unreadForLawyers: Number(data.unread_for_lawyers || 0),
+            myUnreadNotificationsTotal: Number(data.my_unread_notifications_total || data.my_unread_updates || 0),
+            unreadForClients: Number(data.unread_for_clients_notifications_total || data.unread_for_clients || 0),
+            unreadForLawyers: Number(data.unread_for_lawyers_notifications_total || data.unread_for_lawyers || 0),
             serviceRequestUnreadTotal: Number(data.service_request_unread_total || 0),
             deadlineAlertTotal: Number(data.deadline_alert_total || 0),
             monthRevenue: Number(data.month_revenue || 0),
@@ -2629,6 +2632,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         lawyerLoads: [],
         myUnreadByEvent: {},
         myUnreadTotal: 0,
+        myUnreadNotificationsTotal: 0,
         unreadForClients: 0,
         unreadForLawyers: 0,
         serviceRequestUnreadTotal: 0,
@@ -2789,9 +2793,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const topbarUnreadCount = useMemo(() => {
       const roleCode = String(role || "").toUpperCase();
-      if (roleCode === "LAWYER") return Number(dashboardData.myUnreadTotal || 0);
+      if (roleCode === "LAWYER" || roleCode === "ADMIN" || roleCode === "CURATOR") {
+        return Number(dashboardData.myUnreadNotificationsTotal || dashboardData.myUnreadTotal || 0);
+      }
       return Number(dashboardData.unreadForClients || 0) + Number(dashboardData.unreadForLawyers || 0);
-    }, [dashboardData.myUnreadTotal, dashboardData.unreadForClients, dashboardData.unreadForLawyers, role]);
+    }, [dashboardData.myUnreadNotificationsTotal, dashboardData.myUnreadTotal, dashboardData.unreadForClients, dashboardData.unreadForLawyers, role]);
 
     const topbarDeadlineAlertCount = useMemo(() => Number(dashboardData.deadlineAlertTotal || 0), [dashboardData.deadlineAlertTotal]);
     const topbarServiceRequestUnreadCount = useMemo(

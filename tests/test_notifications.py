@@ -29,6 +29,7 @@ from app.models.request import Request
 from app.models.status import Status
 from app.models.status_history import StatusHistory
 from app.models.topic_status_transition import TopicStatusTransition
+from app.services.notifications import EVENT_REQUEST_DATA, notify_request_event
 from app.workers.tasks import sla as sla_task
 
 
@@ -273,6 +274,123 @@ class NotificationFlowTests(unittest.TestCase):
             rows = db.query(Notification).filter(Notification.event_type == "ATTACHMENT").all()
             self.assertEqual(len(rows), 1)
             self.assertEqual(str(rows[0].recipient_admin_user_id), lawyer_id)
+
+    def test_admin_reassign_creates_reassignment_notifications_and_unread_markers(self):
+        with self.SessionLocal() as db:
+            admin = AdminUser(
+                role="ADMIN",
+                name="Админ",
+                email="root.reassign@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_old = AdminUser(
+                role="LAWYER",
+                name="Юрист Старый",
+                email="lawyer.old@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_new = AdminUser(
+                role="LAWYER",
+                name="Юрист Новый",
+                email="lawyer.new@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([admin, lawyer_old, lawyer_new])
+            db.flush()
+            req = Request(
+                track_number="TRK-NOTIF-REASSIGN",
+                client_name="Клиент",
+                client_phone="+79990000031",
+                topic_code="civil",
+                status_code="IN_PROGRESS",
+                description="reassign notification",
+                extra_fields={},
+                assigned_lawyer_id=str(lawyer_old.id),
+            )
+            db.add(req)
+            db.commit()
+            request_id = str(req.id)
+            admin_id = str(admin.id)
+            new_lawyer_id = str(lawyer_new.id)
+
+        headers = self._admin_headers(admin_id, "ADMIN", "root.reassign@example.com")
+        resp = self.client.post(
+            f"/api/admin/requests/{request_id}/reassign",
+            headers=headers,
+            json={"lawyer_id": new_lawyer_id},
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with self.SessionLocal() as db:
+            rows = (
+                db.query(Notification)
+                .filter(
+                    Notification.request_id == UUID(request_id),
+                    Notification.event_type == "REASSIGNMENT",
+                )
+                .all()
+            )
+            self.assertGreaterEqual(len(rows), 2)
+            self.assertTrue(any(str(row.recipient_track_number or "").upper() == "TRK-NOTIF-REASSIGN" for row in rows))
+            self.assertTrue(any(str(row.recipient_admin_user_id or "") == new_lawyer_id for row in rows))
+
+            req = db.get(Request, UUID(request_id))
+            self.assertIsNotNone(req)
+            self.assertTrue(bool(req.client_has_unread_updates))
+            self.assertEqual(str(req.client_unread_event_type or "").upper(), "REASSIGNMENT")
+            self.assertTrue(bool(req.lawyer_has_unread_updates))
+            self.assertEqual(str(req.lawyer_unread_event_type or "").upper(), "REASSIGNMENT")
+
+    def test_request_data_event_from_client_notifies_lawyer_and_admin(self):
+        with self.SessionLocal() as db:
+            admin = AdminUser(
+                role="ADMIN",
+                name="Админ",
+                email="root.data@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer = AdminUser(
+                role="LAWYER",
+                name="Юрист",
+                email="lawyer.data@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([admin, lawyer])
+            db.flush()
+            req = Request(
+                track_number="TRK-NOTIF-REQDATA",
+                client_name="Клиент",
+                client_phone="+79990000032",
+                topic_code="civil",
+                status_code="IN_PROGRESS",
+                description="request data notification",
+                extra_fields={},
+                assigned_lawyer_id=str(lawyer.id),
+            )
+            db.add(req)
+            db.flush()
+
+            result = notify_request_event(
+                db,
+                request=req,
+                event_type=EVENT_REQUEST_DATA,
+                actor_role="CLIENT",
+                body="Клиент обновил доп. данные",
+                responsible="Клиент",
+                send_telegram=False,
+            )
+            db.commit()
+            self.assertEqual(int(result.get("internal_created") or 0), 2)
+
+            rows = db.query(Notification).filter(Notification.event_type == "REQUEST_DATA").all()
+            self.assertEqual(len(rows), 2)
+            self.assertTrue(any(str(row.recipient_admin_user_id or "") == str(admin.id) for row in rows))
+            self.assertTrue(any(str(row.recipient_admin_user_id or "") == str(lawyer.id) for row in rows))
 
 
 class NotificationSlaTests(unittest.TestCase):

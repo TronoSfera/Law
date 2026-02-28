@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -19,18 +20,20 @@ from app.models.client import Client
 from app.models.invoice import Invoice
 from app.models.message import Message
 from app.models.audit_log import AuditLog
+from app.models.notification import Notification
 from app.models.request import Request
 from app.models.request_service_request import RequestServiceRequest
 from app.models.status_history import StatusHistory
 from app.models.topic import Topic
 from app.services.invoice_crypto import decrypt_requisites
 from app.services.invoice_pdf import build_invoice_pdf_bytes
-from app.services.chat_service import create_client_message, list_messages_for_request
+from app.services.chat_secure_service import create_client_message, list_messages_for_request
 from app.services.notifications import (
     get_client_notification,
     list_client_notifications,
     mark_client_notifications_read,
     serialize_notification,
+    unread_client_summary,
 )
 from app.services.request_read_markers import clear_unread_for_client
 from app.services.request_templates import validate_required_topic_fields_or_400
@@ -241,6 +244,34 @@ def list_my_requests(
         query = query.filter(Request.client_phone == normalized_phone)
 
     rows = query.order_by(Request.updated_at.desc(), Request.created_at.desc(), Request.id.desc()).all()
+    row_ids = [row.id for row in rows if row and row.id]
+    unread_by_request: dict[str, dict[str, object]] = {}
+    if row_ids:
+        try:
+            notif_rows = (
+                db.query(Notification.request_id, Notification.event_type, func.count(Notification.id))
+                .filter(
+                    Notification.recipient_type == "CLIENT",
+                    Notification.is_read.is_(False),
+                    Notification.request_id.in_(row_ids),
+                )
+                .group_by(Notification.request_id, Notification.event_type)
+                .all()
+            )
+        except SQLAlchemyError:
+            notif_rows = []
+        for request_id, event_type, count in notif_rows:
+            request_key = str(request_id or "")
+            if not request_key:
+                continue
+            bucket = unread_by_request.setdefault(request_key, {"total": 0, "by_event": {}})
+            event_key = str(event_type or "").strip().upper()
+            event_count = int(count or 0)
+            if event_key:
+                by_event = bucket["by_event"] if isinstance(bucket.get("by_event"), dict) else {}
+                by_event[event_key] = int(by_event.get(event_key, 0)) + event_count
+                bucket["by_event"] = by_event
+            bucket["total"] = int(bucket.get("total", 0)) + event_count
     return {
         "rows": [
             {
@@ -250,6 +281,8 @@ def list_my_requests(
                 "status_code": row.status_code,
                 "client_has_unread_updates": bool(row.client_has_unread_updates),
                 "client_unread_event_type": row.client_unread_event_type,
+                "viewer_unread_total": int((unread_by_request.get(str(row.id)) or {}).get("total", 0)),
+                "viewer_unread_by_event": dict((unread_by_request.get(str(row.id)) or {}).get("by_event", {})),
                 "created_at": _to_iso(row.created_at),
                 "updated_at": _to_iso(row.updated_at),
             }
@@ -302,6 +335,12 @@ def get_request_by_track(
         db.commit()
         db.refresh(req)
 
+    unread_after_open = unread_client_summary(
+        db,
+        track_number=req.track_number,
+        request_id=req.id,
+    )
+
     return {
         "id": str(req.id),
         "client_id": str(req.client_id) if req.client_id else None,
@@ -324,6 +363,8 @@ def get_request_by_track(
         "client_unread_event_type": req.client_unread_event_type,
         "lawyer_has_unread_updates": req.lawyer_has_unread_updates,
         "lawyer_unread_event_type": req.lawyer_unread_event_type,
+        "viewer_unread_total": int(unread_after_open.get("total") or 0),
+        "viewer_unread_by_event": dict(unread_after_open.get("by_event") or {}),
         "created_at": _to_iso(req.created_at),
         "updated_at": _to_iso(req.updated_at),
     }

@@ -18,15 +18,19 @@ from app.models.table_availability import TableAvailability
 from app.schemas.universal import UniversalQuery
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.notifications import (
+    EVENT_ASSIGNMENT as NOTIFICATION_EVENT_ASSIGNMENT,
     EVENT_ATTACHMENT as NOTIFICATION_EVENT_ATTACHMENT,
     EVENT_MESSAGE as NOTIFICATION_EVENT_MESSAGE,
+    EVENT_REASSIGNMENT as NOTIFICATION_EVENT_REASSIGNMENT,
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     mark_admin_notifications_read,
     notify_request_event,
 )
 from app.services.request_read_markers import (
+    EVENT_ASSIGNMENT,
     EVENT_ATTACHMENT,
     EVENT_MESSAGE,
+    EVENT_REASSIGNMENT,
     EVENT_STATUS,
     clear_unread_for_lawyer,
     mark_unread_for_client,
@@ -121,6 +125,26 @@ def _apply_create_side_effects(db: Session, *, table_name: str, row: Any, admin:
             actor_role=_actor_role(admin),
             actor_admin_user_id=admin.get("sub"),
             body=f"Файл: {row.file_name}",
+            responsible=responsible,
+        )
+        return
+
+    if table_name == "requests" and isinstance(row, Request):
+        assigned = str(row.assigned_lawyer_id or "").strip()
+        if not assigned:
+            return
+        mark_unread_for_client(row, EVENT_ASSIGNMENT)
+        mark_unread_for_lawyer(row, EVENT_ASSIGNMENT)
+        responsible = _resolve_responsible(admin)
+        row.responsible = responsible
+        db.add(row)
+        notify_request_event(
+            db,
+            request=row,
+            event_type=NOTIFICATION_EVENT_ASSIGNMENT,
+            actor_role=_actor_role(admin),
+            actor_admin_user_id=admin.get("sub"),
+            body=f"Назначен юрист: {assigned}",
             responsible=responsible,
         )
 
@@ -449,6 +473,7 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
     if "responsible" in _columns_map(model):
         clean_payload["responsible"] = responsible
     before = _row_to_dict(row)
+    before_assigned_lawyer_id = str(before.get("assigned_lawyer_id") or "").strip() if normalized == "requests" else ""
     if normalized == "topic_status_transitions":
         next_from = str(clean_payload.get("from_status", before.get("from_status") or "")).strip()
         next_to = str(clean_payload.get("to_status", before.get("to_status") or "")).strip()
@@ -510,8 +535,35 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
                 ),
                 responsible=responsible,
             )
+    assignment_event_type = None
+    assignment_marker_type = None
+    assignment_event_body = None
+    if normalized == "requests" and not _is_lawyer(admin):
+        after_assigned_candidate = clean_payload.get("assigned_lawyer_id", before_assigned_lawyer_id or None)
+        after_assigned_lawyer_id = str(after_assigned_candidate or "").strip()
+        if after_assigned_lawyer_id and after_assigned_lawyer_id != before_assigned_lawyer_id:
+            if before_assigned_lawyer_id:
+                assignment_event_type = NOTIFICATION_EVENT_REASSIGNMENT
+                assignment_marker_type = EVENT_REASSIGNMENT
+                assignment_event_body = f"Переназначено: {before_assigned_lawyer_id} -> {after_assigned_lawyer_id}"
+            else:
+                assignment_event_type = NOTIFICATION_EVENT_ASSIGNMENT
+                assignment_marker_type = EVENT_ASSIGNMENT
+                assignment_event_body = f"Назначен юрист: {after_assigned_lawyer_id}"
     for key, value in clean_payload.items():
         setattr(row, key, value)
+    if assignment_event_type and assignment_marker_type and isinstance(row, Request):
+        mark_unread_for_client(row, assignment_marker_type)
+        mark_unread_for_lawyer(row, assignment_marker_type)
+        notify_request_event(
+            db,
+            request=row,
+            event_type=assignment_event_type,
+            actor_role=_actor_role(admin),
+            actor_admin_user_id=admin.get("sub"),
+            body=assignment_event_body,
+            responsible=responsible,
+        )
 
     try:
         db.add(row)

@@ -6,22 +6,32 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
+from app.models.notification import Notification
 from app.models.request import Request
 from app.models.request_service_request import RequestServiceRequest
 from app.schemas.admin import RequestAdminCreate, RequestAdminPatch
 from app.schemas.universal import UniversalQuery
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.notifications import (
+    EVENT_ASSIGNMENT as NOTIFICATION_EVENT_ASSIGNMENT,
+    EVENT_REASSIGNMENT as NOTIFICATION_EVENT_REASSIGNMENT,
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     mark_admin_notifications_read,
     notify_request_event,
 )
-from app.services.request_read_markers import EVENT_STATUS, clear_unread_for_lawyer, mark_unread_for_client
+from app.services.request_read_markers import (
+    EVENT_ASSIGNMENT,
+    EVENT_REASSIGNMENT,
+    EVENT_STATUS,
+    clear_unread_for_lawyer,
+    mark_unread_for_client,
+    mark_unread_for_lawyer,
+)
 from app.services.request_status import apply_status_change_effects
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.services.status_flow import transition_allowed_for_topic
@@ -68,6 +78,7 @@ def query_requests_service(uq: UniversalQuery, db: Session, admin: dict) -> dict
     row_ids = [str(row.id) for row in rows if row and row.id]
 
     unread_service_requests_by_request: dict[str, int] = {}
+    viewer_unread_by_request: dict[str, dict[str, Any]] = {}
     if row_ids:
         unread_query = (
             db.query(RequestServiceRequest.request_id, func.count(RequestServiceRequest.id))
@@ -83,6 +94,37 @@ def query_requests_service(uq: UniversalQuery, db: Session, admin: dict) -> dict
             unread_query = unread_query.filter(RequestServiceRequest.admin_unread.is_(True))
         unread_rows = unread_query.group_by(RequestServiceRequest.request_id).all()
         unread_service_requests_by_request = {str(request_id): int(count or 0) for request_id, count in unread_rows if request_id}
+
+        if actor:
+            try:
+                actor_uuid = UUID(str(actor))
+            except ValueError:
+                actor_uuid = None
+            if actor_uuid is not None:
+                try:
+                    notif_rows = (
+                        db.query(Notification.request_id, Notification.event_type, func.count(Notification.id))
+                        .filter(
+                            Notification.recipient_type == "ADMIN_USER",
+                            Notification.recipient_admin_user_id == actor_uuid,
+                            Notification.is_read.is_(False),
+                            Notification.request_id.in_(row_ids),
+                        )
+                        .group_by(Notification.request_id, Notification.event_type)
+                        .all()
+                    )
+                except SQLAlchemyError:
+                    notif_rows = []
+                for request_id, event_type, count in notif_rows:
+                    request_key = str(request_id or "")
+                    if not request_key:
+                        continue
+                    bucket = viewer_unread_by_request.setdefault(request_key, {"total": 0, "by_event": {}})
+                    event_key = str(event_type or "").strip().upper()
+                    event_count = int(count or 0)
+                    if event_key:
+                        bucket["by_event"][event_key] = int(bucket["by_event"].get(event_key, 0)) + event_count
+                    bucket["total"] = int(bucket["total"]) + event_count
 
     return {
         "rows": [
@@ -106,6 +148,8 @@ def query_requests_service(uq: UniversalQuery, db: Session, admin: dict) -> dict
                 "lawyer_unread_event_type": r.lawyer_unread_event_type,
                 "service_requests_unread_count": int(unread_service_requests_by_request.get(str(r.id), 0)),
                 "has_service_requests_unread": bool(unread_service_requests_by_request.get(str(r.id), 0)),
+                "viewer_unread_total": int((viewer_unread_by_request.get(str(r.id)) or {}).get("total", 0)),
+                "viewer_unread_by_event": dict((viewer_unread_by_request.get(str(r.id)) or {}).get("by_event", {})),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             }
@@ -193,6 +237,7 @@ def update_request_service(request_id: str, payload: RequestAdminPatch, db: Sess
             if row.effective_rate is None and "effective_rate" not in changes:
                 changes["effective_rate"] = assigned_lawyer.default_rate
     old_status = str(row.status_code or "")
+    old_assigned_lawyer_id = str(row.assigned_lawyer_id or "").strip()
     responsible = str(admin.get("email") or "").strip() or "Администратор системы"
     if {"client_id", "client_name", "client_phone"}.intersection(set(changes.keys())):
         client = client_for_request_payload_or_400(
@@ -227,6 +272,8 @@ def update_request_service(request_id: str, payload: RequestAdminPatch, db: Sess
         )
     for key, value in changes.items():
         setattr(row, key, value)
+    new_assigned_lawyer_id = str(row.assigned_lawyer_id or "").strip()
+    assigned_changed = old_assigned_lawyer_id != new_assigned_lawyer_id
     if status_changed:
         next_status = str(changes.get("status_code") or "")
         important_date_at = row.important_date_at
@@ -257,6 +304,24 @@ def update_request_service(request_id: str, payload: RequestAdminPatch, db: Sess
                 f"{old_status} -> {next_status}"
                 + (f"\nВажная дата: {important_date_at.isoformat()}" if important_date_at else "")
                 + (f"\n{billing_note}" if billing_note else "")
+            ),
+            responsible=responsible,
+        )
+    if actor_role == "ADMIN" and assigned_changed and new_assigned_lawyer_id:
+        assignment_event_type = NOTIFICATION_EVENT_REASSIGNMENT if old_assigned_lawyer_id else NOTIFICATION_EVENT_ASSIGNMENT
+        marker_event_type = EVENT_REASSIGNMENT if old_assigned_lawyer_id else EVENT_ASSIGNMENT
+        mark_unread_for_client(row, marker_event_type)
+        mark_unread_for_lawyer(row, marker_event_type)
+        notify_request_event(
+            db,
+            request=row,
+            event_type=assignment_event_type,
+            actor_role="ADMIN",
+            actor_admin_user_id=admin.get("sub"),
+            body=(
+                f"Назначен юрист: {new_assigned_lawyer_id}"
+                if not old_assigned_lawyer_id
+                else f"Переназначено: {old_assigned_lawyer_id} -> {new_assigned_lawyer_id}"
             ),
             responsible=responsible,
         )
@@ -388,6 +453,20 @@ def claim_request_service(request_id: str, db: Session, admin: dict) -> dict[str
     if row is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
 
+    mark_unread_for_client(row, EVENT_ASSIGNMENT)
+    notify_request_event(
+        db,
+        request=row,
+        event_type=NOTIFICATION_EVENT_ASSIGNMENT,
+        actor_role="LAWYER",
+        actor_admin_user_id=str(lawyer_uuid),
+        body=f"Юрист {str(lawyer.email or lawyer.name or lawyer_uuid)} взял заявку в работу",
+        responsible=responsible,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
     return {
         "status": "claimed",
         "id": str(row.id),
@@ -461,6 +540,21 @@ def reassign_request_service(request_id: str, lawyer_id: str, db: Session, admin
     row = db.get(Request, request_uuid)
     if row is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    mark_unread_for_client(row, EVENT_REASSIGNMENT)
+    mark_unread_for_lawyer(row, EVENT_REASSIGNMENT)
+    notify_request_event(
+        db,
+        request=row,
+        event_type=NOTIFICATION_EVENT_REASSIGNMENT,
+        actor_role="ADMIN",
+        actor_admin_user_id=admin.get("sub"),
+        body=f"Переназначено: {old_assigned} -> {str(lawyer_uuid)}",
+        responsible=responsible,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
 
     return {
         "status": "reassigned",
