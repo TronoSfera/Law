@@ -1,0 +1,22 @@
+services:
+  frontend:
+    ports:
+      - "8081:80"
+      - "8080:80"
+
+  backend:
+    ports:
+      - "8002:8000"
+
+  db:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"

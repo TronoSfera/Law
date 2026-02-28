@@ -4,6 +4,7 @@
 Развернуть платформу на сервере `45.150.36.116` c HTTPS на `80/443` для домена `ruakb.ru`.
 
 ## Что добавлено
+- `docker-compose.local.yml` — локальные публикации портов (`8081/8080/8002/5432/6379/9000/9001`)
 - `docker-compose.prod.nginx.yml` — production override:
   - edge nginx на `80/443`
   - certbot volume для сертификатов
@@ -39,6 +40,7 @@ curl -I http://ruakb.ru
 curl -I https://ruakb.ru
 curl -fsS https://ruakb.ru/health
 curl -fsS https://ruakb.ru/chat-health
+ss -lntp | egrep ':(80|443|5432|6379|8002|8081|9000|9001)\b'
 ```
 
 ## Обновление

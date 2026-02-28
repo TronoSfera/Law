@@ -10,7 +10,7 @@ DOMAIN ?= ruakb.ru
 WWW_DOMAIN ?= www.ruakb.ru
 LETSENCRYPT_EMAIL ?= admin@ruakb.ru
 
-LOCAL_COMPOSE = docker compose -f docker-compose.yml
+LOCAL_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local.yml
 PROD_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml
 CERT_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.prod.cert.yml
 
@@ -57,7 +57,7 @@ check-cert-files: check-prod-files
 	@test -f deploy/nginx/edge-https.conf || (echo "[ERROR] Missing deploy/nginx/edge-https.conf. Run: git pull"; exit 1)
 
 prod-up: check-prod-files
-	$(PROD_COMPOSE) up -d --build
+	$(PROD_COMPOSE) up -d --build --force-recreate --remove-orphans
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
 
 prod-down: check-prod-files

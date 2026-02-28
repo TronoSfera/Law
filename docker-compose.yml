@@ -16,7 +16,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    ports: ["8081:80", "8080:80"]
 
   e2e:
     build:
@@ -53,7 +52,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
-    ports: ["8002:8000"]
     volumes: [".:/app"]
 
   chat-service:
@@ -109,7 +107,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-legal}
-    ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d legal"]
@@ -122,7 +119,6 @@ services:
     image: redis:7
     container_name: law-redis
     restart: unless-stopped
-    ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -138,7 +134,6 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-    ports: ["9000:9000", "9001:9001"]
     volumes: ["miniodata:/data"]
 
 volumes:

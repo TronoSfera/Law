@@ -4,7 +4,7 @@ Backend skeleton: public requests + OTP + public JWT cookie + admin (admin/lawye
 ## Run (Docker)
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 Landing (frontend): http://localhost:8081
 Admin UI: http://localhost:8081/admin
@@ -43,6 +43,7 @@ Checks:
 curl -I https://ruakb.ru
 curl -fsS https://ruakb.ru/health
 curl -fsS https://ruakb.ru/chat-health
+ss -lntp | egrep ':(80|443|5432|6379|8002|8081|9000|9001)\\b'
 ```
 
 ## Migrations
