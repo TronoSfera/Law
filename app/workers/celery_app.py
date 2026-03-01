@@ -2,6 +2,13 @@ from celery import Celery
 from app.core.config import settings
 
 celery_app = Celery("legal_case_tracker", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
+celery_app.conf.imports = (
+    "app.workers.tasks.assign",
+    "app.workers.tasks.sla",
+    "app.workers.tasks.security",
+    "app.workers.tasks.uploads",
+    "app.services.attachment_scan",
+)
 
 celery_app.conf.beat_schedule = {
     "sla_check": {"task": "app.workers.tasks.sla.sla_check", "schedule": 300.0},

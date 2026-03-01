@@ -6,10 +6,45 @@ from typing import Optional
 class AdminLogin(BaseModel):
     email: str
     password: str
+    totp_code: Optional[str] = None
+    backup_code: Optional[str] = None
 
 class AdminToken(BaseModel):
     access_token: str
     token_type: str = "Bearer"
+
+
+class AdminTotpSetupIn(BaseModel):
+    issuer: Optional[str] = None
+
+
+class AdminTotpSetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+    issuer: str
+    account_name: str
+
+
+class AdminTotpEnableIn(BaseModel):
+    secret: str
+    code: str
+
+
+class AdminTotpVerifyIn(BaseModel):
+    code: Optional[str] = None
+    backup_code: Optional[str] = None
+
+
+class AdminTotpEnableOut(BaseModel):
+    enabled: bool
+    backup_codes: list[str]
+
+
+class AdminTotpStatusOut(BaseModel):
+    mode: str
+    enabled: bool
+    required: bool
+    has_backup_codes: bool
 
 class QuoteUpsert(BaseModel):
     text: str

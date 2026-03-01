@@ -8,7 +8,10 @@
 
 DOMAIN ?= ruakb.ru
 WWW_DOMAIN ?= www.ruakb.ru
+SECOND_DOMAIN ?= ruakb.online
+SECOND_WWW_DOMAIN ?= www.ruakb.online
 LETSENCRYPT_EMAIL ?= admin@ruakb.ru
+CERTBOT_DOMAINS = -d "$(DOMAIN)" -d "$(WWW_DOMAIN)" $(if $(strip $(SECOND_DOMAIN)),-d "$(SECOND_DOMAIN)") $(if $(strip $(SECOND_WWW_DOMAIN)),-d "$(SECOND_WWW_DOMAIN)")
 
 LOCAL_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local.yml
 PROD_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml
@@ -29,6 +32,12 @@ help:
 	@echo "  prod-migrate      - Apply migrations (prod)"
 	@echo "  prod-cert-init    - Initial Let's Encrypt issue (nginx only 80 during bootstrap)"
 	@echo "  prod-cert-renew   - Renew existing certificates"
+	@echo ""
+	@echo "Domains:"
+	@echo "  DOMAIN=$(DOMAIN)"
+	@echo "  WWW_DOMAIN=$(WWW_DOMAIN)"
+	@echo "  SECOND_DOMAIN=$(SECOND_DOMAIN)"
+	@echo "  SECOND_WWW_DOMAIN=$(SECOND_WWW_DOMAIN)"
 
 local-up:
 	$(LOCAL_COMPOSE) up -d --build
@@ -78,7 +87,7 @@ prod-migrate: check-prod-files
 # 3) Restart stack in regular prod mode (80/443).
 prod-cert-init: check-cert-files
 	$(CERT_COMPOSE) up -d --build db redis minio backend chat-service worker beat frontend edge
-	$(CERT_COMPOSE) run --rm certbot certonly --webroot -w /var/www/certbot --email "$(LETSENCRYPT_EMAIL)" --agree-tos --no-eff-email -d "$(DOMAIN)" -d "$(WWW_DOMAIN)"
+	$(CERT_COMPOSE) run --rm certbot certonly --webroot -w /var/www/certbot --email "$(LETSENCRYPT_EMAIL)" --agree-tos --no-eff-email --non-interactive --expand $(CERTBOT_DOMAINS)
 	$(PROD_COMPOSE) up -d --build edge
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
 

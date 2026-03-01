@@ -20,6 +20,12 @@ from app.schemas.uploads import UploadCompletePayload, UploadCompleteResponse, U
 from app.services.notifications import EVENT_ATTACHMENT as NOTIFICATION_EVENT_ATTACHMENT, notify_request_event
 from app.services.request_read_markers import EVENT_ATTACHMENT, mark_unread_for_client
 from app.services.security_audit import record_file_security_event
+from app.services.attachment_scan import (
+    SCAN_STATUS_ERROR,
+    enqueue_attachment_scan,
+    ensure_attachment_download_allowed_or_4xx,
+    initial_scan_status_for_new_attachment,
+)
 from app.services.s3_storage import build_object_key, get_s3_storage
 
 router = APIRouter()
@@ -227,6 +233,7 @@ def upload_complete(
                 mime_type=payload.mime_type,
                 size_bytes=actual_size,
                 s3_key=payload.key,
+                scan_status=initial_scan_status_for_new_attachment(),
                 responsible=responsible,
             )
             mark_unread_for_client(request, EVENT_ATTACHMENT)
@@ -258,6 +265,13 @@ def upload_complete(
             )
             db.commit()
             db.refresh(row)
+            try:
+                enqueue_attachment_scan(str(row.id))
+            except Exception as exc:
+                row.scan_status = SCAN_STATUS_ERROR
+                row.scan_error = str(exc)[:500]
+                db.add(row)
+                db.commit()
             return UploadCompleteResponse(status="ok", attachment_id=str(row.id))
 
         if payload.scope == UploadScope.USER_AVATAR:
@@ -355,8 +369,17 @@ def get_object_proxy(
                 assigned = str(request.assigned_lawyer_id or "").strip()
                 if assigned and assigned != str(actor_id):
                     raise HTTPException(status_code=403, detail="Недостаточно прав")
+                attachment = db.query(Attachment).filter(Attachment.s3_key == key).order_by(Attachment.created_at.desc()).first()
+                if attachment is None:
+                    raise HTTPException(status_code=404, detail="Файл не найден")
+                ensure_attachment_download_allowed_or_4xx(attachment)
             else:
                 raise HTTPException(status_code=403, detail="Недостаточно прав")
+        elif scope == "requests":
+            attachment = db.query(Attachment).filter(Attachment.s3_key == key).order_by(Attachment.created_at.desc()).first()
+            if attachment is None:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            ensure_attachment_download_allowed_or_4xx(attachment)
 
         try:
             obj = get_s3_storage().get_object(key)

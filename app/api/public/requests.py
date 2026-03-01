@@ -70,6 +70,10 @@ def _normalize_phone(raw: str | None) -> str:
     return "".join(ch for ch in value if ch.isdigit() or ch in allowed).strip()
 
 
+def _normalize_email(raw: str | None) -> str:
+    return str(raw or "").strip().lower()
+
+
 def _normalize_track(raw: str | None) -> str:
     return str(raw or "").strip().upper()
 
@@ -90,10 +94,17 @@ def _set_view_cookie(response: Response, subject: str) -> None:
     )
 
 
-def _require_create_session_or_403(session: dict, client_phone: str) -> None:
+def _require_create_session_or_403(session: dict, client_phone: str, client_email: str | None = None) -> None:
     purpose = str(session.get("purpose") or "").strip().upper()
-    sub = _normalize_phone(session.get("sub"))
-    if purpose != OTP_CREATE_PURPOSE or not sub or sub != _normalize_phone(client_phone):
+    subject = str(session.get("sub") or "").strip()
+    auth_channel = str(session.get("auth_channel") or "SMS").strip().upper()
+    if purpose != OTP_CREATE_PURPOSE or not subject:
+        raise HTTPException(status_code=403, detail="Требуется подтверждение контакта через OTP")
+    if auth_channel == "EMAIL":
+        if _normalize_email(subject) != _normalize_email(client_email):
+            raise HTTPException(status_code=403, detail="Требуется подтверждение email через OTP")
+        return
+    if _normalize_phone(subject) != _normalize_phone(client_phone):
         raise HTTPException(status_code=403, detail="Требуется подтверждение телефона через OTP")
 
 
@@ -111,6 +122,8 @@ def _ensure_view_access_or_403(session: dict, req: Request) -> None:
         return
     if _normalize_phone(subject) and _normalize_phone(subject) == _normalize_phone(req.client_phone):
         return
+    if _normalize_email(subject) and _normalize_email(subject) == _normalize_email(req.client_email):
+        return
     raise HTTPException(status_code=403, detail="Нет доступа к заявке")
 
 
@@ -127,8 +140,9 @@ def _request_for_track_or_404(db: Session, session: dict, track_number: str) -> 
     return req
 
 
-def _upsert_client_by_phone(db: Session, *, full_name: str, phone: str) -> Client:
+def _upsert_client_by_phone(db: Session, *, full_name: str, phone: str, email: str | None = None) -> Client:
     normalized_phone = _normalize_phone(phone)
+    normalized_email = _normalize_email(email)
     if not normalized_phone:
         raise HTTPException(status_code=400, detail='Поле "client_phone" обязательно')
     normalized_name = str(full_name or "").strip() or "Клиент"
@@ -138,6 +152,7 @@ def _upsert_client_by_phone(db: Session, *, full_name: str, phone: str) -> Clien
         client = Client(
             full_name=normalized_name,
             phone=normalized_phone,
+            email=normalized_email or None,
             responsible="Клиент",
         )
         db.add(client)
@@ -145,6 +160,11 @@ def _upsert_client_by_phone(db: Session, *, full_name: str, phone: str) -> Clien
         return client
     if client.full_name != normalized_name:
         client.full_name = normalized_name
+        client.responsible = "Клиент"
+        db.add(client)
+        db.flush()
+    if normalized_email and client.email != normalized_email:
+        client.email = normalized_email
         client.responsible = "Клиент"
         db.add(client)
         db.flush()
@@ -194,9 +214,14 @@ def create_request(
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
-    _require_create_session_or_403(session, payload.client_phone)
+    _require_create_session_or_403(session, payload.client_phone, payload.client_email)
     validate_required_topic_fields_or_400(db, payload.topic_code, payload.extra_fields)
-    client = _upsert_client_by_phone(db, full_name=payload.client_name, phone=payload.client_phone)
+    client = _upsert_client_by_phone(
+        db,
+        full_name=payload.client_name,
+        phone=payload.client_phone,
+        email=payload.client_email,
+    )
 
     track = f"TRK-{uuid4().hex[:10].upper()}"
     row = Request(
@@ -204,6 +229,7 @@ def create_request(
         client_id=client.id,
         client_name=client.full_name,
         client_phone=client.phone,
+        client_email=client.email,
         topic_code=payload.topic_code,
         description=payload.description,
         extra_fields=payload.extra_fields,
@@ -236,10 +262,13 @@ def list_my_requests(
     subject = _require_view_session_or_403(session)
     normalized_track = _normalize_track(subject)
     normalized_phone = _normalize_phone(subject)
+    normalized_email = _normalize_email(subject)
 
     query = db.query(Request)
     if normalized_track.startswith("TRK-"):
         query = query.filter(Request.track_number == normalized_track)
+    elif normalized_email and "@" in normalized_email:
+        query = query.filter(Request.client_email == normalized_email)
     else:
         query = query.filter(Request.client_phone == normalized_phone)
 

@@ -257,10 +257,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
   function LoginScreen({ onSubmit, status }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [totpCode, setTotpCode] = useState("");
 
     const submit = (event) => {
       event.preventDefault();
-      onSubmit(email, password);
+      onSubmit(email, password, totpCode);
     };
 
     return (
@@ -289,6 +290,16 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 placeholder="••••••••"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="login-totp">TOTP / резервный код</label>
+              <input
+                id="login-totp"
+                type="text"
+                placeholder="123456 или backup-code"
+                value={totpCode}
+                onChange={(event) => setTotpCode(event.target.value)}
               />
             </div>
             <button className="btn" type="submit">
@@ -926,6 +937,12 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const [statusMap, setStatusMap] = useState({});
     const [smsProviderHealth, setSmsProviderHealth] = useState(null);
+    const [totpStatus, setTotpStatus] = useState({
+      mode: "password_totp_optional",
+      enabled: false,
+      required: false,
+      has_backup_codes: false,
+    });
 
     const [recordModal, setRecordModal] = useState({
       open: false,
@@ -2614,6 +2631,77 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       [api, loadDashboard, loadTable, setStatus]
     );
 
+    const loadTotpStatus = useCallback(
+      async (tokenOverride) => {
+        const activeToken = tokenOverride !== undefined ? tokenOverride : token;
+        if (!activeToken) return;
+        try {
+          const data = await api("/api/admin/auth/totp/status", { method: "GET" }, activeToken);
+          if (data && typeof data === "object") {
+            setTotpStatus({
+              mode: String(data.mode || "password_totp_optional"),
+              enabled: Boolean(data.enabled),
+              required: Boolean(data.required),
+              has_backup_codes: Boolean(data.has_backup_codes),
+            });
+          }
+        } catch (_) {}
+      },
+      [api, token]
+    );
+
+    const setupTotp = useCallback(async () => {
+      try {
+        const setup = await api("/api/admin/auth/totp/setup", { method: "POST", body: {} });
+        const secret = String(setup?.secret || "").trim();
+        const uri = String(setup?.otpauth_uri || "").trim();
+        if (!secret || !uri) throw new Error("Не удалось получить секрет TOTP");
+        window.alert(
+          "Сканируйте QR/URI в Google Authenticator:\n\n" +
+            uri +
+            "\n\nИли введите ключ вручную:\n" +
+            secret
+        );
+        const code = String(window.prompt("Введите текущий 6-значный код из Authenticator", "") || "").trim();
+        if (!code) return;
+        const enabled = await api("/api/admin/auth/totp/enable", { method: "POST", body: { secret, code } });
+        const backupCodes = Array.isArray(enabled?.backup_codes) ? enabled.backup_codes : [];
+        window.alert(
+          "2FA включена.\nСохраните резервные коды (однократно):\n\n" + (backupCodes.length ? backupCodes.join("\n") : "-")
+        );
+        await loadTotpStatus();
+      } catch (error) {
+        setStatus("login", "Ошибка настройки 2FA: " + error.message, "error");
+      }
+    }, [api, loadTotpStatus, setStatus]);
+
+    const regenerateTotpBackupCodes = useCallback(async () => {
+      try {
+        const code = String(window.prompt("Введите TOTP код (или резервный код) для регенерации", "") || "").trim();
+        if (!code) return;
+        const payload = /^\d{6}$/.test(code) ? { code } : { backup_code: code };
+        const data = await api("/api/admin/auth/totp/backup/regenerate", { method: "POST", body: payload });
+        const backupCodes = Array.isArray(data?.backup_codes) ? data.backup_codes : [];
+        window.alert("Новые резервные коды:\n\n" + (backupCodes.length ? backupCodes.join("\n") : "-"));
+        await loadTotpStatus();
+      } catch (error) {
+        setStatus("login", "Ошибка регенерации backup-кодов: " + error.message, "error");
+      }
+    }, [api, loadTotpStatus, setStatus]);
+
+    const disableTotp = useCallback(async () => {
+      try {
+        const code = String(window.prompt("Введите TOTP код (или резервный код) для отключения 2FA", "") || "").trim();
+        if (!code) return;
+        const payload = /^\d{6}$/.test(code) ? { code } : { backup_code: code };
+        await api("/api/admin/auth/totp/disable", { method: "POST", body: payload });
+        setStatus("login", "2FA отключена", "ok");
+        await loadTotpStatus();
+      } catch (error) {
+        setStatus("login", "Ошибка отключения 2FA: " + error.message, "error");
+      }
+    }, [api, loadTotpStatus, setStatus]);
+
     const logout = useCallback(() => {
       localStorage.removeItem(LS_TOKEN);
       setToken("");
@@ -2653,19 +2741,36 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       });
       setStatusMap({});
       setSmsProviderHealth(null);
+      setTotpStatus({
+        mode: "password_totp_optional",
+        enabled: false,
+        required: false,
+        has_backup_codes: false,
+      });
       setActiveSection("dashboard");
     }, [resetKanbanState, resetRequestWorkspaceState, resetTablesState]);
 
     const login = useCallback(
-      async (emailInput, passwordInput) => {
+      async (emailInput, passwordInput, totpCodeInput) => {
         try {
           setStatus("login", "Выполняем вход...", "");
+          const rawTotp = String(totpCodeInput || "").trim();
+          const digitsOnly = rawTotp.replace(/\D+/g, "");
+          const loginBody = {
+            email: String(emailInput || "").trim(),
+            password: passwordInput || "",
+            ...(rawTotp
+              ? digitsOnly.length === 6
+                ? { totp_code: digitsOnly }
+                : { backup_code: rawTotp }
+              : {}),
+          };
           const data = await api(
             "/api/admin/auth/login",
             {
               method: "POST",
               auth: false,
-              body: { email: String(emailInput || "").trim(), password: passwordInput || "" },
+              body: loginBody,
             },
             ""
           );
@@ -2683,13 +2788,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           await bootstrapReferenceData(nextToken, payload.role);
           setActiveSection("dashboard");
           await loadDashboard(nextToken);
+          await loadTotpStatus(nextToken);
 
           setStatus("login", "Успешный вход", "ok");
         } catch (error) {
           setStatus("login", "Ошибка входа: " + error.message, "error");
         }
       },
-      [api, bootstrapReferenceData, loadDashboard, setStatus]
+      [api, bootstrapReferenceData, loadDashboard, loadTotpStatus, setStatus]
     );
 
     useEffect(() => {
@@ -2712,11 +2818,12 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       (async () => {
         await bootstrapReferenceData(token, role);
         if (!cancelled) await loadDashboard(token);
+        if (!cancelled) await loadTotpStatus(token);
       })();
       return () => {
         cancelled = true;
       };
-    }, [bootstrapReferenceData, loadDashboard, role, token]);
+    }, [bootstrapReferenceData, loadDashboard, loadTotpStatus, role, token]);
 
     useEffect(() => {
       if (!token || !role) return;
@@ -2901,11 +3008,30 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                   Пользователь: <b>{email}</b>
                   <br />
                   Роль: <b>{roleLabel(role)}</b>
+                  <br />
+                  2FA: <b>{totpStatus.enabled ? "Включена" : "Выключена"}</b>
                 </>
               ) : (
                 "Не авторизован"
               )}
             </div>
+            {token && role ? (
+              <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                <button className="btn secondary" type="button" onClick={setupTotp}>
+                  Настроить 2FA
+                </button>
+                {totpStatus.enabled ? (
+                  <>
+                    <button className="btn secondary" type="button" onClick={regenerateTotpBackupCodes}>
+                      Backup-коды
+                    </button>
+                    <button className="btn danger" type="button" onClick={disableTotp}>
+                      Отключить 2FA
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button className="btn secondary" type="button" onClick={refreshAll}>
                 Обновить

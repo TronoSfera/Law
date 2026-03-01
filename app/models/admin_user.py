@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, Numeric, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.session import Base
 from app.models.common import UUIDMixin, TimestampMixin
@@ -14,4 +16,8 @@ class AdminUser(Base, UUIDMixin, TimestampMixin):
     primary_topic_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     default_rate: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     salary_percent: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    totp_secret_encrypted: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    totp_backup_codes_hashes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    totp_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

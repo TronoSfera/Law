@@ -78,10 +78,19 @@ class PublicRequestCreateTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
+        self._otp_limits_backup = (
+            settings.OTP_SEND_RATE_LIMIT,
+            settings.OTP_VERIFY_RATE_LIMIT,
+            settings.OTP_RATE_LIMIT_WINDOW_SECONDS,
+        )
+        settings.OTP_SEND_RATE_LIMIT = 10_000
+        settings.OTP_VERIFY_RATE_LIMIT = 10_000
+        settings.OTP_RATE_LIMIT_WINDOW_SECONDS = 1
 
     def tearDown(self):
         self.client.close()
         app.dependency_overrides.clear()
+        settings.OTP_SEND_RATE_LIMIT, settings.OTP_VERIFY_RATE_LIMIT, settings.OTP_RATE_LIMIT_WINDOW_SECONDS = self._otp_limits_backup
 
     @staticmethod
     def _unique_phone() -> str:
@@ -258,6 +267,108 @@ class PublicRequestCreateTests(unittest.TestCase):
 
         denied = self.client.get("/api/public/requests/TRK-FOREIGN-1")
         self.assertEqual(denied.status_code, 403)
+
+    def test_email_auth_mode_allows_create_flow_via_email_otp(self):
+        phone = self._unique_phone()
+        email = "client.email.mode@example.com"
+        with (
+            patch("app.api.public.otp.settings.PUBLIC_AUTH_MODE", "email"),
+            patch("app.api.public.otp.settings.EMAIL_PROVIDER", "dummy"),
+            patch("app.api.public.otp._generate_code", return_value="112233"),
+        ):
+            sent = self.client.post(
+                "/api/public/otp/send",
+                json={"purpose": "CREATE_REQUEST", "client_email": email},
+            )
+            self.assertEqual(sent.status_code, 200)
+            self.assertEqual(sent.json()["channel"], "EMAIL")
+
+            verified = self.client.post(
+                "/api/public/otp/verify",
+                json={"purpose": "CREATE_REQUEST", "client_email": email, "code": "112233"},
+            )
+            self.assertEqual(verified.status_code, 200)
+            self.assertEqual(verified.json()["channel"], "EMAIL")
+
+        create = self.client.post(
+            "/api/public/requests",
+            json={
+                "client_name": "Email Client",
+                "client_phone": phone,
+                "client_email": email,
+                "topic_code": "consulting",
+                "description": "Email auth mode create",
+                "extra_fields": {},
+            },
+        )
+        self.assertEqual(create.status_code, 201)
+        body = create.json()
+        with self.SessionLocal() as db:
+            req = db.query(Request).filter(Request.track_number == body["track_number"]).first()
+            self.assertIsNotNone(req)
+            self.assertEqual(req.client_email, email)
+
+    def test_view_otp_email_channel_by_track(self):
+        track_number = f"TRK-EMAIL-{uuid4().hex[:8].upper()}"
+        email = "view.track.email@example.com"
+        with self.SessionLocal() as db:
+            row = Request(
+                track_number=track_number,
+                client_name="Клиент Email",
+                client_phone=self._unique_phone(),
+                client_email=email,
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка просмотра по email",
+                extra_fields={},
+            )
+            db.add(row)
+            db.commit()
+
+        with (
+            patch("app.api.public.otp.settings.PUBLIC_AUTH_MODE", "sms_or_email"),
+            patch("app.api.public.otp.settings.EMAIL_PROVIDER", "dummy"),
+            patch("app.api.public.otp._generate_code", return_value="445566"),
+        ):
+            sent = self.client.post(
+                "/api/public/otp/send",
+                json={"purpose": "VIEW_REQUEST", "track_number": track_number, "channel": "email"},
+            )
+            self.assertEqual(sent.status_code, 200)
+            self.assertEqual(sent.json()["channel"], "EMAIL")
+
+            verified = self.client.post(
+                "/api/public/otp/verify",
+                json={"purpose": "VIEW_REQUEST", "track_number": track_number, "channel": "email", "code": "445566"},
+            )
+            self.assertEqual(verified.status_code, 200)
+            self.assertEqual(verified.json()["channel"], "EMAIL")
+
+        ok = self.client.get(f"/api/public/requests/{track_number}")
+        self.assertEqual(ok.status_code, 200)
+
+    def test_send_otp_falls_back_to_email_when_sms_balance_low(self):
+        with (
+            patch("app.api.public.otp.settings.PUBLIC_AUTH_MODE", "sms_or_email"),
+            patch("app.api.public.otp.settings.OTP_EMAIL_FALLBACK_ENABLED", True),
+            patch("app.api.public.otp.settings.OTP_SMS_MIN_BALANCE", 100.0),
+            patch("app.api.public.otp.sms_provider_health", return_value={"mode": "real", "balance_amount": 0.0}),
+            patch("app.api.public.otp.send_otp_email_message", return_value={"provider": "mock_email", "debug_code": "778899"}),
+            patch("app.api.public.otp._generate_code", return_value="778899"),
+        ):
+            sent = self.client.post(
+                "/api/public/otp/send",
+                json={
+                    "purpose": "CREATE_REQUEST",
+                    "client_phone": "+79991112233",
+                    "client_email": "fallback@example.com",
+                    "channel": "sms",
+                },
+            )
+            self.assertEqual(sent.status_code, 200)
+            body = sent.json()
+            self.assertEqual(body.get("channel"), "EMAIL")
+            self.assertEqual(body.get("fallback_reason"), "low_sms_balance")
 
     def test_open_request_marks_client_updates_as_read(self):
         with self.SessionLocal() as db:

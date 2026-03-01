@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
@@ -19,6 +20,7 @@ class SmsServiceTests(unittest.TestCase):
             "SMSAERO_EMAIL": settings.SMSAERO_EMAIL,
             "SMSAERO_API_KEY": settings.SMSAERO_API_KEY,
             "OTP_DEV_MODE": settings.OTP_DEV_MODE,
+            "OTP_AUTOTEST_FORCE_MOCK_SMS": settings.OTP_AUTOTEST_FORCE_MOCK_SMS,
         }
 
     def tearDown(self):
@@ -40,3 +42,19 @@ class SmsServiceTests(unittest.TestCase):
         settings.OTP_DEV_MODE = False
         with self.assertRaises(SmsDeliveryError):
             send_otp_message(phone="+79990000000", code="111111", purpose="CREATE_REQUEST")
+
+    def test_autotest_context_forces_mock_for_real_provider(self):
+        settings.SMS_PROVIDER = "smsaero"
+        settings.SMSAERO_EMAIL = "prod@example.com"
+        settings.SMSAERO_API_KEY = "real-key"
+        settings.OTP_DEV_MODE = False
+        settings.OTP_AUTOTEST_FORCE_MOCK_SMS = True
+        with (
+            patch("app.services.sms_service._is_automated_test_context", return_value=True),
+            patch("app.services.sms_service._send_sms_aero") as send_real,
+        ):
+            payload = send_otp_message(phone="+79990000000", code="222222", purpose="CREATE_REQUEST")
+        send_real.assert_not_called()
+        self.assertEqual(payload.get("provider"), "mock_sms")
+        self.assertTrue(bool(payload.get("autotest_forced_mock")))
+        self.assertEqual(payload.get("debug_code"), "222222")

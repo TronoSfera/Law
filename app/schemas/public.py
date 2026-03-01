@@ -5,6 +5,7 @@ from uuid import UUID
 class PublicRequestCreate(BaseModel):
     client_name: str
     client_phone: str
+    client_email: Optional[str] = None
     topic_code: Optional[str] = None
     description: Optional[str] = None
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
@@ -19,11 +20,15 @@ class OtpSend(BaseModel):
     purpose: str
     track_number: Optional[str] = None
     client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    channel: Optional[str] = None
 
 class OtpVerify(BaseModel):
     purpose: str
     track_number: Optional[str] = None
     client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    channel: Optional[str] = None
     code: str
 
 

@@ -21,5 +21,6 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 echo "[4/4] Smoke checks..."
 curl -fsS http://localhost/health >/dev/null
 curl -fsS http://localhost/chat-health >/dev/null
+curl -fsS http://localhost/email-health >/dev/null
 
 echo "Done. Open https://ruakb.ru"

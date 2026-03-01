@@ -18,6 +18,12 @@ from app.schemas.uploads import UploadCompletePayload, UploadCompleteResponse, U
 from app.services.notifications import EVENT_ATTACHMENT as NOTIFICATION_EVENT_ATTACHMENT, notify_request_event
 from app.services.request_read_markers import EVENT_ATTACHMENT, mark_unread_for_lawyer
 from app.services.security_audit import record_file_security_event
+from app.services.attachment_scan import (
+    SCAN_STATUS_ERROR,
+    enqueue_attachment_scan,
+    ensure_attachment_download_allowed_or_4xx,
+    initial_scan_status_for_new_attachment,
+)
 from app.services.s3_storage import build_object_key, get_s3_storage
 
 router = APIRouter()
@@ -206,6 +212,7 @@ def upload_complete(
             mime_type=payload.mime_type,
             size_bytes=actual_size,
             s3_key=payload.key,
+            scan_status=initial_scan_status_for_new_attachment(),
             responsible="Клиент",
         )
         mark_unread_for_lawyer(request, EVENT_ATTACHMENT)
@@ -236,6 +243,13 @@ def upload_complete(
         )
         db.commit()
         db.refresh(row)
+        try:
+            enqueue_attachment_scan(str(row.id))
+        except Exception as exc:
+            row.scan_status = SCAN_STATUS_ERROR
+            row.scan_error = str(exc)[:500]
+            db.add(row)
+            db.commit()
         return UploadCompleteResponse(status="ok", attachment_id=str(row.id))
     except HTTPException as exc:
         record_file_security_event(
@@ -270,6 +284,7 @@ def get_public_attachment_object(
     key = None
     try:
         attachment = _load_attachment_with_access_or_4xx(attachment_id, db, session)
+        ensure_attachment_download_allowed_or_4xx(attachment)
         key = attachment.s3_key
         request_id = attachment.request_id
         try:

@@ -270,6 +270,46 @@ class UploadsS3Tests(unittest.TestCase):
         self.assertIn("application/pdf", response.headers.get("content-type", ""))
         self.assertIn("inline;", response.headers.get("content-disposition", ""))
 
+    def test_public_attachment_object_is_blocked_while_scan_pending(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-PUB-SCAN-PENDING",
+                client_name="Клиент",
+                client_phone="+79995551122",
+                topic_code="civil-law",
+                status_code="IN_PROGRESS",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            key = f"requests/{req.id}/pending.pdf"
+            attachment = Attachment(
+                request_id=req.id,
+                file_name="pending.pdf",
+                mime_type="application/pdf",
+                size_bytes=1280,
+                s3_key=key,
+                scan_status="PENDING",
+            )
+            db.add(attachment)
+            db.commit()
+            attachment_id = str(attachment.id)
+            track = req.track_number
+
+        fake_s3.objects[key] = {"size": 1280, "mime": "application/pdf", "content": b"pdf-preview"}
+        public_token = create_jwt({"sub": track, "purpose": "VIEW_REQUEST"}, settings.PUBLIC_JWT_SECRET, timedelta(days=1))
+        cookies = {settings.PUBLIC_COOKIE_NAME: public_token}
+
+        with (
+            patch("app.api.public.uploads.get_s3_storage", return_value=fake_s3),
+            patch("app.services.attachment_scan.settings.ATTACHMENT_SCAN_ENFORCE", True),
+        ):
+            response = self.client.get(f"/api/public/uploads/object/{attachment_id}", cookies=cookies)
+
+        self.assertEqual(response.status_code, 423)
+        self.assertIn("проверяется", str(response.json().get("detail", "")).lower())
+
     def test_admin_request_attachment_upload_sets_client_unread_marker(self):
         fake_s3 = _FakeS3Storage()
         with self.SessionLocal() as db:
@@ -681,3 +721,52 @@ class UploadsS3Tests(unittest.TestCase):
         with patch("app.api.admin.uploads.get_s3_storage", return_value=fake_s3):
             response = self.client.get(f"/api/admin/uploads/object/{key}?token={token}")
         self.assertEqual(response.status_code, 403)
+
+    def test_admin_object_proxy_blocks_infected_attachment_when_scan_enforced(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            admin = AdminUser(
+                role="ADMIN",
+                name="Админ AV",
+                email="admin-av@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add(admin)
+            db.flush()
+            req = Request(
+                track_number="TRK-ADM-SCAN-INF",
+                client_name="Клиент",
+                client_phone="+79990007777",
+                topic_code="civil-law",
+                status_code="IN_PROGRESS",
+                extra_fields={},
+                total_attachments_bytes=0,
+            )
+            db.add(req)
+            db.flush()
+            key = f"requests/{req.id}/infected.pdf"
+            att = Attachment(
+                request_id=req.id,
+                file_name="infected.pdf",
+                mime_type="application/pdf",
+                size_bytes=1024,
+                s3_key=key,
+                scan_status="INFECTED",
+                scan_signature="Eicar-Test-Signature",
+            )
+            db.add(att)
+            db.commit()
+            admin_id = str(admin.id)
+
+        token = self._admin_headers(sub=admin_id, role="ADMIN", email="admin-av@example.com")["Authorization"].replace(
+            "Bearer ", ""
+        )
+        fake_s3.objects[key] = {"size": 1024, "mime": "application/pdf", "content": b"x" * 1024}
+        with (
+            patch("app.api.admin.uploads.get_s3_storage", return_value=fake_s3),
+            patch("app.services.attachment_scan.settings.ATTACHMENT_SCAN_ENFORCE", True),
+        ):
+            response = self.client.get(f"/api/admin/uploads/object/{key}?token={token}")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("антивирус", str(response.json().get("detail", "")).lower())

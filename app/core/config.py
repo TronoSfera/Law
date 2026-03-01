@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     PUBLIC_JWT_TTL_DAYS: int = 7
     ADMIN_JWT_TTL_MINUTES: int = 240
     ADMIN_JWT_SECRET: str = "change_me_admin"
+    ADMIN_AUTH_MODE: str = "password_totp_optional"  # password | password_totp_optional | password_totp_required
+    TOTP_ISSUER: str = "Правовой Трекер"
     PUBLIC_JWT_SECRET: str = "change_me_public"
     PUBLIC_COOKIE_NAME: str = "public_jwt"
 
@@ -30,6 +32,15 @@ class Settings(BaseSettings):
     S3_USE_SSL: bool = False
     MAX_FILE_MB: int = 25
     MAX_CASE_MB: int = 250
+    ATTACHMENT_SCAN_ENABLED: bool = False
+    ATTACHMENT_SCAN_ENFORCE: bool = False
+    ATTACHMENT_ALLOWED_MIME_TYPES: str = (
+        "application/pdf,image/jpeg,image/png,video/mp4,text/plain"
+    )
+    CLAMAV_ENABLED: bool = False
+    CLAMAV_HOST: str = "clamav"
+    CLAMAV_PORT: int = 3310
+    CLAMAV_TIMEOUT_SECONDS: int = 20
 
     TELEGRAM_BOT_TOKEN: str = "change_me"
     TELEGRAM_CHAT_ID: str = "0"
@@ -37,6 +48,22 @@ class Settings(BaseSettings):
     SMSAERO_EMAIL: str = ""
     SMSAERO_API_KEY: str = ""
     OTP_SMS_TEMPLATE: str = "Your verification code: {code}"
+    OTP_AUTOTEST_FORCE_MOCK_SMS: bool = True
+    PUBLIC_AUTH_MODE: str = "sms"  # sms | email | sms_or_email | totp
+    EMAIL_PROVIDER: str = "dummy"  # dummy | smtp
+    EMAIL_SERVICE_URL: str = "http://email-service:8010"
+    INTERNAL_SERVICE_TOKEN: str = "change_me_internal_service_token"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    OTP_EMAIL_SUBJECT_TEMPLATE: str = "Код подтверждения: {code}"
+    OTP_EMAIL_TEMPLATE: str = "Ваш код подтверждения: {code}"
+    OTP_EMAIL_FALLBACK_ENABLED: bool = True
+    OTP_SMS_MIN_BALANCE: float = 20.0
     DATA_ENCRYPTION_SECRET: str = "change_me_data_encryption"
     CHAT_ENCRYPTION_SECRET: str = ""
     OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300

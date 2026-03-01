@@ -14,6 +14,7 @@
 
   const accessForm = document.getElementById("access-form");
   const accessPhoneInput = document.getElementById("access-phone");
+  const accessEmailInput = document.getElementById("access-email");
   const accessCodeInput = document.getElementById("access-code");
   const accessSendOtpButton = document.getElementById("access-send-otp");
   const accessStatus = document.getElementById("access-status");
@@ -31,7 +32,11 @@
   const featuredTeamDots = document.getElementById("featured-team-dots");
   const featuredTeamPrev = document.getElementById("featured-team-prev");
   const featuredTeamNext = document.getElementById("featured-team-next");
+  const requestEmailInput = document.getElementById("email");
   let otpModalResolver = null;
+  let lastAccessOtpChannel = "SMS";
+  let lastCreateOtpChannel = "SMS";
+  let authConfig = { public_auth_mode: "sms", available_channels: ["SMS"] };
 
   function setStatus(el, message, kind) {
     if (!el) return;
@@ -52,6 +57,46 @@
   function apiErrorDetail(data, fallbackMessage) {
     if (data && typeof data.detail === "string" && data.detail.trim()) return data.detail;
     return fallbackMessage;
+  }
+
+  function normalizeEmail(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function currentAuthMode() {
+    return String(authConfig?.public_auth_mode || "sms").trim().toLowerCase();
+  }
+
+  function preferredChannel({ phone, email }) {
+    const mode = currentAuthMode();
+    if (mode === "email") return "EMAIL";
+    if (mode === "sms_or_email") return email ? "EMAIL" : "SMS";
+    if (mode === "totp") return "";
+    return "SMS";
+  }
+
+  function otpCodeDeliveryLabel(channel) {
+    return String(channel || "").toUpperCase() === "EMAIL" ? "Email" : "SMS";
+  }
+
+  function showAuthHints() {
+    const mode = currentAuthMode();
+    const emailRequired = mode === "email";
+    const smsOnly = mode === "sms";
+    if (accessPhoneInput) accessPhoneInput.required = smsOnly;
+    if (accessEmailInput) accessEmailInput.required = emailRequired;
+    if (requestEmailInput) requestEmailInput.required = emailRequired;
+  }
+
+  async function loadAuthConfig() {
+    try {
+      const response = await fetch("/api/public/otp/config");
+      const data = await parseJsonSafe(response);
+      if (response.ok && data && typeof data === "object") {
+        authConfig = data;
+      }
+    } catch (_) {}
+    showAuthHints();
   }
 
   function openModal(modal) {
@@ -362,7 +407,17 @@
 
   accessSendOtpButton.addEventListener("click", async () => {
     const phone = String(accessPhoneInput.value || "").trim();
-    if (!phone) {
+    const email = normalizeEmail(accessEmailInput?.value);
+    const channel = preferredChannel({ phone, email });
+    if (currentAuthMode() === "totp") {
+      setStatus(accessStatus, "Режим TOTP пока не реализован в публичном кабинете.", "error");
+      return;
+    }
+    if (channel === "EMAIL" && !email) {
+      setStatus(accessStatus, "Введите email.", "error");
+      return;
+    }
+    if (channel === "SMS" && !phone) {
       setStatus(accessStatus, "Введите номер телефона.", "error");
       return;
     }
@@ -375,15 +430,19 @@
         body: JSON.stringify({
           purpose: "VIEW_REQUEST",
           client_phone: phone,
+          client_email: email,
+          channel,
         }),
       });
       const data = await parseJsonSafe(response);
       if (!response.ok) throw new Error(apiErrorDetail(data, "Не удалось отправить OTP"));
-      const debugCode = String(data?.sms_response?.debug_code || "").trim();
+      const effectiveChannel = String(data?.channel || channel || "SMS").toUpperCase();
+      lastAccessOtpChannel = effectiveChannel;
+      const debugCode = String(data?.delivery_response?.debug_code || data?.sms_response?.debug_code || "").trim();
       if (debugCode) {
-        console.info("[OTP DEV] VIEW_REQUEST code:", debugCode);
+        console.info("[OTP DEV] VIEW_REQUEST code (" + otpCodeDeliveryLabel(effectiveChannel) + "):", debugCode);
       }
-      setStatus(accessStatus, "Код отправлен. Проверьте SMS.", "ok");
+      setStatus(accessStatus, "Код отправлен. Проверьте " + otpCodeDeliveryLabel(effectiveChannel) + ".", "ok");
     } catch (error) {
       setStatus(accessStatus, error?.message || "Не удалось отправить OTP", "error");
     }
@@ -392,8 +451,14 @@
   accessForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const phone = String(accessPhoneInput.value || "").trim();
+    const email = normalizeEmail(accessEmailInput?.value);
     const code = String(accessCodeInput.value || "").trim();
-    if (!phone || !code) {
+    const channel = preferredChannel({ phone, email });
+    if (channel === "EMAIL" && (!email || !code)) {
+      setStatus(accessStatus, "Введите email и OTP-код.", "error");
+      return;
+    }
+    if (channel === "SMS" && (!phone || !code)) {
       setStatus(accessStatus, "Введите телефон и OTP-код.", "error");
       return;
     }
@@ -406,6 +471,8 @@
         body: JSON.stringify({
           purpose: "VIEW_REQUEST",
           client_phone: phone,
+          client_email: email,
+          channel: lastAccessOtpChannel || channel,
           code,
         }),
       });
@@ -425,13 +492,23 @@
     const payload = {
       client_name: String(document.getElementById("name").value || "").trim(),
       client_phone: String(document.getElementById("phone").value || "").trim(),
+      client_email: normalizeEmail(requestEmailInput?.value),
       topic_code: String(document.getElementById("topic").value || "").trim(),
       description: String(document.getElementById("description").value || "").trim(),
       extra_fields: {},
     };
 
-    if (!payload.client_name || !payload.client_phone || !payload.topic_code) {
-      setStatus(requestStatus, "Заполните имя, телефон и тему обращения.", "error");
+    const createChannel = preferredChannel({ phone: payload.client_phone, email: payload.client_email });
+    if (createChannel === "EMAIL" && !payload.client_email) {
+      setStatus(requestStatus, "Введите email для получения OTP.", "error");
+      return;
+    }
+    if (createChannel === "SMS" && !payload.client_phone) {
+      setStatus(requestStatus, "Введите телефон для получения OTP.", "error");
+      return;
+    }
+    if (!payload.client_name || !payload.topic_code) {
+      setStatus(requestStatus, "Заполните имя и тему обращения.", "error");
       return;
     }
 
@@ -443,18 +520,26 @@
         body: JSON.stringify({
           purpose: "CREATE_REQUEST",
           client_phone: payload.client_phone,
+          client_email: payload.client_email,
+          channel: createChannel,
         }),
       });
       const otpSendData = await parseJsonSafe(otpSend);
       if (!otpSend.ok) throw new Error(apiErrorDetail(otpSendData, "Не удалось отправить OTP"));
-      const debugCode = String(otpSendData?.sms_response?.debug_code || "").trim();
+      const effectiveChannel = String(otpSendData?.channel || createChannel || "SMS").toUpperCase();
+      lastCreateOtpChannel = effectiveChannel;
+      const debugCode = String(otpSendData?.delivery_response?.debug_code || otpSendData?.sms_response?.debug_code || "").trim();
       if (debugCode) {
-        console.info("[OTP DEV] CREATE_REQUEST code:", debugCode);
+        console.info("[OTP DEV] CREATE_REQUEST code (" + otpCodeDeliveryLabel(effectiveChannel) + "):", debugCode);
       }
 
-      const isMocked = Boolean(otpSendData?.sms_response?.mocked) || String(otpSendData?.sms_response?.provider || "") === "mock_sms";
+      const deliveryResponse = otpSendData?.delivery_response || otpSendData?.sms_response || {};
+      const provider = String(deliveryResponse?.provider || "").toLowerCase();
+      const isMocked = Boolean(deliveryResponse?.mocked) || provider === "mock_sms" || provider === "mock_email";
       const code = await requestOtpCode(
-        isMocked ? "Введите OTP-код из SMS (dev-режим: смотрите backend console)." : "Введите OTP-код из SMS."
+        isMocked
+          ? "Введите OTP-код (dev-режим: смотрите backend console)."
+          : "Введите OTP-код из " + otpCodeDeliveryLabel(effectiveChannel) + "."
       );
       if (!code) throw new Error("Код OTP не введен");
 
@@ -465,6 +550,8 @@
         body: JSON.stringify({
           purpose: "CREATE_REQUEST",
           client_phone: payload.client_phone,
+          client_email: payload.client_email,
+          channel: lastCreateOtpChannel || createChannel,
           code: String(code).trim(),
         }),
       });
@@ -488,6 +575,7 @@
     }
   });
 
+  loadAuthConfig();
   loadTopics();
   loadQuotes();
   loadFeaturedStaff();

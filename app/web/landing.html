@@ -191,6 +191,10 @@
           <label for="phone">Телефон</label>
           <input id="phone" name="phone" type="tel" required placeholder="+7 (900) 000-00-00">
         </div>
+        <div class="field">
+          <label for="email">Email (для входа без SMS)</label>
+          <input id="email" name="email" type="email" placeholder="name@example.com">
+        </div>
         <div class="field full">
           <label for="topic">Тема обращения</label>
           <select id="topic" name="topic" required>
@@ -214,14 +218,18 @@
       <div class="modal-head">
         <div>
           <h3 id="access-title">Вход в страницу заявок</h3>
-          <p>Введите номер телефона, получите OTP и перейдите к своим заявкам.</p>
+          <p>Введите телефон или email (в зависимости от режима), получите OTP и перейдите к своим заявкам.</p>
         </div>
         <button class="close" type="button" data-close-access aria-label="Закрыть">×</button>
       </div>
       <form id="access-form" class="form">
-        <div class="field full">
+        <div class="field">
           <label for="access-phone">Телефон</label>
           <input id="access-phone" name="access-phone" type="tel" required placeholder="+7 (900) 000-00-00">
+        </div>
+        <div class="field">
+          <label for="access-email">Email</label>
+          <input id="access-email" name="access-email" type="email" placeholder="name@example.com">
         </div>
         <div class="field full">
           <label for="access-code">Одноразовый пароль (OTP)</label>

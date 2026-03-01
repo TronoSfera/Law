@@ -13,6 +13,7 @@ class Request(Base, UUIDMixin, TimestampMixin):
     client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     client_name: Mapped[str] = mapped_column(String(200), nullable=False)
     client_phone: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    client_email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     topic_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     status_code: Mapped[str] = mapped_column(String(50), nullable=False, index=True, default="NEW")
     important_date_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

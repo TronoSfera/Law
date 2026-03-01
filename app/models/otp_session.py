@@ -10,7 +10,9 @@ def utcnow():
 class OtpSession(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "otp_sessions"
     purpose: Mapped[str] = mapped_column(String(30), nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False, default="SMS")
     track_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     phone: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

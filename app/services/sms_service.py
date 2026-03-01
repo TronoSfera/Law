@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
+import os
+import sys
 from typing import Any
 
 from app.core.config import settings
@@ -17,6 +19,26 @@ logger = logging.getLogger("uvicorn.error")
 
 def _otp_dev_mode_enabled() -> bool:
     return bool(getattr(settings, "OTP_DEV_MODE", False))
+
+
+def _is_automated_test_context() -> bool:
+    if str(os.getenv("PYTEST_CURRENT_TEST", "")).strip():
+        return True
+    if str(os.getenv("UNITTEST_CURRENT_TEST", "")).strip():
+        return True
+    if str(os.getenv("AUTOTEST_MODE", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    app_env = str(getattr(settings, "APP_ENV", "") or "").strip().lower()
+    if app_env in {"test", "ci"}:
+        return True
+    argv = " ".join(str(part) for part in sys.argv).lower()
+    if "pytest" in argv or "unittest" in argv:
+        return True
+    return False
+
+
+def _autotest_force_mock_enabled() -> bool:
+    return bool(getattr(settings, "OTP_AUTOTEST_FORCE_MOCK_SMS", True)) and _is_automated_test_context()
 
 
 def _module_available(module_name: str) -> bool:
@@ -205,13 +227,21 @@ def sms_provider_health() -> dict[str, Any]:
 
 
 def send_otp_message(*, phone: str, code: str, purpose: str, track_number: str | None = None) -> dict[str, Any]:
+    provider = str(settings.SMS_PROVIDER or "dummy").strip().lower()
+
     if _otp_dev_mode_enabled():
         payload = _mock_sms_send(phone=phone, code=code, purpose=purpose, track_number=track_number)
         payload["dev_mode"] = True
         payload["debug_code"] = str(code)
         return payload
 
-    provider = str(settings.SMS_PROVIDER or "dummy").strip().lower()
+    # Safety rail: automated tests must never call paid SMS providers.
+    if _autotest_force_mock_enabled() and provider in {"smsaero", "sms_aero"}:
+        payload = _mock_sms_send(phone=phone, code=code, purpose=purpose, track_number=track_number)
+        payload["autotest_forced_mock"] = True
+        payload["debug_code"] = str(code)
+        return payload
+
     if provider in {"", "dummy", "mock", "console"}:
         return _mock_sms_send(phone=phone, code=code, purpose=purpose, track_number=track_number)
     if provider in {"smsaero", "sms_aero"}:

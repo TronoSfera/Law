@@ -10,8 +10,10 @@ services:
         condition: service_healthy
       chat-service:
         condition: service_healthy
+      email-service:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/health >/dev/null 2>&1 && wget -q -O - http://127.0.0.1/chat-health >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/health >/dev/null 2>&1 && wget -q -O - http://127.0.0.1/chat-health >/dev/null 2>&1 && wget -q -O - http://127.0.0.1/email-health >/dev/null 2>&1"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -46,6 +48,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      email-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)\""]
       interval: 20s
@@ -73,6 +77,23 @@ services:
       start_period: 25s
     volumes: [".:/app"]
 
+  email-service:
+    build: .
+    container_name: law-email-service
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["uvicorn", "app.email_main:app", "--host", "0.0.0.0", "--port", "8010"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health', timeout=3)\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    volumes: [".:/app"]
+
   worker:
     build: .
     container_name: law-worker
@@ -84,6 +105,8 @@ services:
       redis:
         condition: service_healthy
       minio:
+        condition: service_started
+      clamav:
         condition: service_started
     command: ["celery","-A","app.workers.celery_app:celery_app","worker","-Q","notifications,maintenance,uploads","-l","INFO"]
     volumes: [".:/app"]
@@ -135,6 +158,11 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes: ["miniodata:/data"]
+
+  clamav:
+    image: clamav/clamav:latest
+    container_name: law-clamav
+    restart: unless-stopped
 
 volumes:
   pgdata:

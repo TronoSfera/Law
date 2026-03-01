@@ -1,7 +1,7 @@
-# Production deploy (ruakb.ru)
+# Production deploy (ruakb.ru + ruakb.online)
 
 ## Цель
-Развернуть платформу на сервере `45.150.36.116` c HTTPS на `80/443` для домена `ruakb.ru`.
+Развернуть платформу на сервере `45.150.36.116` c HTTPS на `80/443` для доменов `ruakb.ru` и `ruakb.online`.
 
 ## Что добавлено
 - `docker-compose.local.yml` — локальные публикации портов (`8081/8080/8002/5432/6379/9000/9001`)
@@ -19,6 +19,8 @@
 1. DNS:
    - `A ruakb.ru -> 45.150.36.116`
    - `A www.ruakb.ru -> 45.150.36.116` (опционально)
+   - `A ruakb.online -> 45.150.36.116`
+   - `A www.ruakb.online -> 45.150.36.116` (опционально)
 2. Открыты порты сервера:
    - `80/tcp`, `443/tcp`
 
@@ -27,6 +29,8 @@
 cd /opt/law
 make prod-cert-init LETSENCRYPT_EMAIL=you@example.com DOMAIN=ruakb.ru WWW_DOMAIN=www.ruakb.ru
 ```
+
+По умолчанию цель также включает `SECOND_DOMAIN=ruakb.online` и `SECOND_WWW_DOMAIN=www.ruakb.online`.
 
 ## Запуск production
 ```bash
@@ -38,8 +42,10 @@ make prod-up
 ```bash
 curl -I http://ruakb.ru
 curl -I https://ruakb.ru
+curl -I https://ruakb.online
 curl -fsS https://ruakb.ru/health
 curl -fsS https://ruakb.ru/chat-health
+curl -fsS https://ruakb.ru/email-health
 ss -lntp | egrep ':(80|443|5432|6379|8002|8081|9000|9001)\b'
 ```
 

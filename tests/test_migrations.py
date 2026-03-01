@@ -113,7 +113,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0026_srv_req_str_ids")
+        self.assertEqual(version, "0030_attachment_scan")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -185,10 +185,14 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("default_rate", columns)
         self.assertIn("salary_percent", columns)
         self.assertIn("phone", columns)
+        self.assertIn("totp_enabled", columns)
+        self.assertIn("totp_secret_encrypted", columns)
+        self.assertIn("totp_backup_codes_hashes", columns)
 
     def test_requests_contains_financial_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("requests")}
         self.assertIn("client_id", columns)
+        self.assertIn("client_email", columns)
         self.assertIn("important_date_at", columns)
         self.assertIn("effective_rate", columns)
         self.assertIn("request_cost", columns)
@@ -234,8 +238,14 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("id", columns)
         self.assertIn("full_name", columns)
         self.assertIn("phone", columns)
+        self.assertIn("email", columns)
         self.assertIn("created_at", columns)
         self.assertIn("responsible", columns)
+
+    def test_otp_sessions_contains_channel_and_email_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("otp_sessions")}
+        self.assertIn("channel", columns)
+        self.assertIn("email", columns)
 
     def test_topic_data_templates_contains_request_data_catalog_fields(self):
         columns = {column["name"] for column in self.inspector.get_columns("topic_data_templates")}
@@ -277,6 +287,15 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("lawyer_unread", columns)
         self.assertIn("admin_read_at", columns)
         self.assertIn("lawyer_read_at", columns)
+
+    def test_attachments_contains_antivirus_scan_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("attachments")}
+        self.assertIn("scan_status", columns)
+        self.assertIn("scan_signature", columns)
+        self.assertIn("scan_error", columns)
+        self.assertIn("scanned_at", columns)
+        self.assertIn("content_sha256", columns)
+        self.assertIn("detected_mime", columns)
 
     def test_landing_featured_staff_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("landing_featured_staff")}

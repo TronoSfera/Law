@@ -18,6 +18,12 @@ from app.core.security import decode_jwt, hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.admin_user import AdminUser
+from app.services.totp_service import (
+    current_totp_code,
+    encrypt_totp_secret,
+    generate_backup_codes,
+    generate_totp_secret,
+)
 
 
 class AdminAuthTests(unittest.TestCase):
@@ -56,11 +62,13 @@ class AdminAuthTests(unittest.TestCase):
             "ADMIN_BOOTSTRAP_EMAIL": settings.ADMIN_BOOTSTRAP_EMAIL,
             "ADMIN_BOOTSTRAP_PASSWORD": settings.ADMIN_BOOTSTRAP_PASSWORD,
             "ADMIN_BOOTSTRAP_NAME": settings.ADMIN_BOOTSTRAP_NAME,
+            "ADMIN_AUTH_MODE": settings.ADMIN_AUTH_MODE,
         }
         settings.ADMIN_BOOTSTRAP_ENABLED = True
         settings.ADMIN_BOOTSTRAP_EMAIL = "admin@example.com"
         settings.ADMIN_BOOTSTRAP_PASSWORD = "admin123"
         settings.ADMIN_BOOTSTRAP_NAME = "Администратор системы"
+        settings.ADMIN_AUTH_MODE = "password_totp_optional"
 
     def tearDown(self):
         self.client.close()
@@ -123,3 +131,117 @@ class AdminAuthTests(unittest.TestCase):
             json={"email": "admin@example.com", "password": "custom-pass-1"},
         )
         self.assertEqual(wrong.status_code, 401)
+
+    def test_totp_required_mode_rejects_login_without_totp_code(self):
+        settings.ADMIN_AUTH_MODE = "password_totp_required"
+        secret = generate_totp_secret()
+        with self.SessionLocal() as db:
+            db.add(
+                AdminUser(
+                    role="ADMIN",
+                    name="TOTP Admin",
+                    email="totp@example.com",
+                    password_hash=hash_password("pass123"),
+                    is_active=True,
+                    totp_enabled=True,
+                    totp_secret_encrypted=encrypt_totp_secret(secret),
+                    totp_backup_codes_hashes=[],
+                )
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/api/admin/auth/login",
+            json={"email": "totp@example.com", "password": "pass123"},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("TOTP", str(response.json().get("detail", "")))
+
+    def test_totp_required_mode_allows_login_with_valid_totp(self):
+        settings.ADMIN_AUTH_MODE = "password_totp_required"
+        secret = generate_totp_secret()
+        code = current_totp_code(secret)
+        with self.SessionLocal() as db:
+            db.add(
+                AdminUser(
+                    role="ADMIN",
+                    name="TOTP Admin",
+                    email="totp2@example.com",
+                    password_hash=hash_password("pass123"),
+                    is_active=True,
+                    totp_enabled=True,
+                    totp_secret_encrypted=encrypt_totp_secret(secret),
+                    totp_backup_codes_hashes=[],
+                )
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/api/admin/auth/login",
+            json={"email": "totp2@example.com", "password": "pass123", "totp_code": code},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(bool(response.json().get("access_token")))
+
+    def test_totp_backup_code_is_single_use(self):
+        settings.ADMIN_AUTH_MODE = "password_totp_required"
+        secret = generate_totp_secret()
+        backup_plain, backup_hashes = generate_backup_codes()
+        backup_code = backup_plain[0]
+        with self.SessionLocal() as db:
+            db.add(
+                AdminUser(
+                    role="ADMIN",
+                    name="Backup Admin",
+                    email="totp3@example.com",
+                    password_hash=hash_password("pass123"),
+                    is_active=True,
+                    totp_enabled=True,
+                    totp_secret_encrypted=encrypt_totp_secret(secret),
+                    totp_backup_codes_hashes=backup_hashes,
+                )
+            )
+            db.commit()
+
+        first = self.client.post(
+            "/api/admin/auth/login",
+            json={"email": "totp3@example.com", "password": "pass123", "backup_code": backup_code},
+        )
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(
+            "/api/admin/auth/login",
+            json={"email": "totp3@example.com", "password": "pass123", "backup_code": backup_code},
+        )
+        self.assertEqual(second.status_code, 401)
+
+    def test_totp_setup_enable_and_status_flow(self):
+        login = self.client.post(
+            "/api/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin123"},
+        )
+        self.assertEqual(login.status_code, 200)
+        token = login.json().get("access_token")
+        self.assertTrue(token)
+        headers = {"Authorization": "Bearer " + token}
+
+        setup = self.client.post("/api/admin/auth/totp/setup", json={}, headers=headers)
+        self.assertEqual(setup.status_code, 200)
+        setup_body = setup.json()
+        secret = str(setup_body.get("secret") or "")
+        self.assertTrue(secret)
+        self.assertIn("otpauth://totp/", str(setup_body.get("otpauth_uri") or ""))
+
+        code = current_totp_code(secret)
+        enable = self.client.post(
+            "/api/admin/auth/totp/enable",
+            json={"secret": secret, "code": code},
+            headers=headers,
+        )
+        self.assertEqual(enable.status_code, 200)
+        backup_codes = enable.json().get("backup_codes") or []
+        self.assertTrue(isinstance(backup_codes, list) and len(backup_codes) > 0)
+
+        status = self.client.get("/api/admin/auth/totp/status", headers=headers)
+        self.assertEqual(status.status_code, 200)
+        self.assertTrue(bool(status.json().get("enabled")))
