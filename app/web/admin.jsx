@@ -3482,13 +3482,6 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 "Не авторизован"
               )}
             </div>
-            {token && role ? (
-              <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                <button className="btn secondary" type="button" onClick={openAccountModal}>
-                  Личный кабинет
-                </button>
-              </div>
-            ) : null}
             <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button className="btn secondary" type="button" onClick={refreshAll}>
                 Обновить
@@ -3505,7 +3498,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 <h1>Панель администратора</h1>
                 <p className="muted">UniversalQuery, RBAC и аудит действий по ключевым сущностям системы.</p>
               </div>
-              <div className="topbar-actions" aria-label="Быстрые уведомления и дедлайны">
+              <div className="topbar-actions" aria-label="Быстрые уведомления и профиль">
                 <button
                   type="button"
                   className={
@@ -3568,6 +3561,20 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                     />
                   </svg>
                   <span className="topbar-alert-dot" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn topbar-alert-btn"
+                  data-tooltip="Личный кабинет"
+                  aria-label="Открыть личный кабинет"
+                  onClick={openAccountModal}
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                    <path
+                      d="M12 12.2a4.1 4.1 0 1 0-4.1-4.1 4.1 4.1 0 0 0 4.1 4.1zm0 2c-3.8 0-7 2.2-7.8 5.3-.1.4.2.8.6.8h14.4c.4 0 .7-.4.6-.8-.8-3.1-4-5.3-7.8-5.3z"
+                      fill="currentColor"
+                    />
+                  </svg>
                 </button>
               </div>
             </div>
