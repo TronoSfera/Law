@@ -42,14 +42,14 @@ is_truthy() {
 http_status_ok() {
   local url="$1"
   local code
-  code="$(curl -k -sS -o /dev/null -w "%{http_code}" "$url" || true)"
+  code="$(curl -k -L -sS -o /dev/null -w "%{http_code}" "$url" || true)"
   [[ "$code" == "200" ]]
 }
 
 check_required_headers() {
   local url="$1"
   local head
-  head="$(curl -k -sS -I "$url" || true)"
+  head="$(curl -k -L -sS -I "$url" || true)"
   local normalized
   normalized="$(echo "$head" | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
 

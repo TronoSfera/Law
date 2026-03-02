@@ -93,9 +93,60 @@ PY
 
 run_local_smoke() {
   log "Running local smoke checks via localhost"
-  ./scripts/ops/check_chat_health.sh http://localhost >/dev/null
-  ./scripts/ops/security_smoke.sh http://localhost >/dev/null
-  log "Local smoke checks passed"
+  local max_attempts="${LOCAL_SMOKE_MAX_ATTEMPTS:-24}"
+  local sleep_seconds="${LOCAL_SMOKE_SLEEP_SECONDS:-5}"
+  local attempt=1
+
+  while (( attempt <= max_attempts )); do
+    if ./scripts/ops/check_chat_health.sh http://localhost >/dev/null 2>&1 && \
+       ./scripts/ops/security_smoke.sh http://localhost >/dev/null 2>&1; then
+      log "Local smoke checks passed (attempt ${attempt}/${max_attempts})"
+      return 0
+    fi
+
+    warn "Local smoke not ready yet (attempt ${attempt}/${max_attempts}), retrying in ${sleep_seconds}s"
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
+
+  fail "Local smoke checks failed after ${max_attempts} attempts"
+}
+
+run_domain_quick_health_wait() {
+  local url="$1"
+  local max_attempts="${DOMAIN_HEALTH_MAX_ATTEMPTS:-24}"
+  local sleep_seconds="${DOMAIN_HEALTH_SLEEP_SECONDS:-5}"
+  local attempt=1
+
+  while (( attempt <= max_attempts )); do
+    if https_health_ok "$url"; then
+      return 0
+    fi
+    warn "HTTPS health not ready for ${url} (attempt ${attempt}/${max_attempts}), retrying in ${sleep_seconds}s"
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
+run_domain_smoke() {
+  local domain="$1"
+  [[ -z "$domain" ]] && return 0
+  local url="https://${domain}"
+
+  if ! run_domain_quick_health_wait "$url"; then
+    if [[ "$AUTO_CERT_INIT" == "1" ]]; then
+      cert_bootstrap
+      run_domain_quick_health_wait "$url" || fail "HTTPS health still failing after cert bootstrap: ${url}/health"
+    else
+      fail "HTTPS health check failed: ${url}/health (set AUTO_CERT_INIT=1 to auto-bootstrap certs)"
+    fi
+  fi
+
+  log "Running security smoke for $url"
+  ./scripts/ops/security_smoke.sh "$url" >/dev/null
+  log "Domain security smoke passed: $url"
 }
 
 https_health_ok() {
@@ -112,24 +163,6 @@ cert_bootstrap() {
     --email "$LETSENCRYPT_EMAIL" --agree-tos --no-eff-email --non-interactive --expand \
     -d "$DOMAIN" -d "$WWW_DOMAIN" -d "$SECOND_DOMAIN" -d "$SECOND_WWW_DOMAIN"
   "${PROD_COMPOSE[@]}" up -d --build edge
-}
-
-run_domain_smoke() {
-  local domain="$1"
-  [[ -z "$domain" ]] && return 0
-  local url="https://${domain}"
-
-  if ! https_health_ok "$url"; then
-    if [[ "$AUTO_CERT_INIT" == "1" ]]; then
-      cert_bootstrap
-      https_health_ok "$url" || fail "HTTPS health still failing after cert bootstrap: ${url}/health"
-    else
-      fail "HTTPS health check failed: ${url}/health (set AUTO_CERT_INIT=1 to auto-bootstrap certs)"
-    fi
-  fi
-
-  log "Running security smoke for $url"
-  ./scripts/ops/security_smoke.sh "$url" >/dev/null
 }
 
 run_incident_report() {
