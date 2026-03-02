@@ -1,7 +1,8 @@
 .PHONY: \
 	help \
-	local-up local-down local-logs local-migrate local-test local-seed \
+	local-up local-down local-logs local-migrate local-test local-seed local-seed-statuses local-seed-catalog \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
+	prod-seed-statuses prod-seed-catalog \
 	prod-secrets-generate prod-secrets-apply prod-secrets-generate-env prod-secrets-apply-env \
 	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid \
 	security-smoke prod-security-audit prod-security-scheduler-up prod-security-scheduler-logs \
@@ -34,11 +35,15 @@ help:
 	@echo "  local-migrate     - Apply migrations (local)"
 	@echo "  local-test        - Run backend tests (local)"
 	@echo "  local-seed        - Seed quotes (local)"
+	@echo "  local-seed-statuses - Seed legal flow statuses (local)"
+	@echo "  local-seed-catalog  - Seed quotes + legal flow statuses (local)"
 	@echo "  prod-up           - Start production stack (nginx 80/443 + TLS certs already issued)"
 	@echo "  prod-down         - Stop production stack"
 	@echo "  prod-logs         - Tail production logs"
 	@echo "  prod-ps           - Show production services"
 	@echo "  prod-migrate      - Apply migrations (prod)"
+	@echo "  prod-seed-statuses - Seed legal flow statuses (prod)"
+	@echo "  prod-seed-catalog  - Seed quotes + legal flow statuses (prod)"
 	@echo "  prod-secrets-generate - Generate rotated internal secrets into .env.prod"
 	@echo "  prod-secrets-apply    - Generate + apply rotated internal secrets to running prod stack"
 	@echo "  prod-secrets-generate-env - Generate rotated secrets from current .env into .env.secure"
@@ -83,6 +88,13 @@ local-test:
 local-seed:
 	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_quotes
 
+local-seed-statuses:
+	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_statuses_legal_flow
+
+local-seed-catalog:
+	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_quotes
+	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_statuses_legal_flow
+
 check-prod-files:
 	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)
 	@test -f frontend/nginx.prod.conf || (echo "[ERROR] Missing frontend/nginx.prod.conf. Run: git pull"; exit 1)
@@ -108,6 +120,13 @@ prod-ps: check-prod-files
 
 prod-migrate: check-prod-files
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
+
+prod-seed-statuses: check-prod-files
+	$(PROD_COMPOSE) exec -T backend python -m app.scripts.upsert_statuses_legal_flow
+
+prod-seed-catalog: check-prod-files
+	$(PROD_COMPOSE) exec -T backend python -m app.scripts.upsert_quotes
+	$(PROD_COMPOSE) exec -T backend python -m app.scripts.upsert_statuses_legal_flow
 
 prod-secrets-generate:
 	./scripts/ops/rotate_prod_secrets.sh --env-in .env.production --env-out .env.prod
