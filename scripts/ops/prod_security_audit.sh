@@ -36,29 +36,116 @@ file_missing() {
   [[ ! -f "$1" ]]
 }
 
+lower() {
+  echo "${1:-}" | tr '[:upper:]' '[:lower:]'
+}
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  if [[ ! -f "$file" ]]; then
+    echo ""
+    return 0
+  fi
+  grep -E "^${key}=" "$file" | tail -n1 | cut -d= -f2- || true
+}
+
+upsert_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp
+  tmp="$(mktemp)"
+  awk -v k="$key" -v v="$value" '
+    BEGIN { done = 0 }
+    $0 ~ ("^" k "=") { print k "=" v; done = 1; next }
+    { print }
+    END { if (!done) print k "=" v }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+}
+
+is_prod_env() {
+  local value
+  value="$(lower "${1:-}")"
+  [[ "$value" == "prod" || "$value" == "production" ]]
+}
+
+is_valid_samesite() {
+  local value
+  value="$(lower "${1:-}")"
+  [[ "$value" == "lax" || "$value" == "strict" || "$value" == "none" ]]
+}
+
+is_truthy() {
+  local value
+  value="$(lower "${1:-}")"
+  [[ "$value" == "true" || "$value" == "1" || "$value" == "yes" || "$value" == "on" ]]
+}
+
 ensure_env_file() {
-  if [[ -f ".env" ]]; then
-    log ".env found"
-    return 0
+  if [[ ! -f ".env" ]]; then
+    if [[ -f ".env.prod" ]]; then
+      cp .env.prod .env
+      chmod 600 .env
+      log ".env was missing -> restored from .env.prod"
+    elif [[ -f ".env.production" ]]; then
+      cp .env.production .env
+      chmod 600 .env
+      log ".env was missing -> restored from .env.production"
+    else
+      fail "Cannot build .env automatically: missing .env, .env.prod and .env.production"
+    fi
   fi
 
-  if [[ -f ".env.prod" ]]; then
-    cp .env.prod .env
+  local app_env cookie_secure current_samesite strict_origin target_samesite
+  local changed=0
+
+  app_env="$(read_env_value ".env" "APP_ENV")"
+  cookie_secure="$(read_env_value ".env" "PUBLIC_COOKIE_SECURE")"
+  current_samesite="$(read_env_value ".env" "PUBLIC_COOKIE_SAMESITE")"
+  strict_origin="$(read_env_value ".env" "PUBLIC_STRICT_ORIGIN_CHECK")"
+
+  target_samesite="$(lower "$current_samesite")"
+  if ! is_valid_samesite "$target_samesite"; then
+    local fallback_samesite
+    fallback_samesite="$(lower "$(read_env_value ".env.prod" "PUBLIC_COOKIE_SAMESITE")")"
+    if is_valid_samesite "$fallback_samesite"; then
+      target_samesite="$fallback_samesite"
+    else
+      target_samesite="lax"
+    fi
+  fi
+
+  if ! is_prod_env "$app_env"; then
+    changed=1
+  fi
+  if ! is_truthy "$cookie_secure"; then
+    changed=1
+  fi
+  if ! is_valid_samesite "$current_samesite"; then
+    changed=1
+  fi
+  if ! is_truthy "$strict_origin"; then
+    changed=1
+  fi
+
+  if [[ "$changed" == "1" ]]; then
+    local backup_file
+    backup_file=".env.backup.$(date +%Y%m%d-%H%M%S)"
+    cp .env "$backup_file"
+    chmod 600 "$backup_file"
+
+    upsert_env_value ".env" "APP_ENV" "prod"
+    upsert_env_value ".env" "PUBLIC_COOKIE_SECURE" "true"
+    upsert_env_value ".env" "PUBLIC_COOKIE_SAMESITE" "$target_samesite"
+    upsert_env_value ".env" "PUBLIC_STRICT_ORIGIN_CHECK" "true"
     chmod 600 .env
-    log ".env was missing -> restored from .env.prod"
-    return 0
-  fi
 
-  if [[ -f ".env.production" ]]; then
-    log ".env/.env.prod missing -> generating .env.prod from .env.production"
-    ./scripts/ops/rotate_prod_secrets.sh --env-in .env.production --env-out .env.prod
-    cp .env.prod .env
-    chmod 600 .env
-    log ".env created from generated .env.prod"
-    return 0
+    warn ".env updated in-place for production smoke checks (backup: ${backup_file})"
+  else
+    log ".env found (APP_ENV=$(lower "$app_env"), PUBLIC_COOKIE_SAMESITE=$(lower "$current_samesite"))"
   fi
-
-  fail "Cannot build .env automatically: missing both .env.prod and .env.production"
 }
 
 ensure_minio_tls_bundle() {
