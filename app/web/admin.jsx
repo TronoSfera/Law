@@ -588,6 +588,122 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
   }
 
+  function AccountModal({
+    open,
+    status,
+    profileLoading,
+    saveLoading,
+    form,
+    totpStatus,
+    onFieldChange,
+    onClose,
+    onSubmit,
+    onSetupTotp,
+    onRegenerateBackupCodes,
+    onDisableTotp,
+  }) {
+    if (!open) return null;
+    return (
+      <Overlay open={open} id="account-overlay" onClose={(event) => event.target.id === "account-overlay" && onClose()}>
+        <div className="modal account-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3>Личный кабинет</h3>
+              <p className="muted" style={{ marginTop: "0.35rem" }}>
+                Профиль и безопасность аккаунта.
+              </p>
+            </div>
+            <button className="close" type="button" onClick={onClose}>
+              ×
+            </button>
+          </div>
+          {profileLoading ? (
+            <p className="muted">Загрузка профиля...</p>
+          ) : (
+            <form className="stack" onSubmit={onSubmit}>
+              <div className="account-modal-grid">
+                <div className="field">
+                  <label htmlFor="account-name">Имя</label>
+                  <input id="account-name" name="name" type="text" value={form.name} onChange={onFieldChange} />
+                </div>
+                <div className="field">
+                  <label htmlFor="account-email">Почта</label>
+                  <input id="account-email" name="email" type="email" value={form.email} onChange={onFieldChange} />
+                </div>
+              </div>
+              <div className="account-modal-grid">
+                <div className="field">
+                  <label htmlFor="account-phone">Телефон</label>
+                  <input id="account-phone" name="phone" type="text" value={form.phone} onChange={onFieldChange} />
+                </div>
+                <div className="field">
+                  <label htmlFor="account-password">Новый пароль</label>
+                  <input
+                    id="account-password"
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={onFieldChange}
+                    placeholder="Оставьте пустым, если не меняете"
+                  />
+                </div>
+              </div>
+              <div className="account-modal-grid">
+                <div className="field">
+                  <label htmlFor="account-password-confirm">Подтверждение пароля</label>
+                  <input
+                    id="account-password-confirm"
+                    name="passwordConfirm"
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.passwordConfirm}
+                    onChange={onFieldChange}
+                  />
+                </div>
+                <div className="field" />
+              </div>
+
+              <div className="account-security-box">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <div>
+                    <b>2FA</b>: {totpStatus.enabled ? "Включена" : "Выключена"}
+                  </div>
+                  <div className="muted">Режим: {String(totpStatus.mode || "-")}</div>
+                </div>
+                <div style={{ marginTop: "0.6rem", display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                  <button className="btn secondary" type="button" onClick={onSetupTotp}>
+                    Настроить 2FA
+                  </button>
+                  {totpStatus.enabled ? (
+                    <>
+                      <button className="btn secondary" type="button" onClick={onRegenerateBackupCodes}>
+                        Backup-коды
+                      </button>
+                      <button className="btn danger" type="button" onClick={onDisableTotp}>
+                        Отключить 2FA
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                <button className="btn" type="submit" disabled={saveLoading}>
+                  {saveLoading ? "Сохраняем..." : "Сохранить изменения"}
+                </button>
+                <button className="btn secondary" type="button" onClick={onClose} disabled={saveLoading}>
+                  Закрыть
+                </button>
+              </div>
+              <StatusLine status={status} />
+            </form>
+          )}
+        </div>
+      </Overlay>
+    );
+  }
+
   function AttachmentPreviewModal({ open, title, url, fileName, mimeType, onClose }) {
     const [resolvedUrl, setResolvedUrl] = useState("");
     const [resolvedText, setResolvedText] = useState("");
@@ -1035,6 +1151,23 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       qrDataUrl: "",
       code: "",
       loading: false,
+    });
+    const [accountModal, setAccountModal] = useState({
+      open: false,
+      loading: false,
+      saving: false,
+      initial: {
+        name: "",
+        email: "",
+        phone: "",
+      },
+      form: {
+        name: "",
+        email: "",
+        phone: "",
+        password: "",
+        passwordConfirm: "",
+      },
     });
 
     const [recordModal, setRecordModal] = useState({
@@ -2743,6 +2876,146 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       [api, token]
     );
 
+    const openAccountModal = useCallback(async () => {
+      if (!token || !userId) {
+        setStatus("account", "Не удалось открыть профиль: отсутствует идентификатор пользователя", "error");
+        return;
+      }
+      setAccountModal((prev) => ({
+        ...prev,
+        open: true,
+        loading: true,
+        saving: false,
+      }));
+      setStatus("account", "Загрузка профиля...", "");
+      try {
+        const row = await api("/api/admin/crud/admin_users/" + encodeURIComponent(String(userId)));
+        const nextInitial = {
+          name: String(row?.name || ""),
+          email: String(row?.email || email || ""),
+          phone: String(row?.phone || ""),
+        };
+        setAccountModal({
+          open: true,
+          loading: false,
+          saving: false,
+          initial: nextInitial,
+          form: {
+            ...nextInitial,
+            password: "",
+            passwordConfirm: "",
+          },
+        });
+        setStatus("account", "", "");
+      } catch (error) {
+        setAccountModal((prev) => ({ ...prev, loading: false }));
+        setStatus("account", "Ошибка загрузки профиля: " + error.message, "error");
+      }
+    }, [api, email, setStatus, token, userId]);
+
+    const closeAccountModal = useCallback(() => {
+      setAccountModal((prev) => ({
+        ...prev,
+        open: false,
+        loading: false,
+        saving: false,
+        form: {
+          name: prev.initial.name,
+          email: prev.initial.email,
+          phone: prev.initial.phone,
+          password: "",
+          passwordConfirm: "",
+        },
+      }));
+      setStatus("account", "", "");
+    }, [setStatus]);
+
+    const updateAccountField = useCallback((event) => {
+      const fieldName = String(event?.target?.name || "");
+      if (!fieldName) return;
+      setAccountModal((prev) => ({
+        ...prev,
+        form: {
+          ...prev.form,
+          [fieldName]: event.target.value,
+        },
+      }));
+    }, []);
+
+    const submitAccountModal = useCallback(
+      async (event) => {
+        event.preventDefault();
+        if (!token || !userId) return;
+
+        const form = accountModal.form || {};
+        const initial = accountModal.initial || {};
+
+        const nextName = String(form.name || "").trim();
+        const nextEmail = String(form.email || "").trim().toLowerCase();
+        const nextPhone = String(form.phone || "").trim();
+        const nextPassword = String(form.password || "");
+        const nextPasswordConfirm = String(form.passwordConfirm || "");
+
+        if (!nextName) {
+          setStatus("account", "Имя не может быть пустым", "error");
+          return;
+        }
+        if (!nextEmail) {
+          setStatus("account", "Почта не может быть пустой", "error");
+          return;
+        }
+        if (nextPassword && nextPassword.length < 8) {
+          setStatus("account", "Пароль должен быть не менее 8 символов", "error");
+          return;
+        }
+        if (nextPassword !== nextPasswordConfirm) {
+          setStatus("account", "Пароли не совпадают", "error");
+          return;
+        }
+
+        const payload = {};
+        if (nextName !== String(initial.name || "").trim()) payload.name = nextName;
+        if (nextEmail !== String(initial.email || "").trim().toLowerCase()) payload.email = nextEmail;
+        if (nextPhone !== String(initial.phone || "").trim()) payload.phone = nextPhone || null;
+        if (nextPassword) payload.password = nextPassword;
+
+        if (!Object.keys(payload).length) {
+          setStatus("account", "Нет изменений для сохранения", "");
+          return;
+        }
+
+        try {
+          setAccountModal((prev) => ({ ...prev, saving: true }));
+          setStatus("account", "Сохранение...", "");
+          const row = await api("/api/admin/crud/admin_users/" + encodeURIComponent(String(userId)), {
+            method: "PATCH",
+            body: payload,
+          });
+          const nextInitial = {
+            name: String(row?.name || nextName),
+            email: String(row?.email || nextEmail),
+            phone: String(row?.phone || nextPhone),
+          };
+          setAccountModal((prev) => ({
+            ...prev,
+            saving: false,
+            initial: nextInitial,
+            form: {
+              ...nextInitial,
+              password: "",
+              passwordConfirm: "",
+            },
+          }));
+          if (nextInitial.email) setEmail(nextInitial.email);
+          setStatus("account", "Профиль обновлен", "ok");
+        } catch (error) {
+          setAccountModal((prev) => ({ ...prev, saving: false }));
+          setStatus("account", "Ошибка сохранения: " + error.message, "error");
+        }
+      },
+      [accountModal.form, accountModal.initial, api, setStatus, token, userId]
+    );
+
     const closeTotpSetupModal = useCallback(() => {
       setTotpSetupModal({
         open: false,
@@ -2931,6 +3204,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         code: "",
         loading: false,
       });
+      setAccountModal({
+        open: false,
+        loading: false,
+        saving: false,
+        initial: { name: "", email: "", phone: "" },
+        form: { name: "", email: "", phone: "", password: "", passwordConfirm: "" },
+      });
       setActiveSection("dashboard");
     }, [resetKanbanState, resetRequestWorkspaceState, resetTablesState]);
 
@@ -3054,7 +3334,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
     }, [configActiveKey, dictionaryTableItems]);
 
-    const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open || totpSetupModal.open;
+    const anyOverlayOpen =
+      recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open || totpSetupModal.open || accountModal.open;
     useEffect(() => {
       document.body.classList.toggle("modal-open", anyOverlayOpen);
       return () => document.body.classList.remove("modal-open");
@@ -3068,10 +3349,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         closeKanbanSortModal();
         setReassignModal((prev) => ({ ...prev, open: false }));
         closeTotpSetupModal();
+        closeAccountModal();
       };
       document.addEventListener("keydown", onEsc);
       return () => document.removeEventListener("keydown", onEsc);
-    }, [closeKanbanSortModal, closeTotpSetupModal]);
+    }, [closeAccountModal, closeKanbanSortModal, closeTotpSetupModal]);
 
     const menuItems = useMemo(() => {
       return [
@@ -3202,19 +3484,9 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             </div>
             {token && role ? (
               <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                <button className="btn secondary" type="button" onClick={setupTotp}>
-                  Настроить 2FA
+                <button className="btn secondary" type="button" onClick={openAccountModal}>
+                  Личный кабинет
                 </button>
-                {totpStatus.enabled ? (
-                  <>
-                    <button className="btn secondary" type="button" onClick={regenerateTotpBackupCodes}>
-                      Backup-коды
-                    </button>
-                    <button className="btn danger" type="button" onClick={disableTotp}>
-                      Отключить 2FA
-                    </button>
-                  </>
-                ) : null}
               </div>
             ) : null}
             <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -3625,6 +3897,21 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           onSubmit={submitTotpSetup}
           onCopySecret={copyTotpSecret}
           onCopyUri={copyTotpUri}
+        />
+
+        <AccountModal
+          open={accountModal.open}
+          status={getStatus("account")}
+          profileLoading={accountModal.loading}
+          saveLoading={accountModal.saving}
+          form={accountModal.form}
+          totpStatus={totpStatus}
+          onFieldChange={updateAccountField}
+          onClose={closeAccountModal}
+          onSubmit={submitAccountModal}
+          onSetupTotp={setupTotp}
+          onRegenerateBackupCodes={regenerateTotpBackupCodes}
+          onDisableTotp={disableTotp}
         />
 
         {!token || !role ? <LoginScreen onSubmit={login} status={getStatus("login")} /> : null}

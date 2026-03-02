@@ -2773,6 +2773,23 @@
       background: #fff;
     }
 
+    .account-modal {
+      width: min(760px, 100%);
+    }
+
+    .account-modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .account-security-box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.75rem;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
     .close {
       border: 1px solid var(--line);
       width: 34px;
@@ -2850,6 +2867,7 @@
         width: 200px;
         height: 200px;
       }
+      .account-modal-grid { grid-template-columns: 1fr; }
       .lawyer-dashboard-grid { grid-template-columns: 1fr; }
       .lawyer-dashboard-card {
         grid-template-columns: 1fr;
