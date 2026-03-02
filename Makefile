@@ -2,7 +2,7 @@
 	help \
 	local-up local-down local-logs local-migrate local-test local-seed \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
-	prod-secrets-generate prod-secrets-apply \
+	prod-secrets-generate prod-secrets-apply prod-secrets-generate-env prod-secrets-apply-env \
 	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid \
 	security-smoke prod-security-audit prod-security-scheduler-up prod-security-scheduler-logs \
 	prod-cert-init prod-cert-renew \
@@ -40,6 +40,8 @@ help:
 	@echo "  prod-migrate      - Apply migrations (prod)"
 	@echo "  prod-secrets-generate - Generate rotated internal secrets into .env.prod"
 	@echo "  prod-secrets-apply    - Generate + apply rotated internal secrets to running prod stack"
+	@echo "  prod-secrets-generate-env - Generate rotated secrets from current .env into .env.secure"
+	@echo "  prod-secrets-apply-env    - Generate + apply rotated secrets directly for current .env"
 	@echo "  prod-minio-tls-init   - Generate internal CA and MinIO TLS certs (deploy/tls/minio)"
 	@echo "  incident-checklist    - Create PDn incident checklist markdown report"
 	@echo "  security-smoke        - Run security smoke checks and create report"
@@ -110,6 +112,12 @@ prod-secrets-generate:
 
 prod-secrets-apply: check-prod-files
 	./scripts/ops/rotate_prod_secrets.sh --env-in .env.production --env-out .env.prod --apply-running --compose-override docker-compose.prod.nginx.yml --non-interactive --require-confirmation-token "$(CONFIRM_TOKEN)"
+
+prod-secrets-generate-env: check-prod-files
+	./scripts/ops/rotate_prod_secrets.sh --env-in .env --env-out .env.secure
+
+prod-secrets-apply-env: check-prod-files
+	./scripts/ops/rotate_prod_secrets.sh --env-in .env --env-out .env.secure --apply-running --compose-override docker-compose.prod.nginx.yml --non-interactive --require-confirmation-token "$(CONFIRM_TOKEN)"
 
 prod-minio-tls-init:
 	./scripts/ops/minio_tls_bootstrap.sh
