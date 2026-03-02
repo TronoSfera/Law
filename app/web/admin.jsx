@@ -60,6 +60,7 @@ import {
   translateApiError,
   userInitials,
 } from "./admin/shared/utils.js";
+import QRCode from "qrcode";
 
 (function () {
 const { useCallback, useEffect, useMemo, useRef, useState } = React;
@@ -493,6 +494,90 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 Ок
               </button>
               <button className="btn secondary" type="button" onClick={onClose}>
+                Отмена
+              </button>
+            </div>
+            <StatusLine status={status} />
+          </form>
+        </div>
+      </Overlay>
+    );
+  }
+
+  function TotpSetupModal({
+    open,
+    status,
+    secret,
+    uri,
+    qrDataUrl,
+    code,
+    loading,
+    onCodeChange,
+    onClose,
+    onSubmit,
+    onCopySecret,
+    onCopyUri,
+  }) {
+    if (!open) return null;
+    return (
+      <Overlay open={open} id="totp-setup-overlay" onClose={(event) => event.target.id === "totp-setup-overlay" && onClose()}>
+        <div className="modal" style={{ width: "min(700px, 100%)" }} onClick={(event) => event.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3>Настройка 2FA</h3>
+              <p className="muted" style={{ marginTop: "0.35rem" }}>
+                Сканируйте QR-код в Google Authenticator и подтвердите 6-значным кодом.
+              </p>
+            </div>
+            <button className="close" type="button" onClick={onClose}>
+              ×
+            </button>
+          </div>
+          <div className="totp-setup-grid">
+            <div className="totp-qr-box">
+              {qrDataUrl ? (
+                <img className="totp-qr-img" src={qrDataUrl} alt="QR-код для настройки 2FA" />
+              ) : (
+                <p className="muted">QR-код не удалось сгенерировать. Используйте ключ вручную.</p>
+              )}
+            </div>
+            <div className="stack">
+              <div className="field">
+                <label htmlFor="totp-secret">Секретный ключ</label>
+                <input id="totp-secret" type="text" value={secret} readOnly />
+              </div>
+              <div className="field">
+                <label htmlFor="totp-uri">URI (otpauth)</label>
+                <textarea id="totp-uri" rows={3} value={uri} readOnly />
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button className="btn secondary" type="button" onClick={onCopySecret}>
+                  Копировать ключ
+                </button>
+                <button className="btn secondary" type="button" onClick={onCopyUri}>
+                  Копировать URI
+                </button>
+              </div>
+            </div>
+          </div>
+          <form className="stack" onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="totp-verify-code">Код из Google Authenticator</label>
+              <input
+                id="totp-verify-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                value={code}
+                onChange={onCodeChange}
+              />
+            </div>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+              <button className="btn" type="submit" disabled={loading}>
+                {loading ? "Включаем..." : "Включить 2FA"}
+              </button>
+              <button className="btn secondary" type="button" onClick={onClose} disabled={loading}>
                 Отмена
               </button>
             </div>
@@ -942,6 +1027,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       enabled: false,
       required: false,
       has_backup_codes: false,
+    });
+    const [totpSetupModal, setTotpSetupModal] = useState({
+      open: false,
+      secret: "",
+      uri: "",
+      qrDataUrl: "",
+      code: "",
+      loading: false,
     });
 
     const [recordModal, setRecordModal] = useState({
@@ -2650,30 +2743,113 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       [api, token]
     );
 
+    const closeTotpSetupModal = useCallback(() => {
+      setTotpSetupModal({
+        open: false,
+        secret: "",
+        uri: "",
+        qrDataUrl: "",
+        code: "",
+        loading: false,
+      });
+      setStatus("totpSetup", "", "");
+    }, [setStatus]);
+
+    const updateTotpSetupCode = useCallback((event) => {
+      setTotpSetupModal((prev) => ({ ...prev, code: event.target.value }));
+    }, []);
+
+    const copyTotpSecret = useCallback(async () => {
+      const value = String(totpSetupModal.secret || "").trim();
+      if (!value) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(value);
+          setStatus("totpSetup", "Ключ скопирован в буфер обмена", "ok");
+        } else {
+          setStatus("totpSetup", "Буфер обмена недоступен в этом браузере", "error");
+        }
+      } catch (_) {
+        setStatus("totpSetup", "Не удалось скопировать ключ", "error");
+      }
+    }, [setStatus, totpSetupModal.secret]);
+
+    const copyTotpUri = useCallback(async () => {
+      const value = String(totpSetupModal.uri || "").trim();
+      if (!value) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(value);
+          setStatus("totpSetup", "URI скопирован в буфер обмена", "ok");
+        } else {
+          setStatus("totpSetup", "Буфер обмена недоступен в этом браузере", "error");
+        }
+      } catch (_) {
+        setStatus("totpSetup", "Не удалось скопировать URI", "error");
+      }
+    }, [setStatus, totpSetupModal.uri]);
+
     const setupTotp = useCallback(async () => {
       try {
         const setup = await api("/api/admin/auth/totp/setup", { method: "POST", body: {} });
         const secret = String(setup?.secret || "").trim();
         const uri = String(setup?.otpauth_uri || "").trim();
         if (!secret || !uri) throw new Error("Не удалось получить секрет TOTP");
-        window.alert(
-          "Сканируйте QR/URI в Google Authenticator:\n\n" +
-            uri +
-            "\n\nИли введите ключ вручную:\n" +
-            secret
-        );
-        const code = String(window.prompt("Введите текущий 6-значный код из Authenticator", "") || "").trim();
-        if (!code) return;
-        const enabled = await api("/api/admin/auth/totp/enable", { method: "POST", body: { secret, code } });
-        const backupCodes = Array.isArray(enabled?.backup_codes) ? enabled.backup_codes : [];
-        window.alert(
-          "2FA включена.\nСохраните резервные коды (однократно):\n\n" + (backupCodes.length ? backupCodes.join("\n") : "-")
-        );
-        await loadTotpStatus();
+        let qrDataUrl = "";
+        try {
+          qrDataUrl = await QRCode.toDataURL(uri, {
+            margin: 1,
+            width: 240,
+            errorCorrectionLevel: "M",
+          });
+        } catch (_) {
+          qrDataUrl = "";
+        }
+        setTotpSetupModal({
+          open: true,
+          secret,
+          uri,
+          qrDataUrl,
+          code: "",
+          loading: false,
+        });
+        setStatus("totpSetup", "", "");
       } catch (error) {
         setStatus("login", "Ошибка настройки 2FA: " + error.message, "error");
       }
-    }, [api, loadTotpStatus, setStatus]);
+    }, [api, setStatus]);
+
+    const submitTotpSetup = useCallback(
+      async (event) => {
+        event.preventDefault();
+        const secret = String(totpSetupModal.secret || "").trim();
+        const rawCode = String(totpSetupModal.code || "").trim();
+        const digitsOnly = rawCode.replace(/\D+/g, "");
+        if (!secret) {
+          setStatus("totpSetup", "Не найден TOTP secret. Перезапустите настройку.", "error");
+          return;
+        }
+        if (digitsOnly.length !== 6) {
+          setStatus("totpSetup", "Введите корректный 6-значный код", "error");
+          return;
+        }
+        try {
+          setTotpSetupModal((prev) => ({ ...prev, loading: true }));
+          const enabled = await api("/api/admin/auth/totp/enable", { method: "POST", body: { secret, code: digitsOnly } });
+          closeTotpSetupModal();
+          setStatus("login", "2FA включена", "ok");
+          const backupCodes = Array.isArray(enabled?.backup_codes) ? enabled.backup_codes : [];
+          window.alert(
+            "2FA включена.\nСохраните резервные коды (однократно):\n\n" + (backupCodes.length ? backupCodes.join("\n") : "-")
+          );
+          await loadTotpStatus();
+        } catch (error) {
+          setTotpSetupModal((prev) => ({ ...prev, loading: false }));
+          setStatus("totpSetup", "Ошибка включения 2FA: " + error.message, "error");
+        }
+      },
+      [api, closeTotpSetupModal, loadTotpStatus, setStatus, totpSetupModal.code, totpSetupModal.secret]
+    );
 
     const regenerateTotpBackupCodes = useCallback(async () => {
       try {
@@ -2746,6 +2922,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         enabled: false,
         required: false,
         has_backup_codes: false,
+      });
+      setTotpSetupModal({
+        open: false,
+        secret: "",
+        uri: "",
+        qrDataUrl: "",
+        code: "",
+        loading: false,
       });
       setActiveSection("dashboard");
     }, [resetKanbanState, resetRequestWorkspaceState, resetTablesState]);
@@ -2870,7 +3054,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
     }, [configActiveKey, dictionaryTableItems]);
 
-    const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open;
+    const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open || totpSetupModal.open;
     useEffect(() => {
       document.body.classList.toggle("modal-open", anyOverlayOpen);
       return () => document.body.classList.remove("modal-open");
@@ -2883,10 +3067,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         setFilterModal((prev) => ({ ...prev, open: false }));
         closeKanbanSortModal();
         setReassignModal((prev) => ({ ...prev, open: false }));
+        closeTotpSetupModal();
       };
       document.addEventListener("keydown", onEsc);
       return () => document.removeEventListener("keydown", onEsc);
-    }, [closeKanbanSortModal]);
+    }, [closeKanbanSortModal, closeTotpSetupModal]);
 
     const menuItems = useMemo(() => {
       return [
@@ -3425,6 +3610,21 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           onClose={closeReassignModal}
           onSubmit={submitReassignModal}
           trackNumber={reassignModal.trackNumber}
+        />
+
+        <TotpSetupModal
+          open={totpSetupModal.open}
+          status={getStatus("totpSetup")}
+          secret={totpSetupModal.secret}
+          uri={totpSetupModal.uri}
+          qrDataUrl={totpSetupModal.qrDataUrl}
+          code={totpSetupModal.code}
+          loading={totpSetupModal.loading}
+          onCodeChange={updateTotpSetupCode}
+          onClose={closeTotpSetupModal}
+          onSubmit={submitTotpSetup}
+          onCopySecret={copyTotpSecret}
+          onCopyUri={copyTotpUri}
         />
 
         {!token || !role ? <LoginScreen onSubmit={login} status={getStatus("login")} /> : null}

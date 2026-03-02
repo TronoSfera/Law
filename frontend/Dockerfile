@@ -5,7 +5,7 @@ COPY app/web/admin.jsx ./admin.jsx
 COPY app/web/client ./client
 COPY app/web/client.jsx ./client.jsx
 RUN npm init -y >/dev/null 2>&1 \
-  && npm install --silent esbuild@0.25.10 react@18.2.0 react-dom@18.2.0 \
+  && npm install --silent esbuild@0.25.10 react@18.2.0 react-dom@18.2.0 qrcode@1.5.4 \
   && npx esbuild admin/index.jsx --bundle --loader:.jsx=jsx --format=iife --target=es2018 --outfile=admin.js \
   && npx esbuild client/index.jsx --bundle --loader:.jsx=jsx --format=iife --target=es2018 --outfile=client.js \
   && mkdir -p vendor \
