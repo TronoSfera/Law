@@ -36,6 +36,7 @@ from app.services.request_read_markers import (
     mark_unread_for_client,
     mark_unread_for_lawyer,
 )
+from app.services.request_deadline import initial_important_date_at
 from app.services.request_status import apply_status_change_effects
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.services.status_flow import transition_allowed_for_topic
@@ -349,6 +350,9 @@ def create_row_service(table_name: str, payload: dict[str, Any], db: Session, ad
                 prepared["assigned_lawyer_id"] = str(assigned_lawyer.id)
                 if prepared.get("effective_rate") is None:
                     prepared["effective_rate"] = assigned_lawyer.default_rate
+        important_raw = prepared.get("important_date_at")
+        if important_raw is None or not str(important_raw).strip():
+            prepared["important_date_at"] = initial_important_date_at()
     if normalized == "invoices":
         req = _request_for_uuid_or_400(db, prepared.get("request_id"))
         prepared["request_id"] = req.id

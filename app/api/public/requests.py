@@ -38,6 +38,7 @@ from app.services.notifications import (
     unread_client_summary,
 )
 from app.services.request_read_markers import clear_unread_for_client
+from app.services.request_deadline import initial_important_date_at
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.services.security_audit import extract_client_ip, record_pii_access_event
 from app.api.admin.requests_modules.status_flow import get_request_status_route_service
@@ -285,6 +286,7 @@ def create_request(
         client_phone=client.phone,
         client_email=client.email,
         topic_code=payload.topic_code,
+        important_date_at=initial_important_date_at(),
         description=payload.description,
         extra_fields=payload.extra_fields,
         pdn_consent=True,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import uuid
 from typing import Tuple
 
@@ -7,6 +8,7 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, Request as FastapiRequest
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import settings
 from app.core.deps import require_role
@@ -29,6 +31,10 @@ from app.services.attachment_scan import (
 from app.services.s3_storage import build_object_key, get_s3_storage
 
 router = APIRouter()
+
+AVATAR_MAX_SIZE_PX = 512
+AVATAR_WEBP_QUALITY = 80
+_AVATAR_RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
 
 
 def _max_file_bytes() -> int:
@@ -97,6 +103,68 @@ def _client_ip(http_request: FastapiRequest) -> str | None:
     return None
 
 
+def _read_object_bytes_or_400(storage, key: str) -> bytes:
+    try:
+        obj = storage.get_object(key)
+    except ClientError:
+        raise HTTPException(status_code=400, detail="Файл не найден в хранилище")
+    body = obj.get("Body")
+    if hasattr(body, "read"):
+        data = body.read()
+    elif hasattr(body, "iter_chunks"):
+        data = b"".join(body.iter_chunks())
+    else:
+        raise HTTPException(status_code=500, detail="Не удалось прочитать объект из хранилища")
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        raise HTTPException(status_code=400, detail="Пустой файл аватара")
+    return bytes(data)
+
+
+def _write_object_bytes_or_500(storage, *, key: str, content: bytes, mime_type: str) -> None:
+    if hasattr(storage, "client") and hasattr(storage.client, "put_object") and hasattr(storage, "bucket"):
+        storage.client.put_object(
+            Bucket=storage.bucket,
+            Key=key,
+            Body=content,
+            ContentType=mime_type,
+        )
+        return
+    objects = getattr(storage, "objects", None)
+    if isinstance(objects, dict):
+        objects[key] = {
+            "size": int(len(content)),
+            "mime": str(mime_type or "application/octet-stream"),
+            "content": bytes(content),
+        }
+        return
+    raise HTTPException(status_code=500, detail="Хранилище не поддерживает запись объектов")
+
+
+def _normalize_avatar_to_webp_or_400(storage, *, key: str) -> tuple[int, str]:
+    source = _read_object_bytes_or_400(storage, key)
+    try:
+        with Image.open(io.BytesIO(source)) as image:
+            image = ImageOps.exif_transpose(image)
+            image.load()
+            if max(image.size) > AVATAR_MAX_SIZE_PX:
+                image.thumbnail((AVATAR_MAX_SIZE_PX, AVATAR_MAX_SIZE_PX), resample=_AVATAR_RESAMPLE)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            out = io.BytesIO()
+            image.save(out, format="WEBP", quality=AVATAR_WEBP_QUALITY, method=6)
+            optimized = out.getvalue()
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Аватар должен быть изображением")
+    except OSError:
+        raise HTTPException(status_code=400, detail="Не удалось обработать изображение аватара")
+    if not optimized:
+        raise HTTPException(status_code=400, detail="Не удалось обработать изображение аватара")
+    _write_object_bytes_or_500(storage, key=key, content=optimized, mime_type="image/webp")
+    return int(len(optimized)), "image/webp"
+
+
 @router.post("/init", response_model=UploadInitResponse)
 def upload_init(
     payload: UploadInitPayload,
@@ -139,6 +207,8 @@ def upload_init(
             return response
 
         if payload.scope == UploadScope.USER_AVATAR:
+            if not str(payload.mime_type or "").strip().lower().startswith("image/"):
+                raise HTTPException(status_code=400, detail="Для аватара поддерживаются только изображения")
             target_user_id = str(payload.user_id or actor_id)
             target_uuid = _uuid_or_400(target_user_id, "user_id")
             if role != "ADMIN" and str(target_uuid) != actor_id:
@@ -275,6 +345,8 @@ def upload_complete(
             return UploadCompleteResponse(status="ok", attachment_id=str(row.id))
 
         if payload.scope == UploadScope.USER_AVATAR:
+            if not str(payload.mime_type or "").strip().lower().startswith("image/"):
+                raise HTTPException(status_code=400, detail="Для аватара поддерживаются только изображения")
             target_user_id = str(payload.user_id or actor_id)
             target_uuid = _uuid_or_400(target_user_id, "user_id")
             if role != "ADMIN" and str(target_uuid) != actor_id:
@@ -283,6 +355,7 @@ def upload_complete(
             if user is None:
                 raise HTTPException(status_code=404, detail="Пользователь не найден")
             _ensure_object_key_prefix_or_400(payload.key, f"avatars/{user.id}/")
+            optimized_size, optimized_mime = _normalize_avatar_to_webp_or_400(storage, key=payload.key)
             user.avatar_url = f"s3://{payload.key}"
             user.responsible = responsible
             db.add(user)
@@ -295,7 +368,12 @@ def upload_complete(
                 scope=scope_name,
                 allowed=True,
                 object_key=payload.key,
-                details={"mime_type": payload.mime_type, "size_bytes": int(actual_size)},
+                details={
+                    "mime_type": optimized_mime,
+                    "size_bytes": int(optimized_size),
+                    "source_mime_type": payload.mime_type,
+                    "source_size_bytes": int(actual_size),
+                },
                 responsible=responsible,
             )
             db.commit()

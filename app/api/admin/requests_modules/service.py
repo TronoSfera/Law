@@ -32,6 +32,7 @@ from app.services.request_read_markers import (
     mark_unread_for_client,
     mark_unread_for_lawyer,
 )
+from app.services.request_deadline import initial_important_date_at
 from app.services.request_status import apply_status_change_effects
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.services.status_flow import transition_allowed_for_topic
@@ -184,6 +185,7 @@ def create_request_service(payload: RequestAdminCreate, db: Session, admin: dict
         assigned_lawyer_id = str(assigned_lawyer.id)
         if effective_rate is None:
             effective_rate = assigned_lawyer.default_rate
+    important_date_at = payload.important_date_at or initial_important_date_at()
     row = Request(
         track_number=track,
         client_id=client.id,
@@ -191,7 +193,7 @@ def create_request_service(payload: RequestAdminCreate, db: Session, admin: dict
         client_phone=client.phone,
         topic_code=payload.topic_code,
         status_code=payload.status_code,
-        important_date_at=payload.important_date_at,
+        important_date_at=important_date_at,
         description=payload.description,
         extra_fields=payload.extra_fields,
         assigned_lawyer_id=assigned_lawyer_id,

@@ -922,7 +922,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
       <div className="client-page-shell">
         <main className="main client-main">
           <div className="topbar client-topbar">
-            <div>
+            <div className="client-topbar-copy">
               <div className="client-title-row">
                 <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
                 <h1>
@@ -933,19 +933,21 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
                   <span className="client-title-user">{viewerFullName}</span>
                 </h1>
               </div>
-              <p className="muted">Мы рады помочь Вам</p>
+              <div className="client-help-inline">
+                <p className="muted">Мы рады вам помочь</p>
+                <button
+                  className="icon-btn workspace-head-icon"
+                  id="cabinet-help-open"
+                  type="button"
+                  data-tooltip="Помощь и обращения"
+                  aria-label="Помощь и обращения"
+                  disabled={!canInteract}
+                  onClick={openClientHelpModal}
+                >
+                  ?
+                </button>
+              </div>
             </div>
-            <button
-              className="icon-btn workspace-head-icon"
-              id="cabinet-help-open"
-              type="button"
-              data-tooltip="Помощь и обращения"
-              aria-label="Помощь и обращения"
-              disabled={!canInteract}
-              onClick={openClientHelpModal}
-            >
-              ?
-            </button>
           </div>
 
           <section className="section active client-section">

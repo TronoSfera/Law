@@ -1,4 +1,5 @@
 import os
+import base64
 import unittest
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -27,6 +28,10 @@ from app.models.message import Message
 from app.models.notification import Notification
 from app.models.request import Request
 from app.services.s3_storage import S3Storage
+
+_AVATAR_PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+T5kAAAAASUVORK5CYII="
+)
 
 
 class _FakeBody:
@@ -145,7 +150,7 @@ class UploadsS3Tests(unittest.TestCase):
             key = init_resp.json()["key"]
             self.assertTrue(key.startswith("avatars/"))
 
-            fake_s3.objects[key] = {"size": 2048, "mime": "image/png", "content": b"x" * 2048}
+            fake_s3.objects[key] = {"size": len(_AVATAR_PNG_1X1), "mime": "image/png", "content": _AVATAR_PNG_1X1}
             done_resp = self.client.post(
                 "/api/admin/uploads/complete",
                 headers=headers,
@@ -164,12 +169,59 @@ class UploadsS3Tests(unittest.TestCase):
             token = headers["Authorization"].replace("Bearer ", "")
             view_resp = self.client.get(f"/api/admin/uploads/object/{key}?token={token}")
             self.assertEqual(view_resp.status_code, 200)
-            self.assertEqual(view_resp.content, b"x" * 2048)
+            self.assertNotEqual(view_resp.content, _AVATAR_PNG_1X1)
+            self.assertIn("image/webp", view_resp.headers.get("content-type", ""))
 
         with self.SessionLocal() as db:
             refreshed = db.get(AdminUser, UUID(user_id))
             self.assertIsNotNone(refreshed)
             self.assertEqual(refreshed.avatar_url, f"s3://{key}")
+
+    def test_admin_avatar_upload_rejects_non_image_content(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            user = AdminUser(
+                role="LAWYER",
+                name="Юрист Без Картинки",
+                email="avatar-invalid@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            user_id = str(user.id)
+
+        headers = self._admin_headers(sub=user_id, role="LAWYER", email="avatar-invalid@example.com")
+        with patch("app.api.admin.uploads.get_s3_storage", return_value=fake_s3):
+            init_resp = self.client.post(
+                "/api/admin/uploads/init",
+                headers=headers,
+                json={
+                    "file_name": "photo.png",
+                    "mime_type": "image/png",
+                    "size_bytes": 128,
+                    "scope": "USER_AVATAR",
+                    "user_id": user_id,
+                },
+            )
+            self.assertEqual(init_resp.status_code, 200)
+            key = init_resp.json()["key"]
+            fake_s3.objects[key] = {"size": 128, "mime": "image/png", "content": b"not-an-image-content"}
+
+            done_resp = self.client.post(
+                "/api/admin/uploads/complete",
+                headers=headers,
+                json={
+                    "key": key,
+                    "file_name": "photo.png",
+                    "mime_type": "image/png",
+                    "size_bytes": 128,
+                    "scope": "USER_AVATAR",
+                    "user_id": user_id,
+                },
+            )
+            self.assertEqual(done_resp.status_code, 400)
+            self.assertIn("изображением", str(done_resp.json().get("detail", "")).lower())
 
     def test_public_request_attachment_upload_flow_creates_attachment(self):
         fake_s3 = _FakeS3Storage()

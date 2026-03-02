@@ -8,8 +8,24 @@
   padding: 1rem 0 1.6rem;
 }
 
+.client-topbar-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
 .client-topbar p {
-  margin: 0.35rem 0 0;
+  margin: 0;
+}
+
+.client-help-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.client-help-inline p {
+  white-space: nowrap;
 }
 
 .client-title-row {
@@ -283,6 +299,10 @@
 @media (max-width: 760px) {
   .client-main {
     width: calc(100% - 1rem);
+  }
+
+  .client-help-inline {
+    max-width: 100%;
   }
 
   .client-request-toolbar {

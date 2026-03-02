@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -146,11 +146,21 @@ class PublicRequestCreateTests(unittest.TestCase):
             self.assertEqual(created.description, payload["description"])
             self.assertEqual(created.extra_fields, payload["extra_fields"])
             self.assertEqual(created.status_code, "NEW")
+            self.assertIsNotNone(created.important_date_at)
             self.assertEqual(created.track_number, body["track_number"])
             self.assertEqual(created.responsible, "Клиент")
             self.assertTrue(created.pdn_consent)
             self.assertIsNotNone(created.pdn_consent_at)
             self.assertIsNotNone(created.pdn_consent_ip)
+            created_at = created.created_at or datetime.now(timezone.utc)
+            important_at = created.important_date_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if important_at.tzinfo is None:
+                important_at = important_at.replace(tzinfo=timezone.utc)
+            initial_deadline_seconds = (important_at - created_at).total_seconds()
+            self.assertGreaterEqual(initial_deadline_seconds, 23 * 3600)
+            self.assertLessEqual(initial_deadline_seconds, 25 * 3600)
             client = db.get(Client, created.client_id)
             self.assertIsNotNone(client)
             self.assertEqual(client.phone, payload["client_phone"])

@@ -3015,6 +3015,19 @@
       }
     }
 
+    @media (max-width: 760px) {
+      .request-workspace-layout {
+        display: flex;
+        flex-direction: column;
+      }
+      .request-workspace-layout > .request-chat-block {
+        order: 1;
+      }
+      .request-main-column {
+        order: 2;
+      }
+    }
+
     @media (max-width: 620px) {
       .cards,
       .filters {

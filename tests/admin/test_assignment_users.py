@@ -172,6 +172,63 @@ class AdminAssignmentAndUsersTests(AdminUniversalCrudBase):
             actions = [event.action for event in events]
             self.assertIn("MANUAL_REASSIGN", actions)
 
+    def test_new_request_gets_initial_important_date_plus_24h(self):
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+        before_create = datetime.now(timezone.utc)
+
+        legacy_created = self.client.post(
+            "/api/admin/requests",
+            headers=headers,
+            json={
+                "client_name": "Legacy deadline",
+                "client_phone": "+79990007701",
+                "status_code": "NEW",
+                "description": "legacy create deadline",
+            },
+        )
+        self.assertEqual(legacy_created.status_code, 201)
+        legacy_id = legacy_created.json()["id"]
+
+        crud_created = self.client.post(
+            "/api/admin/crud/requests",
+            headers=headers,
+            json={
+                "client_name": "CRUD deadline",
+                "client_phone": "+79990007702",
+                "status_code": "NEW",
+                "description": "crud create deadline",
+            },
+        )
+        self.assertEqual(crud_created.status_code, 201)
+        crud_id = crud_created.json()["id"]
+
+        after_create = datetime.now(timezone.utc)
+
+        def _to_utc(value: datetime | None) -> datetime:
+            if value is None:
+                return datetime.now(timezone.utc)
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+
+        with self.SessionLocal() as db:
+            legacy_row = db.get(Request, UUID(legacy_id))
+            crud_row = db.get(Request, UUID(crud_id))
+            self.assertIsNotNone(legacy_row)
+            self.assertIsNotNone(crud_row)
+            self.assertIsNotNone(legacy_row.important_date_at)
+            self.assertIsNotNone(crud_row.important_date_at)
+
+            legacy_deadline = _to_utc(legacy_row.important_date_at)
+            crud_deadline = _to_utc(crud_row.important_date_at)
+            lower_bound = before_create + timedelta(hours=23)
+            upper_bound = after_create + timedelta(hours=25)
+
+            self.assertGreaterEqual(legacy_deadline, lower_bound)
+            self.assertLessEqual(legacy_deadline, upper_bound)
+            self.assertGreaterEqual(crud_deadline, lower_bound)
+            self.assertLessEqual(crud_deadline, upper_bound)
+
     def test_reassign_is_admin_only_and_validates_request_state(self):
         with self.SessionLocal() as db:
             lawyer1 = AdminUser(
