@@ -1328,7 +1328,8 @@ export function RequestWorkspace({
                         const state = String(node?.state || "pending");
                         const name = String(node?.name || statusLabel(node?.code));
                         const note = String(node?.note || "").trim();
-                        const changedAt = node?.changed_at ? fmtDate(node.changed_at) : "";
+                        const changedAtSource = String(node?.changed_at || "").trim() || (index === 0 ? String(row?.created_at || "").trim() : "");
+                        const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";
                         const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending");
                         return (
                           <li className={className} key={(node?.code || "node") + "-" + index}>
@@ -1336,7 +1337,7 @@ export function RequestWorkspace({
                             <div className="route-body">
                               <b>{name}</b>
                               {note ? <p>{note}</p> : null}
-                              {changedAt && state !== "pending" ? <div className="muted route-time">Изменен: {changedAt}</div> : null}
+                              <div className="muted route-time">Дата статуса: {changedAt || "-"}</div>
                             </div>
                           </li>
                         );

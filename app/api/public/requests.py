@@ -23,6 +23,7 @@ from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.request import Request
 from app.models.request_service_request import RequestServiceRequest
+from app.models.status import Status
 from app.models.status_history import StatusHistory
 from app.models.topic import Topic
 from app.services.invoice_crypto import decrypt_requisites
@@ -170,7 +171,8 @@ def _ensure_view_access_or_403(session: dict, req: Request) -> None:
         return
     if _normalize_email(subject) and _normalize_email(subject) == _normalize_email(req.client_email):
         return
-    raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+    # Do not disclose whether a foreign request exists.
+    raise HTTPException(status_code=404, detail="Заявка не найдена")
 
 
 def _request_for_track_or_404(db: Session, session: dict, track_number: str) -> Request:
@@ -178,7 +180,7 @@ def _request_for_track_or_404(db: Session, session: dict, track_number: str) -> 
     subject = _require_view_session_or_403(session)
     subject_track = _normalize_track(subject)
     if subject_track.startswith("TRK-") and subject_track != normalized_track:
-        raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     req = db.query(Request).filter(Request.track_number == normalized_track).first()
     if req is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
@@ -346,6 +348,18 @@ def list_my_requests(
 
     rows = query.order_by(Request.updated_at.desc(), Request.created_at.desc(), Request.id.desc()).all()
     row_ids = [row.id for row in rows if row and row.id]
+    status_names: dict[str, str] = {}
+    status_codes = {str(row.status_code or "").strip() for row in rows if str(row.status_code or "").strip()}
+    if status_codes:
+        try:
+            status_rows = db.query(Status.code, Status.name).filter(Status.code.in_(list(status_codes))).all()
+        except SQLAlchemyError:
+            status_rows = []
+        for code, name in status_rows:
+            normalized_code = str(code or "").strip()
+            if not normalized_code:
+                continue
+            status_names[normalized_code] = str(name or normalized_code)
     unread_by_request: dict[str, dict[str, object]] = {}
     if row_ids:
         try:
@@ -380,6 +394,7 @@ def list_my_requests(
                 "track_number": row.track_number,
                 "topic_code": row.topic_code,
                 "status_code": row.status_code,
+                "status_name": status_names.get(str(row.status_code or "").strip()) or str(row.status_code or ""),
                 "client_has_unread_updates": bool(row.client_has_unread_updates),
                 "client_unread_event_type": row.client_unread_event_type,
                 "viewer_unread_total": int((unread_by_request.get(str(row.id)) or {}).get("total", 0)),

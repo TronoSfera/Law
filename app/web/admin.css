@@ -1528,6 +1528,15 @@
       gap: 0.75rem;
     }
 
+    .request-main-column > .block,
+    .request-workspace-layout > .request-chat-block {
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
     .request-card-head {
       display: flex;
       align-items: center;
@@ -2371,6 +2380,10 @@
       gap: 0.65rem;
       margin-bottom: 0.58rem;
       flex-wrap: wrap;
+    }
+
+    .request-chat-head h3 {
+      margin: 0;
     }
 
     .request-chat-live-row {

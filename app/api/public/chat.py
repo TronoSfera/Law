@@ -147,12 +147,13 @@ def _ensure_view_access_or_403(session: dict, req: Request) -> None:
     subject = _require_view_session_or_403(session)
     subject_track = _normalize_track(subject)
     if subject_track.startswith("TRK-") and subject_track != _normalize_track(req.track_number):
-        raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     if subject_track == _normalize_track(req.track_number):
         return
     if _normalize_phone(subject) and _normalize_phone(subject) == _normalize_phone(req.client_phone):
         return
-    raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+    # Return 404 to avoid exposing existence of чужой заявки.
+    raise HTTPException(status_code=404, detail="Заявка не найдена")
 
 
 @router.get("/requests/{track_number}/messages")

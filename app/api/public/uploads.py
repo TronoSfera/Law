@@ -55,10 +55,10 @@ def _ensure_object_key_prefix_or_400(key: str, prefix: str) -> None:
 def _ensure_public_request_access_or_403(request: Request, session: dict) -> None:
     purpose = str(session.get("purpose") or "").strip().upper()
     if purpose != "VIEW_REQUEST":
-        raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     subject = str(session.get("sub") or "").strip()
     if not subject:
-        raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
 
     normalized_track = str(subject).strip().upper()
     if normalized_track == str(request.track_number or "").strip().upper():
@@ -71,7 +71,8 @@ def _ensure_public_request_access_or_403(request: Request, session: dict) -> Non
 
     if _normalize_phone(subject) and _normalize_phone(subject) == _normalize_phone(request.client_phone):
         return
-    raise HTTPException(status_code=403, detail="Нет доступа к заявке")
+    # Keep response uniform for foreign resources.
+    raise HTTPException(status_code=404, detail="Заявка не найдена")
 
 
 def _load_attachment_with_access_or_4xx(attachment_id: str, db: Session, session: dict) -> Attachment:

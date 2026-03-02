@@ -329,10 +329,95 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     );
   }
 
+  function RequestPickerModal({
+    open,
+    loading,
+    requests,
+    activeTrack,
+    onClose,
+    onReload,
+    onSelect,
+  }) {
+    const rows = Array.isArray(requests) ? requests : [];
+    return (
+      <Overlay open={open} id="client-request-picker-overlay" onClose={(event) => event.target.id === "client-request-picker-overlay" && onClose()}>
+        <div className="modal client-request-picker-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3>Выбор заявки</h3>
+              <p className="muted client-request-picker-subtitle">Откройте нужную заявку из списка</p>
+            </div>
+            <div className="modal-head-actions">
+              <button
+                className="icon-btn file-action-btn"
+                type="button"
+                data-tooltip="Обновить список"
+                aria-label="Обновить список"
+                onClick={onReload}
+                disabled={loading}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path
+                    d="M12 4a8 8 0 0 1 7.7 5.8 1 1 0 0 1-1.92.56A6 6 0 1 0 16.7 16H15a1 1 0 1 1 0-2h4a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0v-1.18A8 8 0 1 1 12 4z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+              <button className="close" type="button" onClick={onClose} aria-label="Закрыть">
+                ×
+              </button>
+            </div>
+          </div>
+          <ul className="simple-list client-request-picker-list" id="client-request-picker-list">
+            {rows.length ? (
+              rows.map((row, index) => {
+                const track = String(row?.track_number || "").trim();
+                const isActive = track && track === String(activeTrack || "").trim();
+                const hasUpdates = Number(row?.viewer_unread_total || 0) > 0 || Boolean(row?.client_has_unread_updates);
+                const statusName = String(row?.status_name || statusLabel(row?.status_code) || "-");
+                return (
+                  <li
+                    key={String(row?.id || track || "row-" + String(index))}
+                    className={"client-request-picker-item" + (isActive ? " active" : "") + (hasUpdates ? " has-updates" : "")}
+                  >
+                    <button
+                      type="button"
+                      className="client-request-picker-btn"
+                      onClick={() => onSelect(track)}
+                      disabled={!track || loading}
+                      aria-label={"Открыть заявку " + (track || "")}
+                    >
+                      <div className="client-request-picker-head">
+                        <span className="client-request-picker-track">{track || "Без номера"}</span>
+                        <span className={"client-request-news-dot" + (hasUpdates ? " active" : "")} aria-hidden="true" />
+                      </div>
+                      <div className="client-request-picker-meta">
+                        <span className="client-request-picker-status">{statusName}</span>
+                        <span className="client-request-picker-updated">{fmtShortDateTime(row?.updated_at)}</span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })
+            ) : (
+              <li className="muted">{loading ? "Загрузка списка..." : "Заявок не найдено"}</li>
+            )}
+          </ul>
+          <div className="client-request-picker-actions">
+            <button className="btn secondary btn-sm" type="button" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      </Overlay>
+    );
+  }
+
   function App() {
     const [requestModal, setRequestModal] = useState(createRequestModalState());
     const [requestsList, setRequestsList] = useState([]);
     const [activeTrack, setActiveTrack] = useState("");
+    const [requestPickerModal, setRequestPickerModal] = useState({ open: false, loading: false });
     const [status, setStatus] = useState({ message: "", kind: "" });
     const [serviceRequests, setServiceRequests] = useState([]);
     const [clientHelpModal, setClientHelpModal] = useState({
@@ -489,11 +574,16 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
       [apiJson]
     );
 
+    const refreshRequestsList = useCallback(async () => {
+      const data = await apiJson("/api/public/requests/my", null, "Не удалось загрузить список заявок");
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      setRequestsList(rows);
+      return rows;
+    }, [apiJson]);
+
     const loadMyRequests = useCallback(
       async (preferredTrack) => {
-        const data = await apiJson("/api/public/requests/my", null, "Не удалось загрузить список заявок");
-        const rows = Array.isArray(data?.rows) ? data.rows : [];
-        setRequestsList(rows);
+        const rows = await refreshRequestsList();
         if (!rows.length) {
           setRequestModal((prev) => ({
             ...prev,
@@ -521,7 +611,47 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
         await loadRequestWorkspace(selected, true);
         setPageStatus("Открыта заявка: " + selected, "ok");
       },
-      [apiJson, loadRequestWorkspace, setPageStatus]
+      [loadRequestWorkspace, refreshRequestsList, setPageStatus]
+    );
+
+    const openRequestPicker = useCallback(() => {
+      setRequestPickerModal({ open: true, loading: true });
+      void refreshRequestsList()
+        .catch((error) => setPageStatus(error?.message || "Не удалось загрузить список заявок", "error"))
+        .finally(() => {
+          setRequestPickerModal((prev) => ({ ...prev, loading: false }));
+        });
+    }, [refreshRequestsList, setPageStatus]);
+
+    const closeRequestPicker = useCallback(() => {
+      setRequestPickerModal((prev) => ({ ...prev, open: false }));
+    }, []);
+
+    const reloadRequestPicker = useCallback(() => {
+      setRequestPickerModal((prev) => ({ ...prev, loading: true }));
+      void refreshRequestsList()
+        .catch((error) => setPageStatus(error?.message || "Не удалось обновить список заявок", "error"))
+        .finally(() => {
+          setRequestPickerModal((prev) => ({ ...prev, loading: false }));
+        });
+    }, [refreshRequestsList, setPageStatus]);
+
+    const selectRequestFromPicker = useCallback(
+      async (trackNumber) => {
+        const track = String(trackNumber || "").trim().toUpperCase();
+        if (!track) return;
+        setRequestPickerModal((prev) => ({ ...prev, loading: true }));
+        try {
+          await loadRequestWorkspace(track, true);
+          await refreshRequestsList();
+          setPageStatus("Открыта заявка: " + track, "ok");
+          setRequestPickerModal({ open: false, loading: false });
+        } catch (error) {
+          setRequestPickerModal((prev) => ({ ...prev, loading: false }));
+          setPageStatus(error?.message || "Не удалось открыть заявку", "error");
+        }
+      },
+      [loadRequestWorkspace, refreshRequestsList, setPageStatus]
     );
 
     const updateMessageDraft = useCallback((event) => {
@@ -781,6 +911,10 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     }, [loadMyRequests, setPageStatus]);
 
     const summary = requestModal.requestData || null;
+    const hasAnyUnreadUpdates = useMemo(
+      () => requestsList.some((row) => Number(row?.viewer_unread_total || 0) > 0 || Boolean(row?.client_has_unread_updates)),
+      [requestsList]
+    );
 
     return (
       <div className="client-page-shell">
@@ -813,39 +947,16 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
               </div>
             </div>
             <div className="client-request-toolbar">
-              <div className="field grow">
-                <label htmlFor="client-request-select">Номер заявки</label>
-                <select
-                  id="client-request-select"
-                  value={activeTrack}
-                  onChange={(event) => {
-                    const track = String(event.target.value || "").trim();
-                    if (!track) return;
-                    void loadRequestWorkspace(track, true)
-                      .then(() => setPageStatus("Открыта заявка: " + track, "ok"))
-                      .catch((error) => setPageStatus(error?.message || "Не удалось открыть заявку", "error"));
-                  }}
-                  disabled={requestModal.loading || !requestsList.length}
-                >
-                  {requestsList.map((row) => (
-                    <option value={String(row.track_number || "")} key={String(row.id || row.track_number || "")}>
-                      {String(row.track_number || "Без номера") +
-                        " • " +
-                        String(row.status_code || "-") +
-                        (Number(row?.viewer_unread_total || 0) > 0 ? " • непрочитано: " + String(row.viewer_unread_total) : "")}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <button
-                className="btn secondary"
-                id="client-refresh"
+                className="btn secondary client-request-picker-trigger"
+                id="client-request-open"
                 type="button"
-                onClick={() => {
-                  void loadMyRequests(activeTrack).catch((error) => setPageStatus(error?.message || "Не удалось обновить список", "error"));
-                }}
+                onClick={openRequestPicker}
+                disabled={requestModal.loading || !requestsList.length}
               >
-                Обновить
+                <span className="client-request-picker-trigger-label">Заявка</span>
+                <span className="client-request-picker-trigger-track">{activeTrack || "Выбрать"}</span>
+                {hasAnyUnreadUpdates ? <span className="client-request-news-dot active" aria-hidden="true" /> : null}
               </button>
             </div>
 
@@ -860,9 +971,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
                   </span>
                 </div>
                 <div className="client-summary-dates">
-                  <span>
-                    Создана: <b id="cabinet-request-created">{summary ? fmtShortDateTime(summary.created_at) : "-"}</b>
-                  </span>
                   <span>
                     Обновлена: <b id="cabinet-request-updated">{summary ? fmtShortDateTime(summary.updated_at) : "-"}</b>
                   </span>
@@ -916,6 +1024,15 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
           </section>
           <p className="status" id="client-page-status">{status.message}</p>
         </main>
+        <RequestPickerModal
+          open={requestPickerModal.open}
+          loading={requestPickerModal.loading}
+          requests={requestsList}
+          activeTrack={activeTrack}
+          onClose={closeRequestPicker}
+          onReload={reloadRequestPicker}
+          onSelect={selectRequestFromPicker}
+        />
         <ClientHelpModal
           open={clientHelpModal.open}
           status={clientHelpModal.status}
