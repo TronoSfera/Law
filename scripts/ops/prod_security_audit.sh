@@ -246,7 +246,7 @@ run_local_smoke() {
   local ok=0
   local debug_log
   debug_log="$(mktemp)"
-  trap 'rm -f "$debug_log"' RETURN
+  trap 'rm -f -- "${debug_log:-}"; trap - RETURN' RETURN
 
   while (( attempt <= max_attempts )); do
     ok=0
