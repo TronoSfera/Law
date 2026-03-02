@@ -25,6 +25,24 @@
 
 .client-title-row h1 {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.client-title-separator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.55em;
+  line-height: 0.8;
+  color: #e2b370;
+  transform: translateY(-0.02em);
+}
+
+.client-title-user {
+  color: #eaf2ff;
 }
 
 .client-section {

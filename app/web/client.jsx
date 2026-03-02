@@ -909,6 +909,10 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     }, [loadMyRequests, setPageStatus]);
 
     const summary = requestModal.requestData || null;
+    const viewerFullName = useMemo(() => {
+      const fullName = String(requestModal.requestData?.client_name || "").trim();
+      return fullName || "Клиент";
+    }, [requestModal.requestData?.client_name]);
     const hasAnyUnreadUpdates = useMemo(
       () => requestsList.some((row) => Number(row?.viewer_unread_total || 0) > 0 || Boolean(row?.client_has_unread_updates)),
       [requestsList]
@@ -921,7 +925,13 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
             <div>
               <div className="client-title-row">
                 <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
-                <h1>Личный кабинет * Представление клиента</h1>
+                <h1>
+                  <span>Личный кабинет</span>
+                  <span className="client-title-separator" aria-hidden="true">
+                    •
+                  </span>
+                  <span className="client-title-user">{viewerFullName}</span>
+                </h1>
               </div>
               <p className="muted">Мы рады помочь Вам</p>
             </div>
