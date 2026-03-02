@@ -370,6 +370,23 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
       return data;
     }, []);
 
+    const buildStorageUploadError = useCallback(async (response, fallbackMessage) => {
+      const base = String(fallbackMessage || "Ошибка передачи файла в хранилище");
+      const status = Number(response?.status || 0);
+      const statusText = String(response?.statusText || "").trim();
+      let details = "";
+      try {
+        details = String((await response.text()) || "").replace(/\s+/g, " ").trim();
+      } catch (_) {
+        details = "";
+      }
+      if (details.length > 180) details = details.slice(0, 180) + "...";
+      const parts = [];
+      if (status > 0) parts.push("HTTP " + status + (statusText ? " " + statusText : ""));
+      if (details) parts.push(details);
+      return parts.length ? base + " (" + parts.join("; ") + ")" : base;
+    }, []);
+
     const uploadPublicRequestAttachment = useCallback(async (file, extra = {}) => {
       const requestId = String(requestModal.requestId || "").trim();
       if (!requestId) throw new Error("Не выбрана заявка");
@@ -394,7 +411,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
         headers: { "Content-Type": mimeType },
         body: file,
       });
-      if (!putResponse.ok) throw new Error("Ошибка передачи файла в хранилище");
+      if (!putResponse.ok) throw new Error(await buildStorageUploadError(putResponse, "Ошибка передачи файла в хранилище"));
       const completeData = await apiJson(
         "/api/public/uploads/complete",
         {
@@ -413,7 +430,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
         "Не удалось завершить загрузку файла"
       );
       return completeData;
-    }, [apiJson, requestModal.requestId]);
+    }, [apiJson, buildStorageUploadError, requestModal.requestId]);
 
     const loadRequestWorkspace = useCallback(
       async (trackNumber, showLoading) => {

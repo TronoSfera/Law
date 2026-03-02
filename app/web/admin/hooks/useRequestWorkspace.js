@@ -1,5 +1,22 @@
 import { createRequestModalState } from "../shared/state.js";
 
+async function buildStorageUploadError(response, fallbackMessage) {
+  const base = String(fallbackMessage || "Не удалось загрузить файл в хранилище");
+  const status = Number(response?.status || 0);
+  const statusText = String(response?.statusText || "").trim();
+  let details = "";
+  try {
+    details = String((await response.text()) || "").replace(/\s+/g, " ").trim();
+  } catch (_) {
+    details = "";
+  }
+  if (details.length > 180) details = details.slice(0, 180) + "...";
+  const parts = [];
+  if (status > 0) parts.push("HTTP " + status + (statusText ? " " + statusText : ""));
+  if (details) parts.push(details);
+  return parts.length ? base + " (" + parts.join("; ") + ")" : base;
+}
+
 export function useRequestWorkspace(options) {
   const { useCallback, useRef, useState } = React;
   const opts = options || {};
@@ -247,7 +264,7 @@ export function useRequestWorkspace(options) {
             headers: { "Content-Type": mimeType },
             body: file,
           });
-          if (!putResp.ok) throw new Error("Не удалось загрузить файл в хранилище");
+          if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
           await api("/api/admin/uploads/complete", {
             method: "POST",
             body: {
@@ -413,7 +430,7 @@ export function useRequestWorkspace(options) {
             headers: { "Content-Type": mimeType },
             body: file,
           });
-          if (!putResp.ok) throw new Error("Не удалось загрузить файл в хранилище");
+          if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
           await api("/api/admin/uploads/complete", {
             method: "POST",
             body: {
