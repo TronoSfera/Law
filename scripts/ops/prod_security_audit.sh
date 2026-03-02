@@ -78,8 +78,20 @@ ensure_compose_files() {
 }
 
 stack_up_and_migrate() {
-  log "Starting production stack (nginx profile)"
-  "${PROD_COMPOSE[@]}" up -d --build --remove-orphans db redis minio backend chat-service email-service worker beat frontend edge clamav
+  log "Starting core infra services"
+  "${PROD_COMPOSE[@]}" up -d --build --remove-orphans --force-recreate db redis minio clamav
+
+  log "Starting app services (backend/chat/email/worker/beat)"
+  "${PROD_COMPOSE[@]}" up -d --build --remove-orphans --force-recreate backend chat-service email-service worker beat
+
+  log "Waiting app services to become healthy"
+  wait_service_healthy "backend" 60
+  wait_service_healthy "chat-service" 60
+  wait_service_healthy "email-service" 60
+
+  # Force recreate frontend/edge after chat/backend to avoid stale DNS upstream cache in nginx.
+  log "Starting/recreating frontend and edge"
+  "${PROD_COMPOSE[@]}" up -d --build --remove-orphans --force-recreate frontend edge
 
   log "Applying migrations"
   "${PROD_COMPOSE[@]}" exec -T backend alembic upgrade head
@@ -92,6 +104,30 @@ from app.core.config import validate_production_security_or_raise
 validate_production_security_or_raise("prod-security-audit")
 print("production security config validation: ok")
 PY
+}
+
+wait_service_healthy() {
+  local service="$1"
+  local max_attempts="${2:-60}"
+  local attempt=1
+  local cid=""
+  local status=""
+
+  while (( attempt <= max_attempts )); do
+    cid="$("${PROD_COMPOSE[@]}" ps -q "$service" 2>/dev/null || true)"
+    if [[ -n "$cid" ]]; then
+      status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || true)"
+      case "$status" in
+        healthy|running)
+          return 0
+          ;;
+      esac
+    fi
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  fail "Service '${service}' did not become healthy in time (last_status=${status:-unknown})"
 }
 
 run_local_smoke() {

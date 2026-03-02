@@ -206,3 +206,4 @@ echo $?  # 0=OK, >0=ALERT
 - `make security-smoke` — `PASS`, отчет: `reports/security/security-smoke-20260302-125811.md`.
 - `./scripts/ops/security_smoke.sh https://ruakb.online` — `PASS`, отчет: `reports/security/security-smoke-20260302-130511.md` (TLS и security headers внешнего контура).
 - `./scripts/ops/security_smoke.sh https://ruakb.ru` — `PASS`, отчет: `reports/security/security-smoke-20260302-130536.md` (TLS и security headers внешнего контура).
+- `docker compose run --rm backend alembic upgrade head` — успешно после hotfix-миграции `0032_email_cols_fix` (ремонт legacy-схемы: `requests.client_email`, `otp_sessions.channel/email`, индексы).
