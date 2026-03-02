@@ -170,8 +170,11 @@ run_local_smoke() {
 
       : > "$debug_log"
       local health_rc smoke_rc
-      CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/check_chat_health.sh "$candidate" >"$debug_log" 2>&1
-      health_rc=$?
+      if CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/check_chat_health.sh "$candidate" >"$debug_log" 2>&1; then
+        health_rc=0
+      else
+        health_rc=$?
+      fi
       if [[ $health_rc -ne 0 ]]; then
         if [[ "$LOCAL_SMOKE_DEBUG" == "1" || "$attempt" -eq "$max_attempts" ]]; then
           warn "local smoke health check failed for ${candidate} (rc=${health_rc})"
@@ -181,8 +184,11 @@ run_local_smoke() {
       fi
 
       : > "$debug_log"
-      SECURITY_SMOKE_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/security_smoke.sh "$candidate" >"$debug_log" 2>&1
-      smoke_rc=$?
+      if SECURITY_SMOKE_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/security_smoke.sh "$candidate" >"$debug_log" 2>&1; then
+        smoke_rc=0
+      else
+        smoke_rc=$?
+      fi
       if [[ $smoke_rc -ne 0 ]]; then
         if [[ "$LOCAL_SMOKE_DEBUG" == "1" || "$attempt" -eq "$max_attempts" ]]; then
           warn "local smoke security checks failed for ${candidate} (rc=${smoke_rc})"
