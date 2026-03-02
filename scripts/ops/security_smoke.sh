@@ -50,7 +50,8 @@ http_status_ok() {
 check_required_headers() {
   local url="$1"
   local head
-  head="$(curl -k -L -sS -I "$url" || true)"
+  # Use GET headers dump instead of HEAD. Some FastAPI routes return 405 for HEAD.
+  head="$(curl -k -L -sS -D - -o /dev/null "$url" || true)"
   local normalized
   normalized="$(echo "$head" | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
 

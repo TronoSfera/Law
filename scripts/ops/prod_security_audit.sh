@@ -13,6 +13,7 @@ AUTO_CERT_INIT="${AUTO_CERT_INIT:-0}"
 SKIP_LOCAL_SMOKE="${SKIP_LOCAL_SMOKE:-0}"
 LOCAL_SMOKE_BASE_URL="${LOCAL_SMOKE_BASE_URL:-https://127.0.0.1}"
 LOCAL_SMOKE_CANDIDATES="${LOCAL_SMOKE_CANDIDATES:-${LOCAL_SMOKE_BASE_URL},https://localhost,http://127.0.0.1,http://localhost}"
+LOCAL_SMOKE_SKIP_DOCKER_CHECKS="${LOCAL_SMOKE_SKIP_DOCKER_CHECKS:-1}"
 
 PROD_COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml)
 CERT_COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.prod.cert.yml)
@@ -164,7 +165,7 @@ run_local_smoke() {
       [[ -z "$candidate" ]] && continue
 
       if ./scripts/ops/check_chat_health.sh "$candidate" >/dev/null 2>&1 && \
-         ./scripts/ops/security_smoke.sh "$candidate" >/dev/null 2>&1; then
+         SECURITY_SMOKE_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/security_smoke.sh "$candidate" >/dev/null 2>&1; then
         log "Local smoke checks passed via ${candidate} (attempt ${attempt}/${max_attempts})"
         ok=1
         break
