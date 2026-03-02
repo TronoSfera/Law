@@ -1142,12 +1142,47 @@ export function RequestWorkspace({
     return () => window.cancelAnimationFrame(raf);
   }, [chatTab, localActivityCursor]);
 
-  const routeNodes =
+  const baseRouteNodes =
     Array.isArray(statusRouteNodes) && statusRouteNodes.length
       ? statusRouteNodes
       : row?.status_code
         ? [{ code: row.status_code, name: statusLabel(row.status_code), state: "current", note: "Текущий этап обработки заявки" }]
         : [];
+  const upcomingImportantDate = useMemo(() => {
+    const source = String(currentImportantDateAt || row?.important_date_at || "").trim();
+    if (!source) return "";
+    const timestamp = new Date(source).getTime();
+    if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return "";
+    return new Date(timestamp).toISOString();
+  }, [currentImportantDateAt, row?.important_date_at]);
+  const routeNodes = useMemo(() => {
+    if (viewerRoleCode !== "CLIENT" || !upcomingImportantDate) return baseRouteNodes;
+    if (!Array.isArray(baseRouteNodes) || !baseRouteNodes.length) {
+      return [
+        {
+          code: "__IMPORTANT_DATE__",
+          name: "Важная дата",
+          state: "pending",
+          changed_at: upcomingImportantDate,
+          note: "Контрольный срок",
+        },
+      ];
+    }
+    const hasVirtualNode = baseRouteNodes.some((node) => String(node?.code || "").trim() === "__IMPORTANT_DATE__");
+    if (hasVirtualNode) return baseRouteNodes;
+    const currentIndex = baseRouteNodes.findIndex((node) => String(node?.state || "").trim().toLowerCase() === "current");
+    const virtualNode = {
+      code: "__IMPORTANT_DATE__",
+      name: "Важная дата",
+      state: "pending",
+      changed_at: upcomingImportantDate,
+      note: "Контрольный срок",
+    };
+    if (currentIndex < 0) return [...baseRouteNodes, virtualNode];
+    const next = [...baseRouteNodes];
+    next.splice(currentIndex + 1, 0, virtualNode);
+    return next;
+  }, [baseRouteNodes, upcomingImportantDate, viewerRoleCode]);
 
   const AttachmentPreviewModal = AttachmentPreviewModalComponent;
   const StatusLine = StatusLineComponent;
@@ -1338,7 +1373,11 @@ export function RequestWorkspace({
                         const note = String(node?.note || "").trim();
                         const changedAtSource = String(node?.changed_at || "").trim() || (index === 0 ? String(row?.created_at || "").trim() : "");
                         const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";
-                        const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending");
+                        const isImportantDateNode = code === "__IMPORTANT_DATE__";
+                        const className =
+                          "route-item " +
+                          (state === "current" ? "current" : state === "completed" ? "completed" : "pending") +
+                          (isImportantDateNode ? " important-date" : "");
                         return (
                           <li className={className} key={(node?.code || "node") + "-" + index}>
                             <span className="route-dot" />

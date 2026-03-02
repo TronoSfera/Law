@@ -609,7 +609,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
           ? String(preferredTrack || "").trim().toUpperCase()
           : tracks[0];
         await loadRequestWorkspace(selected, true);
-        setPageStatus("Открыта заявка: " + selected, "ok");
       },
       [loadRequestWorkspace, refreshRequestsList, setPageStatus]
     );
@@ -644,7 +643,6 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
         try {
           await loadRequestWorkspace(track, true);
           await refreshRequestsList();
-          setPageStatus("Открыта заявка: " + track, "ok");
           setRequestPickerModal({ open: false, loading: false });
         } catch (error) {
           setRequestPickerModal((prev) => ({ ...prev, loading: false }));

@@ -2296,6 +2296,21 @@
       opacity: 0.85;
     }
 
+    .route-item.important-date .route-dot {
+      background: #c9973f;
+      box-shadow: 0 0 0 1px rgba(201, 151, 63, 0.45);
+    }
+
+    .route-item.important-date::before {
+      background: #c9973f;
+      opacity: 0.8;
+    }
+
+    .route-item.important-date .route-body b {
+      color: #ffe3b2;
+      letter-spacing: 0.02em;
+    }
+
     .route-body b {
       display: block;
       font-size: 1.02rem;
