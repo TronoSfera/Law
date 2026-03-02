@@ -153,7 +153,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
   }
 
-  function FilterToolbar({ filters, onOpen, onRemove, onEdit, getChipLabel }) {
+  function FilterToolbar({ filters, onOpen, onRemove, onEdit, getChipLabel, hideAction = false }) {
     return (
       <div className="filter-toolbar">
         <div className="filter-chips">
@@ -190,11 +190,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             <span className="chip-placeholder">Фильтры не заданы</span>
           )}
         </div>
-        <div className="filter-action">
-          <button className="btn secondary" type="button" onClick={onOpen}>
-            Фильтр
-          </button>
-        </div>
+        {!hideAction ? (
+          <div className="filter-action">
+            <button className="btn secondary" type="button" onClick={onOpen}>
+              Фильтр
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }

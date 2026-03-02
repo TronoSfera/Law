@@ -1,4 +1,4 @@
-import { KNOWN_CONFIG_TABLE_KEYS, OPERATOR_LABELS, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
+import { KNOWN_CONFIG_TABLE_KEYS, OPERATOR_LABELS, PAGE_SIZE, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
 import { boolLabel, fmtDate, listPreview, normalizeReferenceMeta, roleLabel, statusKindLabel, statusLabel } from "../../shared/utils.js";
 
 function fmtBalance(value) {
@@ -57,7 +57,6 @@ export function ConfigSection(props) {
     loadAllRows,
     FilterToolbarComponent,
     DataTableComponent,
-    TablePagerComponent,
     StatusLineComponent,
     IconButtonComponent,
     UserAvatarComponent,
@@ -65,10 +64,24 @@ export function ConfigSection(props) {
 
   const FilterToolbar = FilterToolbarComponent;
   const DataTable = DataTableComponent;
-  const TablePager = TablePagerComponent;
   const StatusLine = StatusLineComponent;
   const IconButton = IconButtonComponent;
   const UserAvatar = UserAvatarComponent;
+  const canOpenFilter = Boolean(configActiveKey);
+  const canRefresh = Boolean(configActiveKey);
+  const canCreateRecord = Boolean(canCreateInConfig && configActiveKey);
+  const canLoadAllRows = Boolean(
+    configActiveKey &&
+      activeConfigTableState.total > 0 &&
+      !activeConfigTableState.showAll &&
+      activeConfigTableState.rows.length < activeConfigTableState.total
+  );
+  const canLoadPrev = Boolean(configActiveKey && !activeConfigTableState.showAll && activeConfigTableState.offset > 0);
+  const canLoadNext = Boolean(
+    configActiveKey &&
+      !activeConfigTableState.showAll &&
+      activeConfigTableState.offset + PAGE_SIZE < activeConfigTableState.total
+  );
 
   return (
     <>
@@ -83,32 +96,33 @@ export function ConfigSection(props) {
                     </p>
                   ) : null}
                 </div>
-                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <div className="config-head-actions">
                   {configActiveKey === "otp_sessions" ? (
                     <button className="btn secondary" type="button" onClick={onRefreshSmsProviderHealth}>
                       Баланс
                     </button>
                   ) : null}
-                  <button className="btn secondary" type="button" onClick={() => loadCurrentConfigTable(true)}>
-                    Обновить
+                  <button
+                    className="btn secondary btn-icon-only"
+                    type="button"
+                    onClick={() => openFilterModal(configActiveKey)}
+                    disabled={!canOpenFilter}
+                    title="Фильтр"
+                    aria-label="Фильтр"
+                  >
+                    ⚲
                   </button>
                 </div>
               </div>
               <div className="config-layout">
                 <div className="config-panel config-panel-flat">
                   <div className="config-content">
-                    {canCreateInConfig && configActiveKey ? (
-                      <div className="config-actions-row">
-                        <button className="btn" type="button" onClick={() => openCreateRecordModal(configActiveKey)}>
-                          Добавить
-                        </button>
-                      </div>
-                    ) : null}
                     <FilterToolbar
                       filters={activeConfigTableState.filters}
                       onOpen={() => openFilterModal(configActiveKey)}
                       onRemove={(index) => removeFilterChip(configActiveKey, index)}
                       onEdit={(index) => openFilterEditModal(configActiveKey, index)}
+                      hideAction
                       getChipLabel={(clause) => {
                         const fieldDef = getFieldDef(configActiveKey, clause.field);
                         return (
@@ -584,12 +598,66 @@ export function ConfigSection(props) {
                         )}
                       />
                     ) : null}
-                    <TablePager
-                      tableState={activeConfigTableState}
-                      onPrev={() => loadPrevPage(configActiveKey)}
-                      onNext={() => loadNextPage(configActiveKey)}
-                      onLoadAll={() => loadAllRows(configActiveKey)}
-                    />
+                    <div className="pager table-footer-bar config-controls-bar">
+                      <div className="config-controls-summary">
+                        {activeConfigTableState.showAll
+                          ? "Всего: " + activeConfigTableState.total + " • показаны все записи"
+                          : "Всего: " + activeConfigTableState.total + " • смещение: " + activeConfigTableState.offset}
+                      </div>
+                      <div className="config-controls-actions">
+                        <button
+                          className="btn secondary config-control-btn config-control-btn-loadall"
+                          type="button"
+                          onClick={() => loadAllRows(configActiveKey)}
+                          disabled={!canLoadAllRows}
+                          title={"Загрузить все " + activeConfigTableState.total}
+                          aria-label={"Загрузить все " + activeConfigTableState.total}
+                        >
+                          <span aria-hidden="true">⤓</span>
+                          <span>{activeConfigTableState.total}</span>
+                        </button>
+                        <button
+                          className="btn secondary btn-icon-only config-control-btn"
+                          type="button"
+                          onClick={() => loadCurrentConfigTable(true)}
+                          disabled={!canRefresh}
+                          title="Обновить"
+                          aria-label="Обновить"
+                        >
+                          ↻
+                        </button>
+                        <button
+                          className="btn secondary btn-icon-only config-control-btn"
+                          type="button"
+                          onClick={() => openCreateRecordModal(configActiveKey)}
+                          disabled={!canCreateRecord}
+                          title="Добавить"
+                          aria-label="Добавить"
+                        >
+                          +
+                        </button>
+                        <button
+                          className="btn secondary btn-icon-only config-control-btn"
+                          type="button"
+                          onClick={() => loadPrevPage(configActiveKey)}
+                          disabled={!canLoadPrev}
+                          title="Назад"
+                          aria-label="Назад"
+                        >
+                          ←
+                        </button>
+                        <button
+                          className="btn secondary btn-icon-only config-control-btn"
+                          type="button"
+                          onClick={() => loadNextPage(configActiveKey)}
+                          disabled={!canLoadNext}
+                          title="Вперед"
+                          aria-label="Вперед"
+                        >
+                          →
+                        </button>
+                      </div>
+                    </div>
                     <StatusLine status={getStatus(configActiveKey)} />
                   </div>
                 </div>
