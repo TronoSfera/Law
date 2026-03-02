@@ -1,0 +1,183 @@
+name: security-ci
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+  schedule:
+    - cron: "17 2 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  BANDIT_MAX_HIGH: "0"
+  DEP_MAX_VULNS: "0"
+  TRIVY_MAX_HIGH: "0"
+  TRIVY_MAX_CRITICAL: "0"
+
+jobs:
+  sast-and-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install scanners
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit pip-audit
+
+      - name: Prepare reports directory
+        run: mkdir -p reports/security
+
+      - name: Run Bandit (SAST)
+        run: |
+          bandit -r app scripts -f json -o reports/security/bandit.json || true
+
+      - name: Run pip-audit (dependencies)
+        run: |
+          pip-audit -r requirements.txt --format json --output reports/security/pip-audit.json || true
+
+      - name: Build SAST/dependency summary
+        id: sast_deps_summary
+        run: |
+          set -euo pipefail
+
+          BANDIT_HIGH=$(jq '[.results[]? | select(.issue_severity == "HIGH")] | length' reports/security/bandit.json)
+          DEP_VULNS=$(jq '
+            if type == "array" then length
+            elif has("vulnerabilities") then (.vulnerabilities | length)
+            elif has("dependencies") then ([.dependencies[]?.vulns[]?] | length)
+            else 0
+            end
+          ' reports/security/pip-audit.json)
+
+          {
+            echo "SAST/Dependency Security Summary"
+            echo "bandit.high=${BANDIT_HIGH}"
+            echo "deps.vulns=${DEP_VULNS}"
+            echo "threshold.bandit.high=${BANDIT_MAX_HIGH}"
+            echo "threshold.deps.vulns=${DEP_MAX_VULNS}"
+          } | tee reports/security/sast-deps-summary.txt
+
+          echo "bandit_high=${BANDIT_HIGH}" >> "$GITHUB_OUTPUT"
+          echo "dep_vulns=${DEP_VULNS}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SAST/dependency reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-sast-deps-reports
+          path: |
+            reports/security/bandit.json
+            reports/security/pip-audit.json
+            reports/security/sast-deps-summary.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce SAST/dependency thresholds
+        run: |
+          set -euo pipefail
+          BANDIT_HIGH="${{ steps.sast_deps_summary.outputs.bandit_high }}"
+          DEP_VULNS="${{ steps.sast_deps_summary.outputs.dep_vulns }}"
+
+          if [ "${BANDIT_HIGH}" -gt "${BANDIT_MAX_HIGH}" ]; then
+            echo "Bandit HIGH findings: ${BANDIT_HIGH} (max ${BANDIT_MAX_HIGH})"
+            exit 1
+          fi
+          if [ "${DEP_VULNS}" -gt "${DEP_MAX_VULNS}" ]; then
+            echo "Dependency vulnerabilities: ${DEP_VULNS} (max ${DEP_MAX_VULNS})"
+            exit 1
+          fi
+
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: |
+          docker build -t law-backend-security:${{ github.sha }} .
+
+      - name: Prepare reports directory
+        run: mkdir -p reports/security
+
+      - name: Run Trivy image scan (JSON report)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: law-backend-security:${{ github.sha }}
+          format: json
+          output: reports/security/trivy-image.json
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Run Trivy image scan (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: law-backend-security:${{ github.sha }}
+          format: sarif
+          output: reports/security/trivy-image.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Build container scan summary
+        id: trivy_summary
+        run: |
+          set -euo pipefail
+          TRIVY_HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' reports/security/trivy-image.json)
+          TRIVY_CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' reports/security/trivy-image.json)
+
+          {
+            echo "Container Security Summary"
+            echo "trivy.high=${TRIVY_HIGH}"
+            echo "trivy.critical=${TRIVY_CRITICAL}"
+            echo "threshold.trivy.high=${TRIVY_MAX_HIGH}"
+            echo "threshold.trivy.critical=${TRIVY_MAX_CRITICAL}"
+          } | tee reports/security/trivy-summary.txt
+
+          echo "trivy_high=${TRIVY_HIGH}" >> "$GITHUB_OUTPUT"
+          echo "trivy_critical=${TRIVY_CRITICAL}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Trivy reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-container-reports
+          path: |
+            reports/security/trivy-image.json
+            reports/security/trivy-image.sarif
+            reports/security/trivy-summary.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/security/trivy-image.sarif
+
+      - name: Enforce container scan thresholds
+        run: |
+          set -euo pipefail
+          TRIVY_HIGH="${{ steps.trivy_summary.outputs.trivy_high }}"
+          TRIVY_CRITICAL="${{ steps.trivy_summary.outputs.trivy_critical }}"
+
+          if [ "${TRIVY_HIGH}" -gt "${TRIVY_MAX_HIGH}" ]; then
+            echo "Trivy HIGH findings: ${TRIVY_HIGH} (max ${TRIVY_MAX_HIGH})"
+            exit 1
+          fi
+          if [ "${TRIVY_CRITICAL}" -gt "${TRIVY_MAX_CRITICAL}" ]; then
+            echo "Trivy CRITICAL findings: ${TRIVY_CRITICAL} (max ${TRIVY_MAX_CRITICAL})"
+            exit 1
+          fi

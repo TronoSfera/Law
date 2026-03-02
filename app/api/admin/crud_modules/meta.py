@@ -84,6 +84,7 @@ def _table_label(table_name: str) -> str:
         "form_fields": "Поля формы",
         "clients": "Клиенты",
         "table_availability": "Доступность таблиц",
+        "data_retention_policies": "Политики хранения ПДн",
         "topic_required_fields": "Обязательные поля темы",
         "topic_data_templates": "Дополнительные данные",
         "request_data_templates": "Шаблоны доп. данных",
@@ -101,6 +102,9 @@ def _table_label(table_name: str) -> str:
         "request_service_requests": "Запросы",
         "otp_sessions": "OTP-сессии",
         "notifications": "Уведомления",
+        "retention": "хранения",
+        "policy": "политика",
+        "policies": "политики",
     }
     if normalized in explicit_labels:
         return explicit_labels[normalized]
@@ -250,6 +254,11 @@ def _column_label(table_name: str, column_name: str) -> str:
         "required_data_keys": "Обязательные данные шага",
         "required_mime_types": "Обязательные файлы шага",
         "avatar_url": "Аватар",
+        "pdn_consent": "Согласие на ПДн",
+        "pdn_consent_at": "Дата согласия ПДн",
+        "pdn_consent_ip": "IP согласия",
+        "retention_days": "Срок хранения (дней)",
+        "hard_delete": "Жесткое удаление",
         "file_name": "Имя файла",
         "mime_type": "MIME-тип",
         "size_bytes": "Размер (байт)",

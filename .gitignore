@@ -1,6 +1,8 @@
 /tmp/
 *.idea
 .env
+.env.prod
+.env.backup.*
 /reports
 node_modules/
 e2e/node_modules/
@@ -8,4 +10,5 @@ e2e/playwright-report/
 e2e/test-results/
 celerybeat-schedule
 celerybeat-schedule.*
-
+deploy/tls/minio/*
+!deploy/tls/minio/.gitkeep

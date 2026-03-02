@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request as FastapiRequest
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
@@ -15,6 +15,7 @@ from app.schemas.admin import (
     RequestStatusChange,
 )
 from app.schemas.universal import UniversalQuery
+from app.services.security_audit import extract_client_ip, record_pii_access_event
 
 from .data_templates import (
     create_request_data_requirement_service,
@@ -80,8 +81,26 @@ def delete_request(request_id: str, db: Session = Depends(get_db), admin=Depends
 
 
 @router.get("/{request_id}")
-def get_request(request_id: str, db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR"))):
-    return get_request_service(request_id, db, admin)
+def get_request(
+    request_id: str,
+    http_request: FastapiRequest,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    payload = get_request_service(request_id, db, admin)
+    record_pii_access_event(
+        db,
+        actor_role=str(admin.get("role") or "ADMIN").upper(),
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_REQUEST_CARD",
+        scope="REQUEST_CARD",
+        request_id=payload.get("id"),
+        details={"track_number": payload.get("track_number")},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
+    return payload
 
 
 @router.post("/{request_id}/status-change")
@@ -97,10 +116,24 @@ def change_request_status(
 @router.get("/{request_id}/status-route")
 def get_request_status_route(
     request_id: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
-    return get_request_status_route_service(request_id, db, admin)
+    payload = get_request_status_route_service(request_id, db, admin)
+    record_pii_access_event(
+        db,
+        actor_role=str(admin.get("role") or "ADMIN").upper(),
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_REQUEST_STATUS_ROUTE",
+        scope="REQUEST_STATUS_ROUTE",
+        request_id=payload.get("request_id"),
+        details={"track_number": payload.get("track_number")},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
+    return payload
 
 
 @router.post("/{request_id}/claim")

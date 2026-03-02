@@ -25,6 +25,7 @@ from app.services.attachment_scan import (
     initial_scan_status_for_new_attachment,
 )
 from app.services.s3_storage import build_object_key, get_s3_storage
+from app.services.origin_guard import enforce_public_origin_or_403
 
 router = APIRouter()
 
@@ -105,6 +106,7 @@ def upload_init(
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(http_request, endpoint="/api/public/uploads/init")
     actor_subject = str(session.get("sub") or "").strip()
     actor_ip = _client_ip(http_request)
     scope_name = str(payload.scope.value if hasattr(payload.scope, "value") else payload.scope)
@@ -169,6 +171,7 @@ def upload_complete(
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(http_request, endpoint="/api/public/uploads/complete")
     actor_subject = str(session.get("sub") or "").strip()
     actor_ip = _client_ip(http_request)
     scope_name = str(payload.scope.value if hasattr(payload.scope, "value") else payload.scope)

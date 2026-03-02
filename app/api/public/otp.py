@@ -14,6 +14,7 @@ from app.models.otp_session import OtpSession
 from app.models.request import Request as RequestModel
 from app.schemas.public import OtpSend, OtpVerify
 from app.services.email_service import EmailDeliveryError, send_otp_email_message
+from app.services.origin_guard import enforce_public_origin_or_403
 from app.services.rate_limit import get_rate_limiter
 from app.services.sms_service import SmsDeliveryError, send_otp_message, sms_provider_health
 
@@ -74,6 +75,10 @@ def _normalize_channel(raw: str | None) -> str:
     if value in {"EMAIL", "MAIL"}:
         return CHANNEL_EMAIL
     return ""
+
+
+def _is_honeypot_tripped(raw: str | None) -> bool:
+    return bool(str(raw or "").strip())
 
 
 def _auth_mode() -> str:
@@ -184,8 +189,8 @@ def _set_public_cookie(response: Response, *, subject: str, purpose: str, auth_c
         key=settings.PUBLIC_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.public_cookie_secure_effective,
+        samesite=settings.public_cookie_samesite_effective,
         max_age=settings.PUBLIC_JWT_TTL_DAYS * 24 * 3600,
     )
 
@@ -211,6 +216,9 @@ def get_auth_config():
 
 @router.post("/send")
 def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
+    enforce_public_origin_or_403(request, endpoint="/api/public/otp/send")
+    if _is_honeypot_tripped(getattr(payload, "hp_field", None)):
+        raise HTTPException(status_code=400, detail="Некорректный запрос")
     purpose = _normalize_purpose(payload.purpose)
     if purpose not in ALLOWED_PURPOSES:
         raise HTTPException(status_code=400, detail="Некорректная цель OTP")
@@ -344,6 +352,7 @@ def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/verify")
 def verify_otp(payload: OtpVerify, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_public_origin_or_403(request, endpoint="/api/public/otp/verify")
     purpose = _normalize_purpose(payload.purpose)
     if purpose not in ALLOWED_PURPOSES:
         raise HTTPException(status_code=400, detail="Некорректная цель OTP")

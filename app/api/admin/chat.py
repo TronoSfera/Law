@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
@@ -26,9 +26,33 @@ from app.services.chat_secure_service import (
     serialize_messages_for_request,
 )
 from app.services.chat_presence import list_typing_presence, set_typing_presence
+from app.services.security_audit import extract_client_ip, record_pii_access_event
 
 router = APIRouter()
 ALLOWED_VALUE_TYPES = {"string", "text", "date", "number", "file"}
+
+
+def _audit_admin_chat_read(
+    db: Session,
+    *,
+    admin: dict,
+    http_request: FastapiRequest,
+    req: Request,
+    action: str,
+    details: dict | None = None,
+) -> None:
+    record_pii_access_event(
+        db,
+        actor_role=str(admin.get("role") or "ADMIN").upper(),
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action=action,
+        scope="CHAT",
+        request_id=req.id,
+        details=details or {},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
 
 
 def _parse_cursor(raw: str | None) -> datetime | None:
@@ -223,13 +247,23 @@ def _serialize_data_request_items(db: Session, rows: list[RequestDataRequirement
 @router.get("/requests/{request_id}/messages")
 def list_request_messages(
     request_id: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_view_request_or_403(admin, req)
     rows = list_messages_for_request(db, req.id)
-    return {"rows": serialize_messages_for_request(db, req.id, rows), "total": len(rows)}
+    payload = {"rows": serialize_messages_for_request(db, req.id, rows), "total": len(rows)}
+    _audit_admin_chat_read(
+        db,
+        admin=admin,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_MESSAGES",
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.post("/requests/{request_id}/messages", status_code=201)
@@ -268,6 +302,7 @@ def create_request_message(
 @router.get("/requests/{request_id}/live")
 def get_request_live_state(
     request_id: str,
+    http_request: FastapiRequest,
     cursor: str | None = None,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
@@ -284,7 +319,7 @@ def get_request_live_state(
     actor_role = str(admin.get("role") or "").strip().upper() or "UNKNOWN"
     actor_key = f"{actor_role}:{actor_sub}"
     typing_rows = list_typing_presence(request_key=str(req.id), exclude_actor_key=actor_key)
-    return {
+    payload = {
         "request_id": str(req.id),
         "cursor": latest_activity_iso,
         "has_updates": has_updates,
@@ -299,6 +334,15 @@ def get_request_live_state(
             request_id=req.id,
         ),
     }
+    _audit_admin_chat_read(
+        db,
+        admin=admin,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_LIVE_STATE",
+        details={"has_updates": bool(has_updates)},
+    )
+    return payload
 
 
 @router.post("/requests/{request_id}/typing")
@@ -374,6 +418,7 @@ def list_data_request_templates(
 def get_data_request_batch(
     request_id: str,
     message_id: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
@@ -394,13 +439,22 @@ def get_data_request_batch(
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Набор данных для сообщения не найден")
-    return {
+    payload = {
         "message_id": str(message.id),
         "request_id": str(req.id),
         "track_number": req.track_number,
         "document_name": rows[0].document_name if rows else None,
         "items": _serialize_data_request_items(db, rows),
     }
+    _audit_admin_chat_read(
+        db,
+        admin=admin,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_DATA_REQUEST",
+        details={"message_id": str(message.id), "rows": len(rows)},
+    )
+    return payload
 
 
 @router.get("/requests/{request_id}/data-request-templates/{template_id}")

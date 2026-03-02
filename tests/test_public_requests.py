@@ -122,6 +122,7 @@ class PublicRequestCreateTests(unittest.TestCase):
             "topic_code": "consulting",
             "description": "Тестируем создание заявки",
             "extra_fields": {"referral_name": "Партнер"},
+            "pdn_consent": True,
         }
         response = self.client.post("/api/public/requests", json=payload)
         self.assertEqual(response.status_code, 401)
@@ -147,6 +148,9 @@ class PublicRequestCreateTests(unittest.TestCase):
             self.assertEqual(created.status_code, "NEW")
             self.assertEqual(created.track_number, body["track_number"])
             self.assertEqual(created.responsible, "Клиент")
+            self.assertTrue(created.pdn_consent)
+            self.assertIsNotNone(created.pdn_consent_at)
+            self.assertIsNotNone(created.pdn_consent_ip)
             client = db.get(Client, created.client_id)
             self.assertIsNotNone(client)
             self.assertEqual(client.phone, payload["client_phone"])
@@ -200,6 +204,47 @@ class PublicRequestCreateTests(unittest.TestCase):
 
         denied_other_track = self.client.get("/api/public/requests/TRK-OTHER")
         self.assertEqual(denied_other_track.status_code, 403)
+
+    def test_otp_send_rejects_honeypot_field(self):
+        response = self.client.post(
+            "/api/public/otp/send",
+            json={
+                "purpose": "CREATE_REQUEST",
+                "client_phone": self._unique_phone(),
+                "hp_field": "https://spam.example",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_request_rejects_honeypot_field(self):
+        phone = self._unique_phone()
+        self._send_and_verify_create_otp(phone)
+        payload = {
+            "client_name": "Клиент honeypot",
+            "client_phone": phone,
+            "topic_code": "consulting",
+            "description": "Проверка honeypot",
+            "extra_fields": {},
+            "pdn_consent": True,
+            "hp_field": "https://spam.example",
+        }
+        response = self.client.post("/api/public/requests", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_request_requires_pdn_consent(self):
+        phone = self._unique_phone()
+        self._send_and_verify_create_otp(phone)
+        payload = {
+            "client_name": "Клиент без согласия",
+            "client_phone": phone,
+            "topic_code": "consulting",
+            "description": "Проверка согласия ПДн",
+            "extra_fields": {},
+            "pdn_consent": False,
+        }
+        response = self.client.post("/api/public/requests", json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("согласие", str(response.json().get("detail", "")).lower())
 
     def test_view_request_can_use_phone_otp_and_switch_between_client_requests(self):
         phone = "+79996660077"
@@ -299,6 +344,7 @@ class PublicRequestCreateTests(unittest.TestCase):
                 "topic_code": "consulting",
                 "description": "Email auth mode create",
                 "extra_fields": {},
+                "pdn_consent": True,
             },
         )
         self.assertEqual(create.status_code, 201)
@@ -427,6 +473,7 @@ class PublicRequestCreateTests(unittest.TestCase):
                 "topic_code": "consulting",
                 "description": "Проверка обязательного поля",
                 "extra_fields": {},
+                "pdn_consent": True,
             },
         )
         self.assertEqual(missing.status_code, 400)
@@ -440,6 +487,7 @@ class PublicRequestCreateTests(unittest.TestCase):
                 "topic_code": "consulting",
                 "description": "Проверка обязательного поля",
                 "extra_fields": {"passport_series": "1234"},
+                "pdn_consent": True,
             },
         )
         self.assertEqual(created.status_code, 201)
@@ -474,6 +522,32 @@ class PublicRequestCreateTests(unittest.TestCase):
         self.assertIn(f"{settings.PUBLIC_COOKIE_NAME}=", cookie_header)
         self.assertIn(f"Max-Age={settings.PUBLIC_JWT_TTL_DAYS * 24 * 3600}", cookie_header)
         self.assertIn("httponly", cookie_header.lower())
+
+    def test_verify_otp_respects_cookie_security_flags_from_settings(self):
+        phone = self._unique_phone()
+        secure_backup = settings.PUBLIC_COOKIE_SECURE
+        samesite_backup = settings.PUBLIC_COOKIE_SAMESITE
+        try:
+            settings.PUBLIC_COOKIE_SECURE = True
+            settings.PUBLIC_COOKIE_SAMESITE = "strict"
+            with patch("app.api.public.otp._generate_code", return_value="313131"):
+                sent = self.client.post(
+                    "/api/public/otp/send",
+                    json={"purpose": "CREATE_REQUEST", "client_phone": phone},
+                )
+                self.assertEqual(sent.status_code, 200)
+
+            verified = self.client.post(
+                "/api/public/otp/verify",
+                json={"purpose": "CREATE_REQUEST", "client_phone": phone, "code": "313131"},
+            )
+            self.assertEqual(verified.status_code, 200)
+            cookie_header = str(verified.headers.get("set-cookie") or "")
+            self.assertIn("Secure", cookie_header)
+            self.assertIn("SameSite=strict", cookie_header)
+        finally:
+            settings.PUBLIC_COOKIE_SECURE = secure_backup
+            settings.PUBLIC_COOKIE_SAMESITE = samesite_backup
 
     def test_verify_view_otp_by_phone_sets_view_session_subject_as_phone(self):
         phone = "+79998887766"

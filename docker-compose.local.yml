@@ -20,3 +20,7 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
+
+  # Local/dev: use multi-arch image (works on Apple Silicon/ARM64).
+  clamav:
+    image: mkodockx/docker-clamav:alpine

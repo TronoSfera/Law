@@ -515,12 +515,52 @@
 
     .field.full { grid-column: 1 / -1; }
 
+    .hp-field-wrap {
+      position: absolute;
+      left: -99999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
     label {
       font-size: 0.76rem;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: #9fb0c6;
       font-weight: 700;
+    }
+
+    .consent-field {
+      margin-top: 0.2rem;
+    }
+
+    .consent-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.55rem;
+      font-size: 0.84rem;
+      text-transform: none;
+      letter-spacing: normal;
+      color: #b5c4d8;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+
+    .consent-check input[type="checkbox"] {
+      width: 17px;
+      height: 17px;
+      margin-top: 1px;
+      accent-color: #d8b27b;
+      flex: 0 0 auto;
+    }
+
+    .consent-check a {
+      color: #f4d7a8;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
 
     input, textarea, select {

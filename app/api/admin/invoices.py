@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from app.models.request import Request
 from app.schemas.universal import UniversalQuery
 from app.services.invoice_crypto import decrypt_requisites, encrypt_requisites
 from app.services.invoice_pdf import build_invoice_pdf_bytes
+from app.services.security_audit import extract_client_ip, record_pii_access_event
 from app.services.universal_query import apply_universal_query
 
 router = APIRouter()
@@ -193,6 +194,7 @@ def _commit_or_400(db: Session, detail: str) -> None:
 @router.post("/query")
 def query_invoices(
     uq: UniversalQuery,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER")),
 ):
@@ -223,12 +225,25 @@ def query_invoices(
         )
         for row in rows
     ]
-    return {"rows": data, "total": int(total)}
+    payload = {"rows": data, "total": int(total)}
+    record_pii_access_event(
+        db,
+        actor_role=role,
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_INVOICE_LIST",
+        scope="INVOICE",
+        details={"rows": int(total)},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
+    return payload
 
 
 @router.get("/{invoice_id}")
 def get_invoice(
     invoice_id: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER")),
 ):
@@ -245,12 +260,25 @@ def get_invoice(
     _ensure_lawyer_owns_request_or_403(role, actor_id, req)
 
     issuer = db.get(AdminUser, invoice.issued_by_admin_user_id) if invoice.issued_by_admin_user_id else None
-    return _serialize_invoice(
+    payload = _serialize_invoice(
         invoice,
         request_track=req.track_number,
         issuer_name=issuer.name if issuer else None,
         include_payer_details=True,
     )
+    record_pii_access_event(
+        db,
+        actor_role=role,
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_INVOICE_CARD",
+        scope="INVOICE",
+        request_id=req.id,
+        details={"invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
+    return payload
 
 
 @router.post("", status_code=201)
@@ -406,6 +434,7 @@ def delete_invoice(
 @router.get("/{invoice_id}/pdf")
 def download_invoice_pdf(
     invoice_id: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER")),
 ):
@@ -434,6 +463,18 @@ def download_invoice_pdf(
         request_track_number=req.track_number,
         issued_by_name=(issuer.name if issuer else None),
         requisites=requisites,
+    )
+    record_pii_access_event(
+        db,
+        actor_role=role,
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_INVOICE_PDF",
+        scope="INVOICE",
+        request_id=req.id,
+        details={"invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
     )
 
     file_name = f"{invoice.invoice_number}.pdf"

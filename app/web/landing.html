@@ -183,6 +183,10 @@
         <button class="close" type="button" data-close-modal aria-label="Закрыть">×</button>
       </div>
       <form id="request-form" class="form">
+        <div class="hp-field-wrap" aria-hidden="true">
+          <label for="request-hp-field">Сайт компании</label>
+          <input id="request-hp-field" name="request-company-website" type="text" autocomplete="off" tabindex="-1">
+        </div>
         <div class="field">
           <label for="name">Имя</label>
           <input id="name" name="name" type="text" required placeholder="Иван Иванов">
@@ -205,6 +209,12 @@
           <label for="description">Описание задачи</label>
           <textarea id="description" name="description" placeholder="Кратко опишите ситуацию"></textarea>
         </div>
+        <div class="field full consent-field">
+          <label class="consent-check">
+            <input id="pdn-consent" name="pdn-consent" type="checkbox" required>
+            <span>Согласен(а) на обработку персональных данных согласно <a href="/privacy.html" target="_blank" rel="noopener">политике ПДн</a>.</span>
+          </label>
+        </div>
         <div class="form-foot field full">
           <button class="btn btn-primary" type="submit">Отправить заявку</button>
           <p class="status" id="form-status"></p>
@@ -223,6 +233,10 @@
         <button class="close" type="button" data-close-access aria-label="Закрыть">×</button>
       </div>
       <form id="access-form" class="form">
+        <div class="hp-field-wrap" aria-hidden="true">
+          <label for="access-hp-field">Сайт компании</label>
+          <input id="access-hp-field" name="access-company-website" type="text" autocomplete="off" tabindex="-1">
+        </div>
         <div class="field">
           <label for="access-phone">Телефон</label>
           <input id="access-phone" name="access-phone" type="tel" required placeholder="+7 (900) 000-00-00">

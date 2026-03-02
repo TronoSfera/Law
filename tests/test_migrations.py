@@ -105,6 +105,7 @@ class MigrationTests(unittest.TestCase):
             "notifications",
             "invoices",
             "security_audit_log",
+            "data_retention_policies",
             "alembic_version",
         }
         tables = set(self.inspector.get_table_names())
@@ -113,7 +114,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0030_attachment_scan")
+        self.assertEqual(version, "0031_pii_retention_and_consent")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -143,6 +144,7 @@ class MigrationTests(unittest.TestCase):
             "notifications",
             "invoices",
             "security_audit_log",
+            "data_retention_policies",
         }
         for table in tables:
             columns = {column["name"] for column in self.inspector.get_columns(table)}
@@ -193,12 +195,26 @@ class MigrationTests(unittest.TestCase):
         columns = {column["name"] for column in self.inspector.get_columns("requests")}
         self.assertIn("client_id", columns)
         self.assertIn("client_email", columns)
+        self.assertIn("pdn_consent", columns)
+        self.assertIn("pdn_consent_at", columns)
+        self.assertIn("pdn_consent_ip", columns)
         self.assertIn("important_date_at", columns)
         self.assertIn("effective_rate", columns)
         self.assertIn("request_cost", columns)
         self.assertIn("invoice_amount", columns)
         self.assertIn("paid_at", columns)
         self.assertIn("paid_by_admin_id", columns)
+
+    def test_data_retention_policies_contains_core_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("data_retention_policies")}
+        self.assertIn("id", columns)
+        self.assertIn("entity", columns)
+        self.assertIn("retention_days", columns)
+        self.assertIn("enabled", columns)
+        self.assertIn("hard_delete", columns)
+        self.assertIn("description", columns)
+        self.assertIn("created_at", columns)
+        self.assertIn("responsible", columns)
 
     def test_status_history_contains_important_date_column(self):
         columns = {column["name"] for column in self.inspector.get_columns("status_history")}

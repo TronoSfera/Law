@@ -5,6 +5,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
+from fastapi import Request as FastapiRequest
 from sqlalchemy import func, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -39,6 +40,19 @@ def _safe_details(details: dict[str, Any] | None) -> dict[str, Any]:
         else:
             safe[str(key)] = str(value)
     return safe
+
+
+def extract_client_ip(http_request: FastapiRequest | None) -> str | None:
+    if http_request is None:
+        return None
+    xff = str(http_request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    if http_request.client and http_request.client.host:
+        return str(http_request.client.host)
+    return None
 
 
 def _emit_suspicious_denied_download_alert(
@@ -127,3 +141,33 @@ def record_file_security_event(
                 db.rollback()
             except Exception:
                 logger.debug("security_audit_rollback_failed", exc_info=True)
+
+
+def record_pii_access_event(
+    db: Session,
+    *,
+    actor_role: str,
+    actor_subject: str,
+    actor_ip: str | None,
+    action: str,
+    scope: str,
+    request_id: str | uuid.UUID | None = None,
+    details: dict[str, Any] | None = None,
+    responsible: str | None = None,
+    persist_now: bool = False,
+) -> None:
+    record_file_security_event(
+        db,
+        actor_role=actor_role,
+        actor_subject=actor_subject,
+        actor_ip=actor_ip,
+        action=action,
+        scope=scope,
+        allowed=True,
+        reason=None,
+        object_key=None,
+        request_id=request_id,
+        details=details,
+        responsible=responsible,
+        persist_now=persist_now,
+    )

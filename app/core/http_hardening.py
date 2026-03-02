@@ -20,13 +20,35 @@ SECURITY_HEADERS = {
     "Cross-Origin-Embedder-Policy": "credentialless",
     "Cross-Origin-Resource-Policy": "same-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
-    "Content-Security-Policy": "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "connect-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
 }
 
 FRAMEABLE_FILE_SECURITY_HEADERS = {
     **SECURITY_HEADERS,
     "X-Frame-Options": "SAMEORIGIN",
-    "Content-Security-Policy": "default-src 'self'; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "connect-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "object-src 'none'; "
+        "frame-ancestors 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
 }
 
 _FRAMEABLE_PATH_PATTERNS = (

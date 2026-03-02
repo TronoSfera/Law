@@ -3,6 +3,13 @@ services:
     image: nginx:1.27-alpine
     container_name: law-edge
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
     depends_on:
       frontend:
         condition: service_healthy
@@ -24,9 +31,23 @@ services:
 
   frontend:
     ports: []
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./frontend/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/tls/minio/ca.crt:/etc/nginx/minio-ca.crt:ro
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
 
   backend:
     ports: []
+    volumes:
+      - ./deploy/tls/minio/ca.crt:/etc/ssl/minio/ca.crt:ro
+    security_opt:
+      - no-new-privileges:true
 
   db:
     ports: []
@@ -36,6 +57,34 @@ services:
 
   minio:
     ports: []
+    volumes:
+      - miniodata:/data
+      - ./deploy/tls/minio:/root/.minio/certs:ro
+
+  chat-service:
+    volumes: []
+    security_opt:
+      - no-new-privileges:true
+
+  email-service:
+    volumes: []
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    volumes:
+      - ./deploy/tls/minio/ca.crt:/etc/ssl/minio/ca.crt:ro
+    security_opt:
+      - no-new-privileges:true
+
+  beat:
+    volumes: []
+    security_opt:
+      - no-new-privileges:true
+
+  # Production: keep official ClamAV image on x86_64 hosts.
+  clamav:
+    platform: linux/amd64
 
 volumes:
   letsencrypt:

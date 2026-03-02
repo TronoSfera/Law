@@ -52,6 +52,7 @@ TABLE_ROLE_ACTIONS: dict[str, dict[str, set[str]]] = {
     "form_fields": {"ADMIN": set(CRUD_ACTIONS)},
     "clients": {"ADMIN": set(CRUD_ACTIONS)},
     "table_availability": {"ADMIN": set(CRUD_ACTIONS)},
+    "data_retention_policies": {"ADMIN": set(CRUD_ACTIONS)},
     "audit_log": {"ADMIN": {"query", "read"}},
     "security_audit_log": {"ADMIN": {"query", "read"}},
     "otp_sessions": {"ADMIN": {"query", "read"}},

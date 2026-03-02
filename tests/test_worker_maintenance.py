@@ -15,10 +15,13 @@ os.environ.setdefault("S3_SECRET_KEY", "test")
 os.environ.setdefault("S3_BUCKET", "test")
 
 from app.models.attachment import Attachment
+from app.models.audit_log import AuditLog
+from app.models.data_retention_policy import DataRetentionPolicy
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.otp_session import OtpSession
 from app.models.request import Request
+from app.models.security_audit_log import SecurityAuditLog
 from app.models.status import Status
 from app.models.status_history import StatusHistory
 from app.models.topic_status_transition import TopicStatusTransition
@@ -37,6 +40,9 @@ class WorkerMaintenanceTaskTests(unittest.TestCase):
         )
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         OtpSession.__table__.create(bind=cls.engine)
+        DataRetentionPolicy.__table__.create(bind=cls.engine)
+        AuditLog.__table__.create(bind=cls.engine)
+        SecurityAuditLog.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
         Attachment.__table__.create(bind=cls.engine)
         Status.__table__.create(bind=cls.engine)
@@ -64,6 +70,9 @@ class WorkerMaintenanceTaskTests(unittest.TestCase):
         Status.__table__.drop(bind=cls.engine)
         Attachment.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
+        SecurityAuditLog.__table__.drop(bind=cls.engine)
+        AuditLog.__table__.drop(bind=cls.engine)
+        DataRetentionPolicy.__table__.drop(bind=cls.engine)
         OtpSession.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
 
@@ -76,6 +85,9 @@ class WorkerMaintenanceTaskTests(unittest.TestCase):
             db.execute(delete(Notification))
             db.execute(delete(Attachment))
             db.execute(delete(Request))
+            db.execute(delete(SecurityAuditLog))
+            db.execute(delete(AuditLog))
+            db.execute(delete(DataRetentionPolicy))
             db.execute(delete(OtpSession))
             db.commit()
 
@@ -112,6 +124,167 @@ class WorkerMaintenanceTaskTests(unittest.TestCase):
             remaining = db.query(OtpSession).all()
             self.assertEqual(len(remaining), 1)
             self.assertEqual(remaining[0].track_number, "TRK-ACT")
+
+    def test_cleanup_pii_retention_deletes_old_rows_by_policy(self):
+        now = datetime.now(timezone.utc)
+        old = now - timedelta(days=10)
+        with self.SessionLocal() as db:
+            db.add_all(
+                [
+                    DataRetentionPolicy(
+                        entity="otp_sessions",
+                        retention_days=1,
+                        enabled=True,
+                        hard_delete=True,
+                        description="OTP",
+                        responsible="test",
+                    ),
+                    DataRetentionPolicy(
+                        entity="notifications",
+                        retention_days=1,
+                        enabled=True,
+                        hard_delete=True,
+                        description="Notifications",
+                        responsible="test",
+                    ),
+                    DataRetentionPolicy(
+                        entity="audit_log",
+                        retention_days=1,
+                        enabled=True,
+                        hard_delete=True,
+                        description="Audit",
+                        responsible="test",
+                    ),
+                    DataRetentionPolicy(
+                        entity="security_audit_log",
+                        retention_days=1,
+                        enabled=True,
+                        hard_delete=True,
+                        description="Security audit",
+                        responsible="test",
+                    ),
+                    DataRetentionPolicy(
+                        entity="requests",
+                        retention_days=3650,
+                        enabled=False,
+                        hard_delete=True,
+                        description="Requests disabled",
+                        responsible="test",
+                    ),
+                ]
+            )
+            req = Request(
+                track_number="TRK-RET-1",
+                client_name="Клиент",
+                client_phone="+79990003001",
+                topic_code="civil",
+                status_code="NEW",
+                extra_fields={},
+                created_at=old,
+                updated_at=old,
+            )
+            db.add(req)
+            db.flush()
+            db.add_all(
+                [
+                    OtpSession(
+                        purpose="VIEW_REQUEST",
+                        track_number="TRK-RET-OTP-OLD",
+                        phone="+79990000011",
+                        code_hash="old",
+                        attempts=0,
+                        expires_at=now + timedelta(minutes=5),
+                        created_at=old,
+                        updated_at=old,
+                    ),
+                    OtpSession(
+                        purpose="VIEW_REQUEST",
+                        track_number="TRK-RET-OTP-NEW",
+                        phone="+79990000012",
+                        code_hash="new",
+                        attempts=0,
+                        expires_at=now + timedelta(minutes=5),
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                    Notification(
+                        request_id=req.id,
+                        recipient_type="CLIENT",
+                        recipient_track_number=req.track_number,
+                        event_type="STATUS_CHANGED",
+                        title="old",
+                        body="old",
+                        payload={},
+                        created_at=old,
+                        updated_at=old,
+                    ),
+                    Notification(
+                        request_id=req.id,
+                        recipient_type="CLIENT",
+                        recipient_track_number=req.track_number,
+                        event_type="STATUS_CHANGED",
+                        title="new",
+                        body="new",
+                        payload={},
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                    AuditLog(
+                        entity="requests",
+                        entity_id=str(req.id),
+                        action="READ",
+                        diff={},
+                        created_at=old,
+                        updated_at=old,
+                    ),
+                    AuditLog(
+                        entity="requests",
+                        entity_id=str(req.id),
+                        action="READ",
+                        diff={},
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                    SecurityAuditLog(
+                        actor_role="CLIENT",
+                        actor_subject=req.track_number,
+                        actor_ip="127.0.0.1",
+                        action="READ_REQUEST_CARD",
+                        scope="REQUEST",
+                        request_id=req.id,
+                        allowed=True,
+                        details={},
+                        created_at=old,
+                        updated_at=old,
+                    ),
+                    SecurityAuditLog(
+                        actor_role="CLIENT",
+                        actor_subject=req.track_number,
+                        actor_ip="127.0.0.1",
+                        action="READ_REQUEST_CARD",
+                        scope="REQUEST",
+                        request_id=req.id,
+                        allowed=True,
+                        details={},
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                ]
+            )
+            db.commit()
+
+        result = security_task.cleanup_pii_retention()
+        deleted = dict(result.get("deleted") or {})
+        self.assertGreaterEqual(int(deleted.get("otp_sessions", 0)), 1)
+        self.assertGreaterEqual(int(deleted.get("notifications", 0)), 1)
+        self.assertGreaterEqual(int(deleted.get("audit_log", 0)), 1)
+        self.assertGreaterEqual(int(deleted.get("security_audit_log", 0)), 1)
+
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(OtpSession).count(), 1)
+            self.assertEqual(db.query(Notification).count(), 1)
+            self.assertEqual(db.query(AuditLog).count(), 1)
+            self.assertEqual(db.query(SecurityAuditLog).count(), 1)
 
     def test_cleanup_stale_uploads_removes_invalid_and_fixes_totals(self):
         with self.SessionLocal() as db:

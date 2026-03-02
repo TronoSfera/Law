@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from app.core.config import settings
+from app.core.config import settings, validate_production_security_or_raise
 from app.services.email_service import EmailDeliveryError, send_email_via_smtp
 
 app = FastAPI(title="law-email-service")
@@ -13,6 +13,11 @@ class InternalEmailSend(BaseModel):
     email: str
     subject: str
     body: str
+
+
+@app.on_event("startup")
+def _validate_security_config_on_startup() -> None:
+    validate_production_security_or_raise("email-service")
 
 
 @app.get("/health")

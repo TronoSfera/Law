@@ -2,6 +2,9 @@
 	help \
 	local-up local-down local-logs local-migrate local-test local-seed \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
+	prod-secrets-generate prod-secrets-apply \
+	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid \
+	security-smoke prod-security-audit \
 	prod-cert-init prod-cert-renew \
 	check-prod-files check-cert-files \
 	run migrate test seed-quotes
@@ -11,6 +14,8 @@ WWW_DOMAIN ?= www.ruakb.ru
 SECOND_DOMAIN ?= ruakb.online
 SECOND_WWW_DOMAIN ?= www.ruakb.online
 LETSENCRYPT_EMAIL ?= admin@ruakb.ru
+AUTO_CERT_INIT ?= 0
+CONFIRM_TOKEN ?= ROTATE-PROD-SECRETS
 CERTBOT_DOMAINS = -d "$(DOMAIN)" -d "$(WWW_DOMAIN)" $(if $(strip $(SECOND_DOMAIN)),-d "$(SECOND_DOMAIN)") $(if $(strip $(SECOND_WWW_DOMAIN)),-d "$(SECOND_WWW_DOMAIN)")
 
 LOCAL_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local.yml
@@ -30,6 +35,14 @@ help:
 	@echo "  prod-logs         - Tail production logs"
 	@echo "  prod-ps           - Show production services"
 	@echo "  prod-migrate      - Apply migrations (prod)"
+	@echo "  prod-secrets-generate - Generate rotated internal secrets into .env.prod"
+	@echo "  prod-secrets-apply    - Generate + apply rotated internal secrets to running prod stack"
+	@echo "  prod-minio-tls-init   - Generate internal CA and MinIO TLS certs (deploy/tls/minio)"
+	@echo "  incident-checklist    - Create PDn incident checklist markdown report"
+	@echo "  security-smoke        - Run security smoke checks and create report"
+	@echo "  prod-security-audit   - Full production security audit/repair workflow"
+	@echo "  rotate-encryption-kid - Add new KID key pair to .env and switch active KID"
+	@echo "  reencrypt-active-kid  - Re-encrypt historical encrypted fields using active KID"
 	@echo "  prod-cert-init    - Initial Let's Encrypt issue (nginx only 80 during bootstrap)"
 	@echo "  prod-cert-renew   - Renew existing certificates"
 	@echo ""
@@ -38,6 +51,7 @@ help:
 	@echo "  WWW_DOMAIN=$(WWW_DOMAIN)"
 	@echo "  SECOND_DOMAIN=$(SECOND_DOMAIN)"
 	@echo "  SECOND_WWW_DOMAIN=$(SECOND_WWW_DOMAIN)"
+	@echo "  AUTO_CERT_INIT=$(AUTO_CERT_INIT)"
 
 local-up:
 	$(LOCAL_COMPOSE) up -d --build
@@ -59,6 +73,8 @@ local-seed:
 
 check-prod-files:
 	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)
+	@test -f frontend/nginx.prod.conf || (echo "[ERROR] Missing frontend/nginx.prod.conf. Run: git pull"; exit 1)
+	@test -f scripts/ops/minio_tls_bootstrap.sh || (echo "[ERROR] Missing scripts/ops/minio_tls_bootstrap.sh. Run: git pull"; exit 1)
 
 check-cert-files: check-prod-files
 	@test -f docker-compose.prod.cert.yml || (echo "[ERROR] Missing docker-compose.prod.cert.yml. Run: git pull"; exit 1)
@@ -80,6 +96,36 @@ prod-ps: check-prod-files
 
 prod-migrate: check-prod-files
 	$(PROD_COMPOSE) exec -T backend alembic upgrade head
+
+prod-secrets-generate:
+	./scripts/ops/rotate_prod_secrets.sh --env-in .env.production --env-out .env.prod
+
+prod-secrets-apply: check-prod-files
+	./scripts/ops/rotate_prod_secrets.sh --env-in .env.production --env-out .env.prod --apply-running --compose-override docker-compose.prod.nginx.yml --non-interactive --require-confirmation-token "$(CONFIRM_TOKEN)"
+
+prod-minio-tls-init:
+	./scripts/ops/minio_tls_bootstrap.sh
+
+incident-checklist:
+	./scripts/ops/incident_checklist.sh
+
+security-smoke:
+	./scripts/ops/security_smoke.sh
+
+prod-security-audit: check-cert-files
+	DOMAIN="$(DOMAIN)" \
+	WWW_DOMAIN="$(WWW_DOMAIN)" \
+	SECOND_DOMAIN="$(SECOND_DOMAIN)" \
+	SECOND_WWW_DOMAIN="$(SECOND_WWW_DOMAIN)" \
+	LETSENCRYPT_EMAIL="$(LETSENCRYPT_EMAIL)" \
+	AUTO_CERT_INIT="$(AUTO_CERT_INIT)" \
+	./scripts/ops/prod_security_audit.sh
+
+rotate-encryption-kid:
+	./scripts/ops/rotate_encryption_kid.sh --env-file .env
+
+reencrypt-active-kid:
+	docker compose exec -T backend python -m app.scripts.reencrypt_with_active_kid --apply
 
 # Initial certificate bootstrap:
 # 1) Start stack with edge nginx on port 80 only.

@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_public_session
@@ -22,6 +22,8 @@ from app.services.chat_secure_service import (
     serialize_messages_for_request,
 )
 from app.services.request_read_markers import EVENT_REQUEST_DATA, mark_unread_for_lawyer
+from app.services.origin_guard import enforce_public_origin_or_403
+from app.services.security_audit import extract_client_ip, record_pii_access_event
 
 router = APIRouter()
 
@@ -102,6 +104,38 @@ def _require_view_session_or_403(session: dict) -> str:
     return subject
 
 
+def _public_actor_subject(session: dict) -> str:
+    subject = _require_view_session_or_403(session)
+    normalized_track = _normalize_track(subject)
+    if normalized_track.startswith("TRK-"):
+        return normalized_track
+    normalized_phone = _normalize_phone(subject)
+    return normalized_phone or subject
+
+
+def _audit_public_chat_read(
+    db: Session,
+    *,
+    session: dict,
+    http_request: FastapiRequest,
+    req: Request,
+    action: str,
+    details: dict | None = None,
+) -> None:
+    record_pii_access_event(
+        db,
+        actor_role="CLIENT",
+        actor_subject=_public_actor_subject(session),
+        actor_ip=extract_client_ip(http_request),
+        action=action,
+        scope="CHAT",
+        request_id=req.id,
+        details=details or {},
+        responsible="Клиент",
+        persist_now=True,
+    )
+
+
 def _request_for_track_or_404(db: Session, track_number: str) -> Request:
     req = db.query(Request).filter(Request.track_number == _normalize_track(track_number)).first()
     if req is None:
@@ -124,22 +158,34 @@ def _ensure_view_access_or_403(session: dict, req: Request) -> None:
 @router.get("/requests/{track_number}/messages")
 def list_messages_by_track(
     track_number: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
     rows = list_messages_for_request(db, req.id)
-    return serialize_messages_for_request(db, req.id, rows)
+    payload = serialize_messages_for_request(db, req.id, rows)
+    _audit_public_chat_read(
+        db,
+        session=session,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_MESSAGES",
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.post("/requests/{track_number}/messages", status_code=201)
 def create_message_by_track(
     track_number: str,
     payload: PublicMessageCreate,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(http_request, endpoint="/api/public/chat/requests/{track_number}/messages")
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
     row = create_client_message(db, request=req, body=payload.body)
@@ -149,6 +195,7 @@ def create_message_by_track(
 @router.get("/requests/{track_number}/live")
 def get_live_chat_state_by_track(
     track_number: str,
+    http_request: FastapiRequest,
     cursor: str | None = None,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
@@ -164,7 +211,7 @@ def get_live_chat_state_by_track(
     subject = _require_view_session_or_403(session)
     actor_key = f"CLIENT:{_normalize_track(subject) or _normalize_phone(subject)}"
     typing_rows = list_typing_presence(request_key=str(req.id), exclude_actor_key=actor_key)
-    return {
+    payload = {
         "track_number": req.track_number,
         "cursor": latest_activity_iso,
         "has_updates": has_updates,
@@ -179,15 +226,26 @@ def get_live_chat_state_by_track(
             request_id=req.id,
         ),
     }
+    _audit_public_chat_read(
+        db,
+        session=session,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_LIVE_STATE",
+        details={"has_updates": bool(has_updates)},
+    )
+    return payload
 
 
 @router.post("/requests/{track_number}/typing")
 def set_live_chat_typing_by_track(
     track_number: str,
     payload: dict,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(http_request, endpoint="/api/public/chat/requests/{track_number}/typing")
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
     subject = _require_view_session_or_403(session)
@@ -207,6 +265,7 @@ def set_live_chat_typing_by_track(
 def get_data_request_by_message(
     track_number: str,
     message_id: str,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -230,7 +289,7 @@ def get_data_request_by_message(
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Запрос данных не найден")
-    return {
+    payload = {
         "message_id": str(message.id),
         "request_id": str(req.id),
         "track_number": req.track_number,
@@ -248,6 +307,15 @@ def get_data_request_by_message(
             for row in rows
         ],
     }
+    _audit_public_chat_read(
+        db,
+        session=session,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_DATA_REQUEST",
+        details={"message_id": str(message.id), "rows": len(rows)},
+    )
+    return payload
 
 
 @router.post("/requests/{track_number}/data-requests/{message_id}")
@@ -255,9 +323,14 @@ def save_data_request_values(
     track_number: str,
     message_id: str,
     payload: dict,
+    http_request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(
+        http_request,
+        endpoint="/api/public/chat/requests/{track_number}/data-requests/{message_id}",
+    )
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
     try:

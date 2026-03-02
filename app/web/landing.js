@@ -15,6 +15,7 @@
   const accessForm = document.getElementById("access-form");
   const accessPhoneInput = document.getElementById("access-phone");
   const accessEmailInput = document.getElementById("access-email");
+  const accessHpInput = document.getElementById("access-hp-field");
   const accessCodeInput = document.getElementById("access-code");
   const accessSendOtpButton = document.getElementById("access-send-otp");
   const accessStatus = document.getElementById("access-status");
@@ -33,6 +34,7 @@
   const featuredTeamPrev = document.getElementById("featured-team-prev");
   const featuredTeamNext = document.getElementById("featured-team-next");
   const requestEmailInput = document.getElementById("email");
+  const requestHpInput = document.getElementById("request-hp-field");
   let otpModalResolver = null;
   let lastAccessOtpChannel = "SMS";
   let lastCreateOtpChannel = "SMS";
@@ -408,6 +410,7 @@
   accessSendOtpButton.addEventListener("click", async () => {
     const phone = String(accessPhoneInput.value || "").trim();
     const email = normalizeEmail(accessEmailInput?.value);
+    const hpField = String(accessHpInput?.value || "").trim();
     const channel = preferredChannel({ phone, email });
     if (currentAuthMode() === "totp") {
       setStatus(accessStatus, "Режим TOTP пока не реализован в публичном кабинете.", "error");
@@ -431,6 +434,7 @@
           purpose: "VIEW_REQUEST",
           client_phone: phone,
           client_email: email,
+          hp_field: hpField,
           channel,
         }),
       });
@@ -493,6 +497,8 @@
       client_name: String(document.getElementById("name").value || "").trim(),
       client_phone: String(document.getElementById("phone").value || "").trim(),
       client_email: normalizeEmail(requestEmailInput?.value),
+      pdn_consent: Boolean(document.getElementById("pdn-consent")?.checked),
+      hp_field: String(requestHpInput?.value || "").trim(),
       topic_code: String(document.getElementById("topic").value || "").trim(),
       description: String(document.getElementById("description").value || "").trim(),
       extra_fields: {},
@@ -511,6 +517,10 @@
       setStatus(requestStatus, "Заполните имя и тему обращения.", "error");
       return;
     }
+    if (!payload.pdn_consent) {
+      setStatus(requestStatus, "Необходимо согласие на обработку персональных данных.", "error");
+      return;
+    }
 
     try {
       setStatus(requestStatus, "Отправляем OTP-код...", null);
@@ -521,6 +531,7 @@
           purpose: "CREATE_REQUEST",
           client_phone: payload.client_phone,
           client_email: payload.client_email,
+          hp_field: payload.hp_field,
           channel: createChannel,
         }),
       });

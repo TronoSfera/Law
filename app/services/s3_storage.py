@@ -24,6 +24,10 @@ def build_object_key(prefix: str, file_name: str) -> str:
 class S3Storage:
     def __init__(self):
         self.bucket = settings.S3_BUCKET
+        verify_ssl: bool | str = bool(settings.S3_VERIFY_SSL)
+        ca_bundle = str(settings.S3_CA_CERT_PATH or "").strip()
+        if verify_ssl and ca_bundle:
+            verify_ssl = ca_bundle
         self.client = boto3.client(
             "s3",
             endpoint_url=settings.S3_ENDPOINT,
@@ -31,6 +35,7 @@ class S3Storage:
             aws_secret_access_key=settings.S3_SECRET_KEY,
             region_name=settings.S3_REGION,
             use_ssl=settings.S3_USE_SSL,
+            verify=verify_ssl,
         )
         self._bucket_checked = False
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Request as FastapiRequest
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -28,6 +28,7 @@ from app.models.topic import Topic
 from app.services.invoice_crypto import decrypt_requisites
 from app.services.invoice_pdf import build_invoice_pdf_bytes
 from app.services.chat_secure_service import create_client_message, list_messages_for_request
+from app.services.origin_guard import enforce_public_origin_or_403
 from app.services.notifications import (
     get_client_notification,
     list_client_notifications,
@@ -37,6 +38,7 @@ from app.services.notifications import (
 )
 from app.services.request_read_markers import clear_unread_for_client
 from app.services.request_templates import validate_required_topic_fields_or_400
+from app.services.security_audit import extract_client_ip, record_pii_access_event
 from app.api.admin.requests_modules.status_flow import get_request_status_route_service
 from app.schemas.public import (
     PublicAttachmentRead,
@@ -78,6 +80,14 @@ def _normalize_track(raw: str | None) -> str:
     return str(raw or "").strip().upper()
 
 
+def _is_honeypot_tripped(raw: str | None) -> bool:
+    return bool(str(raw or "").strip())
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _set_view_cookie(response: Response, subject: str) -> None:
     token = create_jwt(
         {"sub": subject, "purpose": OTP_VIEW_PURPOSE},
@@ -88,9 +98,45 @@ def _set_view_cookie(response: Response, subject: str) -> None:
         key=settings.PUBLIC_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.public_cookie_secure_effective,
+        samesite=settings.public_cookie_samesite_effective,
         max_age=settings.PUBLIC_JWT_TTL_DAYS * 24 * 3600,
+    )
+
+
+def _public_actor_subject(session: dict) -> str:
+    subject = _require_view_session_or_403(session)
+    normalized_track = _normalize_track(subject)
+    if normalized_track.startswith("TRK-"):
+        return normalized_track
+    normalized_phone = _normalize_phone(subject)
+    if normalized_phone:
+        return normalized_phone
+    normalized_email = _normalize_email(subject)
+    return normalized_email or subject
+
+
+def _record_public_read_audit(
+    db: Session,
+    *,
+    session: dict,
+    http_request: FastapiRequest,
+    action: str,
+    scope: str,
+    request_id: str | UUID | None = None,
+    details: dict | None = None,
+) -> None:
+    record_pii_access_event(
+        db,
+        actor_role="CLIENT",
+        actor_subject=_public_actor_subject(session),
+        actor_ip=extract_client_ip(http_request),
+        action=action,
+        scope=scope,
+        request_id=request_id,
+        details=details or {},
+        responsible="Клиент",
+        persist_now=True,
     )
 
 
@@ -211,9 +257,15 @@ def _public_invoice_payload(row: Invoice, track_number: str) -> dict:
 def create_request(
     payload: PublicRequestCreate,
     response: Response,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(request, endpoint="/api/public/requests")
+    if _is_honeypot_tripped(getattr(payload, "hp_field", None)):
+        raise HTTPException(status_code=400, detail="Некорректный запрос")
+    if not bool(payload.pdn_consent):
+        raise HTTPException(status_code=400, detail="Необходимо согласие на обработку персональных данных")
     _require_create_session_or_403(session, payload.client_phone, payload.client_email)
     validate_required_topic_fields_or_400(db, payload.topic_code, payload.extra_fields)
     client = _upsert_client_by_phone(
@@ -233,9 +285,28 @@ def create_request(
         topic_code=payload.topic_code,
         description=payload.description,
         extra_fields=payload.extra_fields,
+        pdn_consent=True,
+        pdn_consent_at=_now_utc(),
+        pdn_consent_ip=extract_client_ip(request),
         responsible="Клиент",
     )
     db.add(row)
+    db.flush()
+    db.add(
+        AuditLog(
+            actor_admin_id=None,
+            entity="requests",
+            entity_id=str(row.id),
+            action="PDN_CONSENT_CAPTURED",
+            diff={
+                "track_number": row.track_number,
+                "consent": True,
+                "consent_at": _to_iso(row.pdn_consent_at),
+                "consent_ip": row.pdn_consent_ip,
+            },
+            responsible="Клиент",
+        )
+    )
     db.commit()
     db.refresh(row)
 
@@ -256,6 +327,7 @@ def list_public_topics(db: Session = Depends(get_db)):
 
 @router.get("/my")
 def list_my_requests(
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -301,7 +373,7 @@ def list_my_requests(
                 by_event[event_key] = int(by_event.get(event_key, 0)) + event_count
                 bucket["by_event"] = by_event
             bucket["total"] = int(bucket.get("total", 0)) + event_count
-    return {
+    payload = {
         "rows": [
             {
                 "id": str(row.id),
@@ -319,11 +391,21 @@ def list_my_requests(
         ],
         "total": len(rows),
     }
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_REQUEST_LIST",
+        scope="REQUEST_LIST",
+        details={"total": len(rows)},
+    )
+    return payload
 
 
 @router.get("/{track_number}")
 def get_request_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -370,7 +452,7 @@ def get_request_by_track(
         request_id=req.id,
     )
 
-    return {
+    payload = {
         "id": str(req.id),
         "client_id": str(req.client_id) if req.client_id else None,
         "track_number": req.track_number,
@@ -397,11 +479,22 @@ def get_request_by_track(
         "created_at": _to_iso(req.created_at),
         "updated_at": _to_iso(req.updated_at),
     }
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_REQUEST_CARD",
+        scope="REQUEST_CARD",
+        request_id=req.id,
+        details={"track_number": req.track_number},
+    )
+    return payload
 
 
 @router.get("/{track_number}/status-route")
 def get_status_route_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -413,11 +506,20 @@ def get_status_route_by_track(
             {"role": "ADMIN", "sub": "", "email": "Клиент"},
         )
         payload["available_statuses"] = []
+        _record_public_read_audit(
+            db,
+            session=session,
+            http_request=request,
+            action="READ_REQUEST_STATUS_ROUTE",
+            scope="REQUEST_STATUS_ROUTE",
+            request_id=req.id,
+            details={"track_number": req.track_number},
+        )
         return payload
     except Exception:
         current = str(req.status_code or "").strip()
         changed_at = _to_iso(req.updated_at or req.created_at)
-        return {
+        payload = {
             "request_id": str(req.id),
             "track_number": req.track_number,
             "topic_code": req.topic_code,
@@ -450,17 +552,28 @@ def get_status_route_by_track(
             if current
             else [],
         }
+        _record_public_read_audit(
+            db,
+            session=session,
+            http_request=request,
+            action="READ_REQUEST_STATUS_ROUTE",
+            scope="REQUEST_STATUS_ROUTE",
+            request_id=req.id,
+            details={"track_number": req.track_number, "fallback": True},
+        )
+        return payload
 
 
 @router.get("/{track_number}/messages", response_model=list[PublicMessageRead])
 def list_messages_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, session, track_number)
     rows = list_messages_for_request(db, req.id)
-    return [
+    payload = [
         PublicMessageRead(
             id=row.id,
             request_id=row.request_id,
@@ -472,15 +585,27 @@ def list_messages_by_track(
         )
         for row in rows
     ]
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_CHAT_MESSAGES",
+        scope="CHAT",
+        request_id=req.id,
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.post("/{track_number}/messages", response_model=PublicMessageRead, status_code=201)
 def create_message_by_track(
     track_number: str,
     payload: PublicMessageCreate,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(request, endpoint="/api/public/requests/{track_number}/messages")
     req = _request_for_track_or_404(db, session, track_number)
     row = create_client_message(db, request=req, body=payload.body)
 
@@ -498,6 +623,7 @@ def create_message_by_track(
 @router.get("/{track_number}/attachments", response_model=list[PublicAttachmentRead])
 def list_attachments_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -508,7 +634,7 @@ def list_attachments_by_track(
         .order_by(Attachment.created_at.desc(), Attachment.id.desc())
         .all()
     )
-    return [
+    payload = [
         PublicAttachmentRead(
             id=row.id,
             request_id=row.request_id,
@@ -521,11 +647,22 @@ def list_attachments_by_track(
         )
         for row in rows
     ]
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_ATTACHMENTS",
+        scope="REQUEST_ATTACHMENTS",
+        request_id=req.id,
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.get("/{track_number}/invoices")
 def list_invoices_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -536,13 +673,24 @@ def list_invoices_by_track(
         .order_by(Invoice.issued_at.desc(), Invoice.created_at.desc(), Invoice.id.desc())
         .all()
     )
-    return [_public_invoice_payload(row, req.track_number) for row in rows]
+    payload = [_public_invoice_payload(row, req.track_number) for row in rows]
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_INVOICE_LIST",
+        scope="INVOICE",
+        request_id=req.id,
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.get("/{track_number}/invoices/{invoice_id}/pdf")
 def download_invoice_pdf_by_track(
     track_number: str,
     invoice_id: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -570,6 +718,15 @@ def download_invoice_pdf_by_track(
         issued_by_name=(issuer.name if issuer else invoice.issued_by_role),
         requisites=requisites,
     )
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_INVOICE_PDF",
+        scope="INVOICE",
+        request_id=req.id,
+        details={"invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number},
+    )
     file_name = f"{invoice.invoice_number}.pdf"
     headers = {"Content-Disposition": f'attachment; filename="{file_name}"'}
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers=headers)
@@ -578,6 +735,7 @@ def download_invoice_pdf_by_track(
 @router.get("/{track_number}/history", response_model=list[PublicStatusHistoryRead])
 def list_status_history_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -588,7 +746,7 @@ def list_status_history_by_track(
         .order_by(StatusHistory.created_at.asc(), StatusHistory.id.asc())
         .all()
     )
-    return [
+    payload = [
         PublicStatusHistoryRead(
             id=row.id,
             request_id=row.request_id,
@@ -599,11 +757,22 @@ def list_status_history_by_track(
         )
         for row in rows
     ]
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_REQUEST_HISTORY",
+        scope="REQUEST_HISTORY",
+        request_id=req.id,
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.get("/{track_number}/timeline", response_model=list[PublicTimelineEvent])
 def list_timeline_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -658,6 +827,15 @@ def list_timeline_by_track(
         return event.created_at or ""
 
     events.sort(key=_sort_key)
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_REQUEST_TIMELINE",
+        scope="REQUEST_TIMELINE",
+        request_id=req.id,
+        details={"rows": len(events)},
+    )
     return events
 
 
@@ -665,9 +843,11 @@ def list_timeline_by_track(
 def create_service_request_by_track(
     track_number: str,
     payload: PublicServiceRequestCreate,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(request, endpoint="/api/public/requests/{track_number}/service-requests")
     req = _request_for_track_or_404(db, session, track_number)
     request_type = str(payload.type or "").strip().upper()
     if request_type not in SERVICE_REQUEST_TYPES:
@@ -720,6 +900,7 @@ def create_service_request_by_track(
 @router.get("/{track_number}/service-requests", response_model=list[PublicServiceRequestRead])
 def list_service_requests_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
@@ -733,12 +914,23 @@ def list_service_requests_by_track(
         .order_by(RequestServiceRequest.created_at.desc(), RequestServiceRequest.id.desc())
         .all()
     )
-    return [_serialize_public_service_request(row) for row in rows]
+    payload = [_serialize_public_service_request(row) for row in rows]
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_SERVICE_REQUESTS",
+        scope="SERVICE_REQUEST",
+        request_id=req.id,
+        details={"rows": len(rows)},
+    )
+    return payload
 
 
 @router.get("/{track_number}/notifications")
 def list_notifications_by_track(
     track_number: str,
+    request: FastapiRequest,
     unread_only: bool = False,
     limit: int = 50,
     offset: int = 0,
@@ -762,20 +954,32 @@ def list_notifications_by_track(
         limit=1,
         offset=0,
     )
-    return {
+    payload = {
         "rows": [serialize_notification(row) for row in rows],
         "total": int(total),
         "unread_total": int(unread_total),
     }
+    _record_public_read_audit(
+        db,
+        session=session,
+        http_request=request,
+        action="READ_NOTIFICATIONS",
+        scope="NOTIFICATION",
+        request_id=req.id,
+        details={"rows": int(total), "unread_only": bool(unread_only)},
+    )
+    return payload
 
 
 @router.post("/{track_number}/notifications/{notification_id}/read")
 def read_notification_by_track(
     track_number: str,
     notification_id: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(request, endpoint="/api/public/requests/{track_number}/notifications/{notification_id}/read")
     req = _request_for_track_or_404(db, session, track_number)
     try:
         notification_uuid = UUID(str(notification_id))
@@ -799,9 +1003,11 @@ def read_notification_by_track(
 @router.post("/{track_number}/notifications/read-all")
 def read_all_notifications_by_track(
     track_number: str,
+    request: FastapiRequest,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
+    enforce_public_origin_or_403(request, endpoint="/api/public/requests/{track_number}/notifications/read-all")
     req = _request_for_track_or_404(db, session, track_number)
     changed = mark_client_notifications_read(
         db,

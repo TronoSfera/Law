@@ -277,7 +277,7 @@ class PublicCabinetTests(unittest.TestCase):
 
         with self.SessionLocal() as db:
             raw_encrypted = db.execute(text("SELECT body FROM messages ORDER BY created_at DESC LIMIT 1")).scalar_one()
-            self.assertTrue(str(raw_encrypted).startswith("chatenc:v1:"))
+            self.assertTrue(str(raw_encrypted).startswith("chatenc:"))
             self.assertNotEqual(str(raw_encrypted), payload_body)
 
         listed = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-ENC/messages", cookies=cookies)

@@ -92,4 +92,7 @@ class HttpHardeningTests(unittest.TestCase):
         }
         headers = _response_security_headers(Request(scope))
         self.assertEqual(headers.get("X-Frame-Options"), "DENY")
-        self.assertIn("frame-ancestors 'none'", str(headers.get("Content-Security-Policy")))
+        csp = str(headers.get("Content-Security-Policy"))
+        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertIn("script-src 'self'", csp)
+        self.assertIn("connect-src 'self'", csp)

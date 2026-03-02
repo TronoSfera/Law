@@ -159,6 +159,43 @@ class SecurityAuditTests(unittest.TestCase):
             self.assertEqual(str(row.attachment_id), attachment_id)
             self.assertEqual(row.scope, "REQUEST_ATTACHMENT")
 
+    def test_public_request_card_read_writes_pii_access_event(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-SEC-READ-1",
+                client_name="Клиент",
+                client_phone="+79990001011",
+                topic_code="civil-law",
+                status_code="NEW",
+                extra_fields={},
+            )
+            db.add(req)
+            db.commit()
+
+        public_token = create_jwt(
+            {"sub": "TRK-SEC-READ-1", "purpose": "VIEW_REQUEST"},
+            settings.PUBLIC_JWT_SECRET,
+            timedelta(days=1),
+        )
+        cookies = {settings.PUBLIC_COOKIE_NAME: public_token}
+        response = self.client.get("/api/public/requests/TRK-SEC-READ-1", cookies=cookies)
+        self.assertEqual(response.status_code, 200)
+
+        with self.SessionLocal() as db:
+            rows = (
+                db.query(SecurityAuditLog)
+                .filter(
+                    SecurityAuditLog.action == "READ_REQUEST_CARD",
+                    SecurityAuditLog.scope == "REQUEST_CARD",
+                    SecurityAuditLog.actor_role == "CLIENT",
+                )
+                .all()
+            )
+            self.assertGreaterEqual(len(rows), 1)
+            row = rows[-1]
+            self.assertTrue(row.allowed)
+            self.assertEqual(row.actor_subject, "TRK-SEC-READ-1")
+
     def test_admin_object_proxy_denied_writes_security_deny_event(self):
         fake_s3 = _FakeS3Storage()
         with self.SessionLocal() as db:
