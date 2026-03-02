@@ -391,6 +391,8 @@ def save_data_request_values(
         updated += 1
 
     if updated:
+        message.updated_at = datetime.now(timezone.utc)
+        db.add(message)
         mark_unread_for_lawyer(req, EVENT_REQUEST_DATA)
         req.responsible = "Клиент"
         notify_request_event(

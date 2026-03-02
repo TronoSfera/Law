@@ -833,6 +833,9 @@ def upsert_data_request_batch(
         for row in existing_message_rows:
             if row.key not in touched_keys:
                 db.delete(row)
+        if existing_message is not None:
+            existing_message.updated_at = datetime.now(timezone.utc)
+            db.add(existing_message)
         mark_unread_for_client(req, EVENT_REQUEST_DATA)
         req.responsible = responsible
         db.add(req)

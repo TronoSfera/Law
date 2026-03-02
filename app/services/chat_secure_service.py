@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from fastapi import HTTPException
@@ -14,6 +15,7 @@ from app.services.notifications import EVENT_MESSAGE as NOTIFICATION_EVENT_MESSA
 from app.services.request_read_markers import EVENT_MESSAGE, mark_unread_for_client, mark_unread_for_lawyer
 
 MAX_CHAT_MESSAGE_LEN = 12_000
+CHAT_PARTICIPANT_ADMIN_IDS_KEY = "chat_participant_admin_ids"
 
 
 def _normalize_message_body(body: str | None) -> str:
@@ -51,6 +53,38 @@ def _truncate_request_data_label(label: str, limit: int = 18) -> str:
     if len(text) <= limit:
         return text
     return text[: max(3, limit - 3)].rstrip() + "..."
+
+
+def _normalize_admin_uuid(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return str(uuid.UUID(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _register_chat_participant(request: Request, admin_user_id: str | None) -> None:
+    normalized = _normalize_admin_uuid(admin_user_id)
+    if not normalized:
+        return
+    current = request.extra_fields if isinstance(request.extra_fields, dict) else {}
+    extra = dict(current or {})
+    raw_ids = extra.get(CHAT_PARTICIPANT_ADMIN_IDS_KEY)
+    known_ids: set[str] = set()
+    if isinstance(raw_ids, list):
+        for value in raw_ids:
+            item = _normalize_admin_uuid(value)
+            if item:
+                known_ids.add(item)
+    elif isinstance(raw_ids, str):
+        item = _normalize_admin_uuid(raw_ids)
+        if item:
+            known_ids.add(item)
+    known_ids.add(normalized)
+    extra[CHAT_PARTICIPANT_ADMIN_IDS_KEY] = sorted(known_ids)
+    request.extra_fields = extra
 
 
 def serialize_messages_for_request(db: Session, request_id: Any, rows: list[Message]) -> list[dict[str, Any]]:
@@ -212,6 +246,7 @@ def create_admin_or_lawyer_message(
         body=message_body,
         responsible=responsible,
     )
+    _register_chat_participant(request, actor_admin_user_id)
     normalized_event = str(event_type or EVENT_MESSAGE).strip().upper() or EVENT_MESSAGE
     mark_unread_for_client(request, normalized_event)
     request.responsible = responsible

@@ -33,6 +33,7 @@ _EVENT_LABELS = {
     EVENT_ASSIGNMENT: "Заявка назначена",
     EVENT_REASSIGNMENT: "Заявка переназначена",
 }
+CHAT_PARTICIPANT_ADMIN_IDS_KEY = "chat_participant_admin_ids"
 
 
 def _as_utc_now() -> datetime:
@@ -90,6 +91,19 @@ def _active_admin_ids(db: Session, *, exclude_admin_user_id: uuid.UUID | None = 
         if exclude_admin_user_id is not None and admin_id == exclude_admin_user_id:
             continue
         out.append(admin_id)
+    return out
+
+
+def _chat_participant_admin_ids(request: Request) -> set[uuid.UUID]:
+    if not isinstance(request.extra_fields, dict):
+        return set()
+    raw = request.extra_fields.get(CHAT_PARTICIPANT_ADMIN_IDS_KEY)
+    values = raw if isinstance(raw, list) else [raw]
+    out: set[uuid.UUID] = set()
+    for value in values:
+        parsed = _as_uuid_or_none(value)
+        if parsed is not None:
+            out.add(parsed)
     return out
 
 
@@ -237,10 +251,55 @@ def notify_request_event(
             if row is not None:
                 internal_created += 1
 
+    def _notify_chat_participant_lawyers() -> None:
+        nonlocal internal_created
+        participant_ids = _chat_participant_admin_ids(request)
+        if not participant_ids:
+            return
+        assigned_lawyer_uuid = _as_uuid_or_none(request.assigned_lawyer_id)
+        target_ids = [item for item in participant_ids if actor_uuid is None or item != actor_uuid]
+        if not target_ids:
+            return
+        try:
+            rows = (
+                db.query(AdminUser.id, AdminUser.role, AdminUser.is_active)
+                .filter(AdminUser.id.in_(target_ids))
+                .all()
+            )
+        except SQLAlchemyError:
+            return
+        for admin_id, role, is_active in rows:
+            if not admin_id or not bool(is_active):
+                continue
+            role_code = str(role or "").strip().upper()
+            if role_code not in {"LAWYER", "CURATOR"}:
+                continue
+            if assigned_lawyer_uuid is not None and admin_id != assigned_lawyer_uuid:
+                continue
+            if assigned_lawyer_uuid is not None and admin_id == assigned_lawyer_uuid:
+                # Assigned lawyer already gets notification via _notify_lawyer_if_any.
+                continue
+            dedupe_key = _dedupe_key_for(f"participant:{admin_id}")
+            row = _create_notification(
+                db,
+                request=request,
+                recipient_type=RECIPIENT_ADMIN_USER,
+                recipient_admin_user_id=admin_id,
+                event_type=event,
+                title=title,
+                body=body,
+                payload=payload,
+                responsible=responsible,
+                dedupe_key=dedupe_key,
+            )
+            if row is not None:
+                internal_created += 1
+
     if event in {EVENT_MESSAGE, EVENT_ATTACHMENT, EVENT_REQUEST_DATA}:
         if actor == "CLIENT":
             _notify_lawyer_if_any()
             _notify_admins()
+            _notify_chat_participant_lawyers()
         else:
             _notify_client()
     elif event == EVENT_STATUS:

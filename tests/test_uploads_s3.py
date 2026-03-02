@@ -26,6 +26,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.request import Request
+from app.services.s3_storage import S3Storage
 
 
 class _FakeBody:
@@ -770,3 +771,32 @@ class UploadsS3Tests(unittest.TestCase):
             response = self.client.get(f"/api/admin/uploads/object/{key}?token={token}")
         self.assertEqual(response.status_code, 403)
         self.assertIn("антивирус", str(response.json().get("detail", "")).lower())
+
+    def test_s3_storage_allows_presign_when_head_bucket_forbidden(self):
+        class _S3ClientWithForbiddenHeadBucket:
+            def __init__(self):
+                self.head_bucket_calls = 0
+                self.create_bucket_calls = 0
+
+            def head_bucket(self, **kwargs):
+                self.head_bucket_calls += 1
+                raise ClientError({"Error": {"Code": "403", "Message": "Forbidden"}}, "HeadBucket")
+
+            def create_bucket(self, **kwargs):
+                self.create_bucket_calls += 1
+                return {}
+
+            def generate_presigned_url(self, operation_name, Params=None, ExpiresIn=900, HttpMethod="PUT"):
+                key = str((Params or {}).get("Key") or "file.bin")
+                return f"https://s3.local/{settings.S3_BUCKET}/{key}?expires={ExpiresIn}"
+
+        fake_client = _S3ClientWithForbiddenHeadBucket()
+        with patch("app.services.s3_storage.boto3.client", return_value=fake_client):
+            storage = S3Storage()
+            first = storage.create_presigned_put_url("avatars/test-user/photo.png", "image/png")
+            second = storage.create_presigned_put_url("avatars/test-user/photo-2.png", "image/png")
+
+        self.assertTrue(first.startswith("/s3/"))
+        self.assertTrue(second.startswith("/s3/"))
+        self.assertEqual(fake_client.head_bucket_calls, 1)
+        self.assertEqual(fake_client.create_bucket_calls, 0)

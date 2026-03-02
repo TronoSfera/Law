@@ -29,6 +29,7 @@ from app.models.request import Request
 from app.models.status import Status
 from app.models.status_history import StatusHistory
 from app.models.topic_status_transition import TopicStatusTransition
+from app.services.chat_secure_service import create_admin_or_lawyer_message
 from app.services.notifications import EVENT_REQUEST_DATA, notify_request_event
 from app.workers.tasks import sla as sla_task
 
@@ -391,6 +392,115 @@ class NotificationFlowTests(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertTrue(any(str(row.recipient_admin_user_id or "") == str(admin.id) for row in rows))
             self.assertTrue(any(str(row.recipient_admin_user_id or "") == str(lawyer.id) for row in rows))
+
+    def test_client_event_notifies_participant_lawyer_when_request_unassigned(self):
+        with self.SessionLocal() as db:
+            lawyer = AdminUser(
+                role="LAWYER",
+                name="Юрист Участник",
+                email="lawyer.participant@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add(lawyer)
+            db.flush()
+            req = Request(
+                track_number="TRK-NOTIF-PARTICIPANT",
+                client_name="Клиент",
+                client_phone="+79990000033",
+                topic_code="civil",
+                status_code="IN_PROGRESS",
+                description="participant notification",
+                extra_fields={},
+                assigned_lawyer_id=None,
+            )
+            db.add(req)
+            db.commit()
+
+            create_admin_or_lawyer_message(
+                db,
+                request=req,
+                body="Сообщение юриста",
+                actor_role="LAWYER",
+                actor_name="Юрист Участник",
+                actor_admin_user_id=str(lawyer.id),
+                event_type="MESSAGE",
+            )
+            result = notify_request_event(
+                db,
+                request=req,
+                event_type=EVENT_REQUEST_DATA,
+                actor_role="CLIENT",
+                body="Клиент обновил данные",
+                responsible="Клиент",
+                send_telegram=False,
+            )
+            db.commit()
+            self.assertEqual(int(result.get("internal_created") or 0), 1)
+
+            rows = db.query(Notification).filter(Notification.event_type == "REQUEST_DATA").all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0].recipient_admin_user_id), str(lawyer.id))
+
+    def test_client_event_stops_notifying_old_lawyer_after_reassign(self):
+        with self.SessionLocal() as db:
+            old_lawyer = AdminUser(
+                role="LAWYER",
+                name="Юрист Старый Участник",
+                email="lawyer.old.participant@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            new_lawyer = AdminUser(
+                role="LAWYER",
+                name="Юрист Новый Назначенный",
+                email="lawyer.new.assigned@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([old_lawyer, new_lawyer])
+            db.flush()
+            req = Request(
+                track_number="TRK-NOTIF-PARTICIPANT-REASSIGN",
+                client_name="Клиент",
+                client_phone="+79990000034",
+                topic_code="civil",
+                status_code="IN_PROGRESS",
+                description="participant reassignment notification",
+                extra_fields={},
+                assigned_lawyer_id=None,
+            )
+            db.add(req)
+            db.commit()
+
+            create_admin_or_lawyer_message(
+                db,
+                request=req,
+                body="Сообщение старого юриста",
+                actor_role="LAWYER",
+                actor_name="Юрист Старый Участник",
+                actor_admin_user_id=str(old_lawyer.id),
+                event_type="MESSAGE",
+            )
+            req.assigned_lawyer_id = str(new_lawyer.id)
+            db.add(req)
+            db.commit()
+
+            result = notify_request_event(
+                db,
+                request=req,
+                event_type=EVENT_REQUEST_DATA,
+                actor_role="CLIENT",
+                body="Клиент обновил данные",
+                responsible="Клиент",
+                send_telegram=False,
+            )
+            db.commit()
+            self.assertEqual(int(result.get("internal_created") or 0), 1)
+
+            rows = db.query(Notification).filter(Notification.event_type == "REQUEST_DATA").all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0].recipient_admin_user_id), str(new_lawyer.id))
 
 
 class NotificationSlaTests(unittest.TestCase):

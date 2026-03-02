@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
@@ -609,11 +610,26 @@ def _make_unique_value(db: Session, model: type, field_name: str, base_value: st
         idx += 1
 
 
+def _next_sort_order_value(db: Session, model: type) -> int:
+    if "sort_order" not in _columns_map(model):
+        return 1
+    column = getattr(model, "sort_order", None)
+    if column is None:
+        return 1
+    current_max = db.query(func.max(column)).scalar()
+    try:
+        return int(current_max or 0) + 1
+    except (TypeError, ValueError):
+        return 1
+
+
 def _apply_auto_fields_for_create(db: Session, model: type, table_name: str, payload: dict[str, Any]) -> dict[str, Any]:
     data = dict(payload)
     if table_name == "topics" and not str(data.get("code") or "").strip():
         base = _slugify(str(data.get("name") or ""), "topic")
         data["code"] = _make_unique_value(db, model, "code", base)
+    if table_name == "topics":
+        data["sort_order"] = _next_sort_order_value(db, model)
     if table_name == "statuses" and not str(data.get("code") or "").strip():
         base = _slugify(str(data.get("name") or ""), "status")
         data["code"] = _make_unique_value(db, model, "code", base)

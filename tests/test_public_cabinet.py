@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from unittest.mock import patch
 
@@ -376,6 +376,74 @@ class PublicCabinetTests(unittest.TestCase):
         )
         self.assertEqual(typing_on.status_code, 200)
         self.assertTrue(bool(typing_on.json().get("typing")))
+
+    def test_public_live_detects_filled_request_data_updates(self):
+        with self.SessionLocal() as db:
+            now = datetime.now(timezone.utc)
+            req = Request(
+                track_number="TRK-LIVE-DATA-001",
+                client_name="Клиент Live Data",
+                client_phone="+79997771235",
+                topic_code="consulting",
+                status_code="IN_PROGRESS",
+                description="Проверка live по допданным",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            msg = Message(
+                request_id=req.id,
+                author_type="LAWYER",
+                author_name="Юрист",
+                body="Запрос",
+                created_at=now - timedelta(minutes=2),
+                updated_at=now - timedelta(minutes=2),
+            )
+            db.add(msg)
+            db.flush()
+            row = RequestDataRequirement(
+                request_id=req.id,
+                request_message_id=msg.id,
+                key="passport_series",
+                label="Серия паспорта",
+                field_type="text",
+                required=True,
+                sort_order=0,
+            )
+            db.add(row)
+            db.commit()
+            message_id = str(msg.id)
+            row_id = str(row.id)
+
+        cookies = self._public_cookies("TRK-LIVE-DATA-001")
+        live_initial = self.chat_client.get("/api/public/chat/requests/TRK-LIVE-DATA-001/live", cookies=cookies)
+        self.assertEqual(live_initial.status_code, 200)
+        cursor = str(live_initial.json().get("cursor") or "")
+        self.assertTrue(bool(cursor))
+
+        live_no_delta = self.chat_client.get(
+            "/api/public/chat/requests/TRK-LIVE-DATA-001/live",
+            params={"cursor": cursor},
+            cookies=cookies,
+        )
+        self.assertEqual(live_no_delta.status_code, 200)
+        self.assertFalse(bool(live_no_delta.json().get("has_updates")))
+
+        save_values = self.chat_client.post(
+            f"/api/public/chat/requests/TRK-LIVE-DATA-001/data-requests/{message_id}",
+            cookies=cookies,
+            json={"items": [{"id": row_id, "value_text": "1234"}]},
+        )
+        self.assertEqual(save_values.status_code, 200)
+        self.assertEqual(int(save_values.json().get("updated") or 0), 1)
+
+        live_after_fill = self.chat_client.get(
+            "/api/public/chat/requests/TRK-LIVE-DATA-001/live",
+            params={"cursor": cursor},
+            cookies=cookies,
+        )
+        self.assertEqual(live_after_fill.status_code, 200)
+        self.assertTrue(bool(live_after_fill.json().get("has_updates")))
 
     def test_public_cabinet_respects_track_access(self):
         with self.SessionLocal() as db:

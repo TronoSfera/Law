@@ -538,3 +538,89 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(own_live_with_typing.status_code, 200)
         typing_rows = own_live_with_typing.json().get("typing") or []
         self.assertTrue(any(str(item.get("actor_role")) == "ADMIN" for item in typing_rows))
+
+    def test_admin_live_detects_client_filled_request_data_updates(self):
+        with self.SessionLocal() as db:
+            now = datetime.now(timezone.utc)
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Data Live",
+                email="lawyer.data.live@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add(lawyer_self)
+            db.flush()
+            self_id = str(lawyer_self.id)
+
+            own = Request(
+                track_number="TRK-CHAT-LIVE-DATA",
+                client_name="Клиент Data Live",
+                client_phone="+79995550111",
+                status_code="IN_PROGRESS",
+                description="own data live",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            db.add(own)
+            db.flush()
+            msg = Message(
+                request_id=own.id,
+                author_type="LAWYER",
+                author_name="Юрист",
+                body="Запрос",
+                created_at=now - timedelta(minutes=2),
+                updated_at=now - timedelta(minutes=2),
+            )
+            db.add(msg)
+            db.flush()
+            req_row = RequestDataRequirement(
+                request_id=own.id,
+                request_message_id=msg.id,
+                key="inn",
+                label="ИНН",
+                field_type="text",
+                required=True,
+                sort_order=0,
+            )
+            db.add(req_row)
+            db.commit()
+            own_id = str(own.id)
+            message_id = str(msg.id)
+            req_row_id = str(req_row.id)
+
+        lawyer_headers = self._auth_headers("LAWYER", email="lawyer.data.live@example.com", sub=self_id)
+        own_live = self.chat_client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
+        self.assertEqual(own_live.status_code, 200)
+        own_cursor = str(own_live.json().get("cursor") or "")
+        self.assertTrue(bool(own_cursor))
+
+        own_live_no_delta = self.chat_client.get(
+            f"/api/admin/chat/requests/{own_id}/live",
+            headers=lawyer_headers,
+            params={"cursor": own_cursor},
+        )
+        self.assertEqual(own_live_no_delta.status_code, 200)
+        self.assertFalse(bool(own_live_no_delta.json().get("has_updates")))
+
+        public_token = create_jwt(
+            {"sub": "TRK-CHAT-LIVE-DATA", "purpose": "VIEW_REQUEST"},
+            settings.PUBLIC_JWT_SECRET,
+            timedelta(minutes=30),
+        )
+        public_cookies = {settings.PUBLIC_COOKIE_NAME: public_token}
+        save_values = self.chat_client.post(
+            f"/api/public/chat/requests/TRK-CHAT-LIVE-DATA/data-requests/{message_id}",
+            cookies=public_cookies,
+            json={"items": [{"id": req_row_id, "value_text": "7701234567"}]},
+        )
+        self.assertEqual(save_values.status_code, 200)
+        self.assertEqual(int(save_values.json().get("updated") or 0), 1)
+
+        own_live_after_fill = self.chat_client.get(
+            f"/api/admin/chat/requests/{own_id}/live",
+            headers=lawyer_headers,
+            params={"cursor": own_cursor},
+        )
+        self.assertEqual(own_live_after_fill.status_code, 200)
+        self.assertTrue(bool(own_live_after_fill.json().get("has_updates")))

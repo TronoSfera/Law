@@ -1303,6 +1303,16 @@
       background: transparent;
     }
 
+    .config-floating-actions {
+      position: fixed;
+      right: 1.15rem;
+      top: 164px;
+      z-index: 35;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
     .config-panel-flat .config-content .table-wrap table {
       min-width: 640px;
     }
@@ -3011,6 +3021,12 @@
       .config-controls-actions {
         width: 100%;
         margin-left: 0;
+      }
+      .config-floating-actions {
+        position: static;
+        justify-content: flex-end;
+        width: 100%;
+        margin-bottom: 0.5rem;
       }
       .topbar {
         flex-direction: column;

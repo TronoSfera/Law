@@ -46,6 +46,11 @@ class S3Storage:
             self.client.head_bucket(Bucket=self.bucket)
         except ClientError as exc:
             code = str(exc.response.get("Error", {}).get("Code", ""))
+            # In production setups credentials may be scoped to object operations only.
+            # If bucket-level HeadBucket is forbidden, continue and let object-level calls decide.
+            if code in {"403", "AccessDenied", "Forbidden"}:
+                self._bucket_checked = True
+                return
             if code not in {"404", "NoSuchBucket", "NotFound"}:
                 raise
             kwargs: dict = {"Bucket": self.bucket}

@@ -107,6 +107,28 @@ export function ConfigSection(props) {
               <div className="config-layout">
                 <div className="config-panel config-panel-flat">
                   <div className="config-content">
+                    <div className="config-floating-actions">
+                      <button
+                        className="btn secondary table-control-btn"
+                        type="button"
+                        onClick={() => openCreateRecordModal(configActiveKey)}
+                        disabled={!canCreateRecord}
+                        title="Добавить"
+                        aria-label="Добавить"
+                      >
+                        <AddIcon />
+                      </button>
+                      <button
+                        className="btn secondary table-control-btn"
+                        type="button"
+                        onClick={() => openFilterModal(configActiveKey)}
+                        disabled={!configActiveKey}
+                        title="Фильтр"
+                        aria-label="Фильтр"
+                      >
+                        <FilterIcon />
+                      </button>
+                    </div>
                     <FilterToolbar
                       filters={activeConfigTableState.filters}
                       onOpen={() => openFilterModal(configActiveKey)}
@@ -615,26 +637,6 @@ export function ConfigSection(props) {
                           aria-label="Обновить"
                         >
                           <RefreshIcon />
-                        </button>
-                        <button
-                          className="btn secondary table-control-btn"
-                          type="button"
-                          onClick={() => openCreateRecordModal(configActiveKey)}
-                          disabled={!canCreateRecord}
-                          title="Добавить"
-                          aria-label="Добавить"
-                        >
-                          <AddIcon />
-                        </button>
-                        <button
-                          className="btn secondary table-control-btn"
-                          type="button"
-                          onClick={() => openFilterModal(configActiveKey)}
-                          disabled={!configActiveKey}
-                          title="Фильтр"
-                          aria-label="Фильтр"
-                        >
-                          <FilterIcon />
                         </button>
                         <button
                           className="btn secondary table-control-btn"

@@ -331,6 +331,24 @@ class AdminAssignmentAndUsersTests(AdminUniversalCrudBase):
         self.assertRegex(body2["code"], r"^[a-z0-9-]+$")
         self.assertNotEqual(body1["code"], body2["code"])
 
+    def test_topic_sort_order_is_assigned_as_next_max_on_create(self):
+        headers = self._auth_headers("ADMIN")
+        first = self.client.post(
+            "/api/admin/crud/topics",
+            headers=headers,
+            json={"name": "Первая тема", "sort_order": 999},
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(int(first.json().get("sort_order") or 0), 1)
+
+        second = self.client.post(
+            "/api/admin/crud/topics",
+            headers=headers,
+            json={"name": "Вторая тема"},
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(int(second.json().get("sort_order") or 0), 2)
+
     def test_admin_can_manage_users_with_password_hashing(self):
         headers = self._auth_headers("ADMIN", email="root@example.com")
         topic_create = self.client.post(
@@ -409,4 +427,3 @@ class AdminAssignmentAndUsersTests(AdminUniversalCrudBase):
 
         deleted = self.client.delete(f"/api/admin/crud/admin_users/{user_id}", headers=headers)
         self.assertEqual(deleted.status_code, 200)
-
