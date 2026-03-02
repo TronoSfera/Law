@@ -2354,8 +2354,14 @@
       gap: 0.5rem;
     }
 
+    .request-chat-block {
+      --request-chat-pane-height: clamp(280px, 54vh, 470px);
+    }
+
     .request-chat-block .request-modal-list {
-      max-height: 480px;
+      max-height: var(--request-chat-pane-height);
+      min-height: var(--request-chat-pane-height);
+      height: var(--request-chat-pane-height);
     }
 
     .request-chat-head {
@@ -2424,7 +2430,6 @@
     }
 
     .request-chat-list {
-      max-height: 470px;
       overflow: auto;
       display: flex;
       flex-direction: column;
@@ -2732,7 +2737,6 @@
     }
 
     .request-files-tab .request-modal-list {
-      max-height: 520px;
       overflow: auto;
     }
 

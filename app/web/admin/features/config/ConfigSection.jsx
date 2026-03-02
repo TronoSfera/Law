@@ -1,6 +1,6 @@
 import { KNOWN_CONFIG_TABLE_KEYS, OPERATOR_LABELS, PAGE_SIZE, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
 import { AddIcon, DownloadIcon, FilterIcon, NextIcon, PrevIcon, RefreshIcon } from "../../shared/icons.jsx";
-import { boolLabel, fmtDate, listPreview, normalizeReferenceMeta, roleLabel, statusKindLabel, statusLabel } from "../../shared/utils.js";
+import { boolLabel, fmtDate, listPreview, normalizeReferenceMeta, roleLabel, statusKindLabel } from "../../shared/utils.js";
 
 function fmtBalance(value) {
   const number = Number(value);
@@ -68,6 +68,8 @@ export function ConfigSection(props) {
   const StatusLine = StatusLineComponent;
   const IconButton = IconButtonComponent;
   const UserAvatar = UserAvatarComponent;
+  const statusRouteLabel = (code) =>
+    resolveReferenceLabel({ table: "statuses", value_field: "code", label_field: "name" }, code);
   const canRefresh = Boolean(configActiveKey);
   const canCreateRecord = Boolean(canCreateInConfig && configActiveKey);
   const canLoadAllRows = Boolean(
@@ -422,7 +424,7 @@ export function ConfigSection(props) {
                                             type="button"
                                             onClick={() => openEditRecordModal("statusTransitions", link)}
                                           >
-                                            <span>{statusLabel(link.to_status) + " (" + String(link.to_status || "-") + ")"}</span>
+                                            <span>{statusRouteLabel(link.to_status)}</span>
                                             <small>
                                               {"SLA: " +
                                                 (link.sla_hours == null ? "-" : String(link.sla_hours) + " ч") +
@@ -466,8 +468,8 @@ export function ConfigSection(props) {
                           renderRow={(row) => (
                             <tr key={row.id}>
                               <td>{row.topic_code || "-"}</td>
-                              <td>{statusLabel(row.from_status)}</td>
-                              <td>{statusLabel(row.to_status)}</td>
+                              <td>{statusRouteLabel(row.from_status)}</td>
+                              <td>{statusRouteLabel(row.to_status)}</td>
                               <td>{row.sla_hours == null ? "-" : String(row.sla_hours)}</td>
                               <td>{listPreview(row.required_data_keys, "-")}</td>
                               <td>{listPreview(row.required_mime_types, "-")}</td>

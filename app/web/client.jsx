@@ -1,6 +1,6 @@
 import { RequestWorkspace } from "./admin/features/requests/RequestWorkspace.jsx";
 import { createRequestModalState } from "./admin/shared/state.js";
-import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/utils.js";
+import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./admin/shared/utils.js";
 
 (function () {
   const { useCallback, useEffect, useMemo, useRef, useState } = React;
@@ -849,23 +849,23 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
               </button>
             </div>
 
-            <div className="client-summary block" id="cabinet-summary" hidden={!summary}>
-              <div className="client-summary-grid">
-                <div className="request-field">
-                  <span className="request-field-label">Статус</span>
-                  <span className="request-field-value" id="cabinet-request-status">{summary ? String(summary.status_code || "-") : "-"}</span>
+            <div className="client-summary" id="cabinet-summary" hidden={!summary}>
+              <div className="client-summary-row">
+                <div className="client-summary-chips">
+                  <span className="client-summary-chip client-summary-chip-status">
+                    Статус: <span id="cabinet-request-status">{summary ? statusLabel(summary.status_code) : "-"}</span>
+                  </span>
+                  <span className="client-summary-chip client-summary-chip-topic">
+                    Тема: <span id="cabinet-request-topic">{summary ? String(summary.topic_name || summary.topic_code || "-") : "-"}</span>
+                  </span>
                 </div>
-                <div className="request-field">
-                  <span className="request-field-label">Тема</span>
-                  <span className="request-field-value" id="cabinet-request-topic">{summary ? String(summary.topic_name || summary.topic_code || "-") : "-"}</span>
-                </div>
-                <div className="request-field">
-                  <span className="request-field-label">Создана</span>
-                  <span className="request-field-value" id="cabinet-request-created">{summary ? fmtShortDateTime(summary.created_at) : "-"}</span>
-                </div>
-                <div className="request-field">
-                  <span className="request-field-label">Обновлена</span>
-                  <span className="request-field-value" id="cabinet-request-updated">{summary ? fmtShortDateTime(summary.updated_at) : "-"}</span>
+                <div className="client-summary-dates">
+                  <span>
+                    Создана: <b id="cabinet-request-created">{summary ? fmtShortDateTime(summary.created_at) : "-"}</b>
+                  </span>
+                  <span>
+                    Обновлена: <b id="cabinet-request-updated">{summary ? fmtShortDateTime(summary.updated_at) : "-"}</b>
+                  </span>
                 </div>
               </div>
             </div>

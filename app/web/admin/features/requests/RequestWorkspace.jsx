@@ -174,6 +174,7 @@ export function RequestWorkspace({
   const canFillRequestData = viewerRoleCode === "CLIENT";
   const canSeeRate = viewerRoleCode !== "CLIENT";
   const canSeeCreatedUpdatedInCard = viewerRoleCode !== "CLIENT";
+  const showTopicStatusInCard = viewerRoleCode !== "CLIENT";
   const safeMessages = Array.isArray(messages) ? messages : [];
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
   const safeStatusHistory = Array.isArray(statusHistory) ? statusHistory : [];
@@ -1254,14 +1255,18 @@ export function RequestWorkspace({
             ) : row ? (
               <>
                 <div className="request-card-grid request-card-grid-compact">
-                  <div className="request-field">
-                    <span className="request-field-label">Тема</span>
-                    <span className="request-field-value">{String(row.topic_name || row.topic_code || "-")}</span>
-                  </div>
-                  <div className="request-field">
-                    <span className="request-field-label">Статус</span>
-                    <span className="request-field-value">{statusLabel(row.status_code)}</span>
-                  </div>
+                  {showTopicStatusInCard ? (
+                    <>
+                      <div className="request-field">
+                        <span className="request-field-label">Тема</span>
+                        <span className="request-field-value">{String(row.topic_name || row.topic_code || "-")}</span>
+                      </div>
+                      <div className="request-field">
+                        <span className="request-field-label">Статус</span>
+                        <span className="request-field-value">{statusLabel(row.status_code)}</span>
+                      </div>
+                    </>
+                  ) : null}
                   <div className="request-field request-field-span-2 request-field-description">
                     <div className="request-field-head">
                       <span className="request-field-label">Описание проблемы</span>
