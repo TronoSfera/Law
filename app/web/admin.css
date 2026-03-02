@@ -2740,6 +2740,12 @@
       margin-bottom: 0.65rem;
     }
 
+    .modal-head-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
     .modal-head h3 {
       margin: 0;
       font-family: "Prata", serif;

@@ -594,6 +594,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     profileLoading,
     saveLoading,
     form,
+    currentEmail,
+    currentRoleLabel,
     totpStatus,
     onFieldChange,
     onClose,
@@ -601,6 +603,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     onSetupTotp,
     onRegenerateBackupCodes,
     onDisableTotp,
+    onLogout,
   }) {
     if (!open) return null;
     return (
@@ -613,14 +616,31 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 Профиль и безопасность аккаунта.
               </p>
             </div>
-            <button className="close" type="button" onClick={onClose}>
-              ×
-            </button>
+            <div className="modal-head-actions">
+              <button className="icon-btn" type="button" data-tooltip="Выйти из аккаунта" aria-label="Выйти из аккаунта" onClick={onLogout}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path
+                    d="M15.4 5.4a1 1 0 0 1 1.4 0l5.2 5.2a1 1 0 0 1 0 1.4l-5.2 5.2a1 1 0 1 1-1.4-1.4l3.5-3.4H9a1 1 0 1 1 0-2h9.9l-3.5-3.4a1 1 0 0 1 0-1.4zM3 4a1 1 0 0 1 1-1h7a1 1 0 1 1 0 2H5v14h6a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1V4z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+              <button className="close" type="button" onClick={onClose}>
+                ×
+              </button>
+            </div>
           </div>
           {profileLoading ? (
             <p className="muted">Загрузка профиля...</p>
           ) : (
             <form className="stack" onSubmit={onSubmit}>
+              <div className="account-security-box">
+                Пользователь: <b>{currentEmail || "-"}</b>
+                <br />
+                Роль: <b>{currentRoleLabel || "-"}</b>
+                <br />
+                2FA: <b>{totpStatus.enabled ? "Включена" : "Выключена"}</b>
+              </div>
               <div className="account-modal-grid">
                 <div className="field">
                   <label htmlFor="account-name">Имя</label>
@@ -3469,25 +3489,9 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 </>
               ) : null}
             </nav>
-            <div className="auth-box">
-              {token && role ? (
-                <>
-                  Пользователь: <b>{email}</b>
-                  <br />
-                  Роль: <b>{roleLabel(role)}</b>
-                  <br />
-                  2FA: <b>{totpStatus.enabled ? "Включена" : "Выключена"}</b>
-                </>
-              ) : (
-                "Не авторизован"
-              )}
-            </div>
             <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button className="btn secondary" type="button" onClick={refreshAll}>
                 Обновить
-              </button>
-              <button className="btn danger" type="button" onClick={logout}>
-                Выйти
               </button>
             </div>
           </aside>
@@ -3912,6 +3916,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           profileLoading={accountModal.loading}
           saveLoading={accountModal.saving}
           form={accountModal.form}
+          currentEmail={email}
+          currentRoleLabel={roleLabel(role)}
           totpStatus={totpStatus}
           onFieldChange={updateAccountField}
           onClose={closeAccountModal}
@@ -3919,6 +3925,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           onSetupTotp={setupTotp}
           onRegenerateBackupCodes={regenerateTotpBackupCodes}
           onDisableTotp={disableTotp}
+          onLogout={logout}
         />
 
         {!token || !role ? <LoginScreen onSubmit={login} status={getStatus("login")} /> : null}
