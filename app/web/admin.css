@@ -1222,6 +1222,25 @@
       min-width: 0;
     }
 
+    .config-panel-flat .config-content {
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+    }
+
+    .config-actions-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .config-panel-flat .config-content .table-wrap table {
+      min-width: 640px;
+    }
+
     .block {
       border: 1px solid var(--line);
       border-radius: 12px;

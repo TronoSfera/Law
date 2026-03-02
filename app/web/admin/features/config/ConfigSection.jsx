@@ -95,16 +95,15 @@ export function ConfigSection(props) {
                 </div>
               </div>
               <div className="config-layout">
-                <div className="config-panel">
-                  <div className="block">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                      <h3 style={{ margin: 0 }}>{configActiveKey ? getTableLabel(configActiveKey) : "Справочник не выбран"}</h3>
-                      {canCreateInConfig && configActiveKey ? (
+                <div className="config-panel config-panel-flat">
+                  <div className="config-content">
+                    {canCreateInConfig && configActiveKey ? (
+                      <div className="config-actions-row">
                         <button className="btn" type="button" onClick={() => openCreateRecordModal(configActiveKey)}>
                           Добавить
                         </button>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : null}
                     <FilterToolbar
                       filters={activeConfigTableState.filters}
                       onOpen={() => openFilterModal(configActiveKey)}
