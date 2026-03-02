@@ -37,20 +37,13 @@ export function QuotesSection({
           <h2>Цитаты</h2>
           <p className="muted">Управление публичной лентой цитат с серверными фильтрами.</p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn secondary" type="button" onClick={onRefresh}>
-            Обновить
-          </button>
-          <button className="btn" type="button" onClick={onCreate}>
-            Новая цитата
-          </button>
-        </div>
       </div>
       <FilterToolbar
         filters={tableState.filters}
         onOpen={onOpenFilter}
         onRemove={onRemoveFilter}
         onEdit={onEditFilter}
+        hideAction
         getChipLabel={(clause) => {
           const fieldDef = getFieldDef("quotes", clause.field);
           return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("quotes", clause);
@@ -87,7 +80,15 @@ export function QuotesSection({
           </tr>
         )}
       />
-      <TablePager tableState={tableState} onPrev={onPrev} onNext={onNext} onLoadAll={onLoadAll} />
+      <TablePager
+        tableState={tableState}
+        onPrev={onPrev}
+        onNext={onNext}
+        onLoadAll={onLoadAll}
+        onRefresh={onRefresh}
+        onCreate={onCreate}
+        onOpenFilter={onOpenFilter}
+      />
       <StatusLine status={status} />
     </>
   );

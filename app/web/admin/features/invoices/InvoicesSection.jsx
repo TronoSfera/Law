@@ -40,20 +40,13 @@ export function InvoicesSection({
           <h2>Счета</h2>
           <p className="muted">Выставленные счета клиентам, статусы оплаты и выгрузка PDF.</p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn secondary" type="button" onClick={onRefresh}>
-            Обновить
-          </button>
-          <button className="btn" type="button" onClick={onCreate}>
-            Новый счет
-          </button>
-        </div>
       </div>
       <FilterToolbar
         filters={tableState.filters}
         onOpen={onOpenFilter}
         onRemove={onRemoveFilter}
         onEdit={onEditFilter}
+        hideAction
         getChipLabel={(clause) => {
           const fieldDef = getFieldDef("invoices", clause.field);
           return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("invoices", clause);
@@ -112,7 +105,15 @@ export function InvoicesSection({
           </tr>
         )}
       />
-      <TablePager tableState={tableState} onPrev={onPrev} onNext={onNext} onLoadAll={onLoadAll} />
+      <TablePager
+        tableState={tableState}
+        onPrev={onPrev}
+        onNext={onNext}
+        onLoadAll={onLoadAll}
+        onRefresh={onRefresh}
+        onCreate={onCreate}
+        onOpenFilter={onOpenFilter}
+      />
       <StatusLine status={status} />
     </>
   );

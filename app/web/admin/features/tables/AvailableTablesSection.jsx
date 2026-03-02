@@ -1,4 +1,5 @@
 import { boolLabel, fmtDate } from "../../shared/utils.js";
+import { RefreshIcon } from "../../shared/icons.jsx";
 
 export function AvailableTablesSection({
   tables,
@@ -21,8 +22,8 @@ export function AvailableTablesSection({
           <h2>Доступность таблиц</h2>
           <p className="muted">Скрытая служебная вкладка. Доступ только для администратора по прямой ссылке.</p>
         </div>
-        <button className="btn secondary" type="button" onClick={onRefresh}>
-          Обновить
+        <button className="btn secondary table-control-btn" type="button" onClick={onRefresh} title="Обновить" aria-label="Обновить">
+          <RefreshIcon />
         </button>
       </div>
       <DataTable

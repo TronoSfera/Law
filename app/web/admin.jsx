@@ -60,6 +60,7 @@ import {
   translateApiError,
   userInitials,
 } from "./admin/shared/utils.js";
+import { AddIcon, DownloadIcon, FilterIcon, NextIcon, PrevIcon, RefreshIcon } from "./admin/shared/icons.jsx";
 import QRCode from "qrcode";
 
 (function () {
@@ -120,7 +121,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
   }
 
-  function TablePager({ tableState, onPrev, onNext, onLoadAll }) {
+  function TablePager({ tableState, onPrev, onNext, onLoadAll, onRefresh, onCreate, onOpenFilter }) {
     return (
       <div className="pager table-footer-bar">
         <div>
@@ -128,25 +129,45 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             ? "Всего: " + tableState.total + " • показаны все записи"
             : "Всего: " + tableState.total + " • смещение: " + tableState.offset}
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div className="table-footer-actions">
           <button
-            className="btn secondary"
+            className="btn secondary table-control-btn table-control-loadall"
             type="button"
             onClick={onLoadAll}
             disabled={tableState.total === 0 || tableState.showAll || tableState.rows.length >= tableState.total}
+            title={"Загрузить все " + tableState.total}
+            aria-label={"Загрузить все " + tableState.total}
           >
-            {"Загрузить все " + tableState.total}
+            <DownloadIcon />
+            <span>{tableState.total}</span>
           </button>
-          <button className="btn secondary" type="button" onClick={onPrev} disabled={tableState.showAll || tableState.offset <= 0}>
-            Назад
+          {onRefresh ? (
+            <button className="btn secondary table-control-btn" type="button" onClick={onRefresh} title="Обновить" aria-label="Обновить">
+              <RefreshIcon />
+            </button>
+          ) : null}
+          {onCreate ? (
+            <button className="btn secondary table-control-btn" type="button" onClick={onCreate} title="Добавить" aria-label="Добавить">
+              <AddIcon />
+            </button>
+          ) : null}
+          {onOpenFilter ? (
+            <button className="btn secondary table-control-btn" type="button" onClick={onOpenFilter} title="Фильтр" aria-label="Фильтр">
+              <FilterIcon />
+            </button>
+          ) : null}
+          <button className="btn secondary table-control-btn" type="button" onClick={onPrev} disabled={tableState.showAll || tableState.offset <= 0} title="Назад" aria-label="Назад">
+            <PrevIcon />
           </button>
           <button
-            className="btn secondary"
+            className="btn secondary table-control-btn"
             type="button"
             onClick={onNext}
             disabled={tableState.showAll || tableState.offset + PAGE_SIZE >= tableState.total}
+            title="Вперед"
+            aria-label="Вперед"
           >
-            Вперед
+            <NextIcon />
           </button>
         </div>
       </div>
@@ -192,8 +213,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         </div>
         {!hideAction ? (
           <div className="filter-action">
-            <button className="btn secondary" type="button" onClick={onOpen}>
-              Фильтр
+            <button className="btn secondary table-control-btn" type="button" onClick={onOpen} title="Фильтр" aria-label="Фильтр">
+              <FilterIcon />
             </button>
           </div>
         ) : null}
@@ -3448,7 +3469,10 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         <div className="layout">
           <aside className="sidebar">
             <div className="logo">
-              <a href="/">Правовой трекер</a>
+              <a href="/">
+                <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
+                <span>Правовой трекер</span>
+              </a>
             </div>
             <nav className="menu">
               {menuItems.map((item) => (

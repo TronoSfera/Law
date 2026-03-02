@@ -770,7 +770,10 @@ import { detectAttachmentPreviewKind, fmtShortDateTime } from "./admin/shared/ut
         <main className="main client-main">
           <div className="topbar client-topbar">
             <div>
-              <h1>Кабинет клиента</h1>
+              <div className="client-title-row">
+                <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
+                <h1>Кабинет клиента</h1>
+              </div>
               <p className="muted">Работа с заявками: статусы, чат, файлы и обращения.</p>
             </div>
             <button

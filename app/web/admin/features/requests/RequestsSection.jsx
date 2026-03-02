@@ -122,20 +122,13 @@ export function RequestsSection({
           <h2>Заявки</h2>
           <p className="muted">Серверная фильтрация и просмотр клиентских заявок.</p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn secondary" type="button" onClick={onRefresh}>
-            Обновить
-          </button>
-          <button className="btn" type="button" onClick={onCreate}>
-            Новая заявка
-          </button>
-        </div>
       </div>
       <FilterToolbar
         filters={tableState.filters}
         onOpen={onOpenFilter}
         onRemove={onRemoveFilter}
         onEdit={onEditFilter}
+        hideAction
         getChipLabel={(clause) => {
           const fieldDef = getFieldDef("requests", clause.field);
           return (fieldDef ? fieldDef.label : clause.field) + " " + OPERATOR_LABELS[clause.op] + " " + getFilterValuePreview("requests", clause);
@@ -195,7 +188,15 @@ export function RequestsSection({
           </tr>
         )}
       />
-      <TablePager tableState={tableState} onPrev={onPrev} onNext={onNext} onLoadAll={onLoadAll} />
+      <TablePager
+        tableState={tableState}
+        onPrev={onPrev}
+        onNext={onNext}
+        onLoadAll={onLoadAll}
+        onRefresh={onRefresh}
+        onCreate={onCreate}
+        onOpenFilter={onOpenFilter}
+      />
       <StatusLine status={status || (typeof getStatus === "function" ? getStatus("requests") : null)} />
     </>
   );

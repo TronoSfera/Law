@@ -1,4 +1,5 @@
 import { KANBAN_GROUPS } from "../../shared/constants.js";
+import { FilterIcon, RefreshIcon } from "../../shared/icons.jsx";
 import { fallbackStatusGroup, fmtKanbanDate, resolveDeadlineTone, statusLabel } from "../../shared/utils.js";
 
 export function KanbanBoard({
@@ -70,12 +71,15 @@ export function KanbanBoard({
           <h2>Канбан заявок</h2>
           <p className="muted">Группировка по группам статусов и серверная фильтрация карточек.</p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div className="section-head-actions">
           <button className={"btn secondary" + (sortActive ? " active-success" : "")} type="button" onClick={onOpenSort}>
             Сортировка
           </button>
-          <button className="btn secondary" type="button" onClick={onRefresh} disabled={loading}>
-            Обновить
+          <button className="btn secondary table-control-btn" type="button" onClick={onRefresh} disabled={loading} title="Обновить" aria-label="Обновить">
+            <RefreshIcon />
+          </button>
+          <button className="btn secondary table-control-btn" type="button" onClick={onOpenFilter} title="Фильтр" aria-label="Фильтр">
+            <FilterIcon />
           </button>
         </div>
       </div>
@@ -85,6 +89,7 @@ export function KanbanBoard({
           onOpen={onOpenFilter}
           onRemove={onRemoveFilter}
           onEdit={onEditFilter}
+          hideAction
           getChipLabel={getFilterChipLabel}
         />
       ) : null}

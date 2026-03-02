@@ -12,6 +12,21 @@
   margin: 0.35rem 0 0;
 }
 
+.client-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.52rem;
+}
+
+.client-title-row .brand-mark {
+  width: 24px;
+  height: 24px;
+}
+
+.client-title-row h1 {
+  margin: 0;
+}
+
 .client-section {
   display: block;
 }

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="law-gold-favicon" x1="14" y1="10" x2="50" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E4C28D" />
+      <stop offset="1" stop-color="#C8924A" />
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="29" fill="#101A25" stroke="url(#law-gold-favicon)" stroke-width="2.5" />
+  <path d="M22 20h20" stroke="url(#law-gold-favicon)" stroke-width="2.8" stroke-linecap="round" />
+  <path d="M32 20v21" stroke="url(#law-gold-favicon)" stroke-width="2.8" stroke-linecap="round" />
+  <path d="M26 20l-5 10" stroke="url(#law-gold-favicon)" stroke-width="2.4" stroke-linecap="round" />
+  <path d="M38 20l5 10" stroke="url(#law-gold-favicon)" stroke-width="2.4" stroke-linecap="round" />
+  <path d="M17.5 33.5h7a4 4 0 0 1-7 0Z" fill="url(#law-gold-favicon)" />
+  <path d="M39.5 33.5h7a4 4 0 0 1-7 0Z" fill="url(#law-gold-favicon)" />
+  <path d="M25 45h14" stroke="url(#law-gold-favicon)" stroke-width="2.8" stroke-linecap="round" />
+</svg>

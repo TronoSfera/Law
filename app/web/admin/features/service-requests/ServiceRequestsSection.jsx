@@ -63,17 +63,13 @@ export function ServiceRequestsSection({
           <h2>Запросы</h2>
           <p className="muted">Запросы клиента к куратору и обращения на смену юриста.</p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn secondary" type="button" onClick={onRefresh}>
-            Обновить
-          </button>
-        </div>
       </div>
       <FilterToolbar
         filters={tableState.filters}
         onOpen={onOpenFilter}
         onRemove={onRemoveFilter}
         onEdit={onEditFilter}
+        hideAction
         getChipLabel={(clause) => {
           const fieldDef = getFieldDef("serviceRequests", clause.field);
           return (
@@ -129,7 +125,14 @@ export function ServiceRequestsSection({
           </tr>
         )}
       />
-      <TablePager tableState={tableState} onPrev={onPrev} onNext={onNext} onLoadAll={onLoadAll} />
+      <TablePager
+        tableState={tableState}
+        onPrev={onPrev}
+        onNext={onNext}
+        onLoadAll={onLoadAll}
+        onRefresh={onRefresh}
+        onOpenFilter={onOpenFilter}
+      />
       <StatusLine status={status || (typeof getStatus === "function" ? getStatus("serviceRequests") : null)} />
     </>
   );

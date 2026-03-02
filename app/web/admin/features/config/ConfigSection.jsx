@@ -1,4 +1,5 @@
 import { KNOWN_CONFIG_TABLE_KEYS, OPERATOR_LABELS, PAGE_SIZE, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
+import { AddIcon, DownloadIcon, FilterIcon, NextIcon, PrevIcon, RefreshIcon } from "../../shared/icons.jsx";
 import { boolLabel, fmtDate, listPreview, normalizeReferenceMeta, roleLabel, statusKindLabel, statusLabel } from "../../shared/utils.js";
 
 function fmtBalance(value) {
@@ -67,7 +68,6 @@ export function ConfigSection(props) {
   const StatusLine = StatusLineComponent;
   const IconButton = IconButtonComponent;
   const UserAvatar = UserAvatarComponent;
-  const canOpenFilter = Boolean(configActiveKey);
   const canRefresh = Boolean(configActiveKey);
   const canCreateRecord = Boolean(canCreateInConfig && configActiveKey);
   const canLoadAllRows = Boolean(
@@ -102,16 +102,6 @@ export function ConfigSection(props) {
                       Баланс
                     </button>
                   ) : null}
-                  <button
-                    className="btn secondary btn-icon-only"
-                    type="button"
-                    onClick={() => openFilterModal(configActiveKey)}
-                    disabled={!canOpenFilter}
-                    title="Фильтр"
-                    aria-label="Фильтр"
-                  >
-                    ⚲
-                  </button>
                 </div>
               </div>
               <div className="config-layout">
@@ -606,55 +596,65 @@ export function ConfigSection(props) {
                       </div>
                       <div className="config-controls-actions">
                         <button
-                          className="btn secondary config-control-btn config-control-btn-loadall"
+                          className="btn secondary table-control-btn table-control-loadall"
                           type="button"
                           onClick={() => loadAllRows(configActiveKey)}
                           disabled={!canLoadAllRows}
                           title={"Загрузить все " + activeConfigTableState.total}
                           aria-label={"Загрузить все " + activeConfigTableState.total}
                         >
-                          <span aria-hidden="true">⤓</span>
+                          <DownloadIcon />
                           <span>{activeConfigTableState.total}</span>
                         </button>
                         <button
-                          className="btn secondary btn-icon-only config-control-btn"
+                          className="btn secondary table-control-btn"
                           type="button"
                           onClick={() => loadCurrentConfigTable(true)}
                           disabled={!canRefresh}
                           title="Обновить"
                           aria-label="Обновить"
                         >
-                          ↻
+                          <RefreshIcon />
                         </button>
                         <button
-                          className="btn secondary btn-icon-only config-control-btn"
+                          className="btn secondary table-control-btn"
                           type="button"
                           onClick={() => openCreateRecordModal(configActiveKey)}
                           disabled={!canCreateRecord}
                           title="Добавить"
                           aria-label="Добавить"
                         >
-                          +
+                          <AddIcon />
                         </button>
                         <button
-                          className="btn secondary btn-icon-only config-control-btn"
+                          className="btn secondary table-control-btn"
+                          type="button"
+                          onClick={() => openFilterModal(configActiveKey)}
+                          disabled={!configActiveKey}
+                          title="Фильтр"
+                          aria-label="Фильтр"
+                        >
+                          <FilterIcon />
+                        </button>
+                        <button
+                          className="btn secondary table-control-btn"
                           type="button"
                           onClick={() => loadPrevPage(configActiveKey)}
                           disabled={!canLoadPrev}
                           title="Назад"
                           aria-label="Назад"
                         >
-                          ←
+                          <PrevIcon />
                         </button>
                         <button
-                          className="btn secondary btn-icon-only config-control-btn"
+                          className="btn secondary table-control-btn"
                           type="button"
                           onClick={() => loadNextPage(configActiveKey)}
                           disabled={!canLoadNext}
                           title="Вперед"
                           aria-label="Вперед"
                         >
-                          →
+                          <NextIcon />
                         </button>
                       </div>
                     </div>
