@@ -14,6 +14,7 @@ SKIP_LOCAL_SMOKE="${SKIP_LOCAL_SMOKE:-0}"
 LOCAL_SMOKE_BASE_URL="${LOCAL_SMOKE_BASE_URL:-https://127.0.0.1}"
 LOCAL_SMOKE_CANDIDATES="${LOCAL_SMOKE_CANDIDATES:-${LOCAL_SMOKE_BASE_URL},https://localhost,http://127.0.0.1,http://localhost}"
 LOCAL_SMOKE_SKIP_DOCKER_CHECKS="${LOCAL_SMOKE_SKIP_DOCKER_CHECKS:-1}"
+LOCAL_SMOKE_DEBUG="${LOCAL_SMOKE_DEBUG:-0}"
 
 PROD_COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml)
 CERT_COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.prod.cert.yml)
@@ -156,6 +157,9 @@ run_local_smoke() {
   local attempt=1
   local candidate
   local ok=0
+  local debug_log
+  debug_log="$(mktemp)"
+  trap 'rm -f "$debug_log"' RETURN
 
   while (( attempt <= max_attempts )); do
     ok=0
@@ -164,8 +168,30 @@ run_local_smoke() {
       candidate="$(echo "$candidate" | xargs)"
       [[ -z "$candidate" ]] && continue
 
-      if CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/check_chat_health.sh "$candidate" >/dev/null 2>&1 && \
-         SECURITY_SMOKE_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/security_smoke.sh "$candidate" >/dev/null 2>&1; then
+      : > "$debug_log"
+      local health_rc smoke_rc
+      CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/check_chat_health.sh "$candidate" >"$debug_log" 2>&1
+      health_rc=$?
+      if [[ $health_rc -ne 0 ]]; then
+        if [[ "$LOCAL_SMOKE_DEBUG" == "1" || "$attempt" -eq "$max_attempts" ]]; then
+          warn "local smoke health check failed for ${candidate} (rc=${health_rc})"
+          sed -n '1,120p' "$debug_log" >&2 || true
+        fi
+        continue
+      fi
+
+      : > "$debug_log"
+      SECURITY_SMOKE_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/security_smoke.sh "$candidate" >"$debug_log" 2>&1
+      smoke_rc=$?
+      if [[ $smoke_rc -ne 0 ]]; then
+        if [[ "$LOCAL_SMOKE_DEBUG" == "1" || "$attempt" -eq "$max_attempts" ]]; then
+          warn "local smoke security checks failed for ${candidate} (rc=${smoke_rc})"
+          sed -n '1,160p' "$debug_log" >&2 || true
+        fi
+        continue
+      fi
+
+      if [[ $health_rc -eq 0 && $smoke_rc -eq 0 ]]; then
         log "Local smoke checks passed via ${candidate} (attempt ${attempt}/${max_attempts})"
         ok=1
         break
