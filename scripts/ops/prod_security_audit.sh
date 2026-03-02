@@ -164,7 +164,7 @@ run_local_smoke() {
       candidate="$(echo "$candidate" | xargs)"
       [[ -z "$candidate" ]] && continue
 
-      if ./scripts/ops/check_chat_health.sh "$candidate" >/dev/null 2>&1 && \
+      if CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/check_chat_health.sh "$candidate" >/dev/null 2>&1 && \
          SECURITY_SMOKE_SKIP_DOCKER_CHECKS="$LOCAL_SMOKE_SKIP_DOCKER_CHECKS" ./scripts/ops/security_smoke.sh "$candidate" >/dev/null 2>&1; then
         log "Local smoke checks passed via ${candidate} (attempt ${attempt}/${max_attempts})"
         ok=1

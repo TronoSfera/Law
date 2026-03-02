@@ -5,6 +5,7 @@ BASE_URL="${1:-http://localhost:8081}"
 CHAT_HEALTH_URL="${BASE_URL%/}/chat-health"
 BACKEND_HEALTH_URL="${BASE_URL%/}/health"
 EMAIL_HEALTH_URL="${BASE_URL%/}/email-health"
+CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS="${CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS:-0}"
 
 check_http_200() {
   url="$1"
@@ -27,9 +28,11 @@ if ! check_http_200 "$EMAIL_HEALTH_URL"; then
   exit 5
 fi
 
-if docker compose ps --format json 2>/dev/null | grep -q '"Health":"unhealthy"'; then
-  echo "[ALERT] at least one container has unhealthy state" >&2
-  exit 4
+if [ "$CHECK_CHAT_HEALTH_SKIP_DOCKER_CHECKS" != "1" ]; then
+  if docker compose ps --format json 2>/dev/null | grep -q '"Health":"unhealthy"'; then
+    echo "[ALERT] at least one container has unhealthy state" >&2
+    exit 4
+  fi
 fi
 
 echo "[OK] chat-service, backend and email-service are healthy"
