@@ -355,6 +355,22 @@ Optional: auto-bootstrap Let's Encrypt certs if HTTPS health is failing:
 make prod-security-audit AUTO_CERT_INIT=1 DOMAIN=ruakb.ru WWW_DOMAIN=www.ruakb.ru SECOND_DOMAIN=ruakb.online SECOND_WWW_DOMAIN=www.ruakb.online LETSENCRYPT_EMAIL=you@example.com
 ```
 
+If localhost loopback probes are not desired on production host:
+```bash
+make prod-security-audit SKIP_LOCAL_SMOKE=1 DOMAIN=ruakb.ru WWW_DOMAIN=www.ruakb.ru SECOND_DOMAIN=ruakb.online SECOND_WWW_DOMAIN=www.ruakb.online LETSENCRYPT_EMAIL=you@example.com
+```
+
+By default local smoke probes now try multiple loopback endpoints:
+- `https://127.0.0.1`
+- `https://localhost`
+- `http://127.0.0.1`
+- `http://localhost`
+
+You can override:
+```bash
+make prod-security-audit LOCAL_SMOKE_CANDIDATES="https://127.0.0.1,http://127.0.0.1"
+```
+
 ## Container health and alerting
 Docker Compose is configured with:
 - `restart: unless-stopped` for core services

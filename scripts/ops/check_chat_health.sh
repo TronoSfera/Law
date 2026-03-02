@@ -8,7 +8,7 @@ EMAIL_HEALTH_URL="${BASE_URL%/}/email-health"
 
 check_http_200() {
   url="$1"
-  code="$(curl -L -sS -o /dev/null -w "%{http_code}" "$url" || true)"
+  code="$(curl -k -L -sS -o /dev/null -w "%{http_code}" "$url" || true)"
   [ "$code" = "200" ]
 }
 

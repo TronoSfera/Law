@@ -15,6 +15,9 @@ SECOND_DOMAIN ?= ruakb.online
 SECOND_WWW_DOMAIN ?= www.ruakb.online
 LETSENCRYPT_EMAIL ?= admin@ruakb.ru
 AUTO_CERT_INIT ?= 0
+SKIP_LOCAL_SMOKE ?= 0
+LOCAL_SMOKE_BASE_URL ?= https://127.0.0.1
+LOCAL_SMOKE_CANDIDATES ?= $(LOCAL_SMOKE_BASE_URL),https://localhost,http://127.0.0.1,http://localhost
 CONFIRM_TOKEN ?= ROTATE-PROD-SECRETS
 CERTBOT_DOMAINS = -d "$(DOMAIN)" -d "$(WWW_DOMAIN)" $(if $(strip $(SECOND_DOMAIN)),-d "$(SECOND_DOMAIN)") $(if $(strip $(SECOND_WWW_DOMAIN)),-d "$(SECOND_WWW_DOMAIN)")
 
@@ -52,6 +55,9 @@ help:
 	@echo "  SECOND_DOMAIN=$(SECOND_DOMAIN)"
 	@echo "  SECOND_WWW_DOMAIN=$(SECOND_WWW_DOMAIN)"
 	@echo "  AUTO_CERT_INIT=$(AUTO_CERT_INIT)"
+	@echo "  SKIP_LOCAL_SMOKE=$(SKIP_LOCAL_SMOKE)"
+	@echo "  LOCAL_SMOKE_BASE_URL=$(LOCAL_SMOKE_BASE_URL)"
+	@echo "  LOCAL_SMOKE_CANDIDATES=$(LOCAL_SMOKE_CANDIDATES)"
 
 local-up:
 	$(LOCAL_COMPOSE) up -d --build
@@ -119,6 +125,9 @@ prod-security-audit: check-cert-files
 	SECOND_WWW_DOMAIN="$(SECOND_WWW_DOMAIN)" \
 	LETSENCRYPT_EMAIL="$(LETSENCRYPT_EMAIL)" \
 	AUTO_CERT_INIT="$(AUTO_CERT_INIT)" \
+	SKIP_LOCAL_SMOKE="$(SKIP_LOCAL_SMOKE)" \
+	LOCAL_SMOKE_BASE_URL="$(LOCAL_SMOKE_BASE_URL)" \
+	LOCAL_SMOKE_CANDIDATES="$(LOCAL_SMOKE_CANDIDATES)" \
 	./scripts/ops/prod_security_audit.sh
 
 rotate-encryption-kid:

@@ -10,6 +10,9 @@ SECOND_DOMAIN="${SECOND_DOMAIN:-ruakb.online}"
 SECOND_WWW_DOMAIN="${SECOND_WWW_DOMAIN:-www.ruakb.online}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-admin@ruakb.ru}"
 AUTO_CERT_INIT="${AUTO_CERT_INIT:-0}"
+SKIP_LOCAL_SMOKE="${SKIP_LOCAL_SMOKE:-0}"
+LOCAL_SMOKE_BASE_URL="${LOCAL_SMOKE_BASE_URL:-https://127.0.0.1}"
+LOCAL_SMOKE_CANDIDATES="${LOCAL_SMOKE_CANDIDATES:-${LOCAL_SMOKE_BASE_URL},https://localhost,http://127.0.0.1,http://localhost}"
 
 PROD_COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml)
 CERT_COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.prod.cert.yml)
@@ -92,15 +95,34 @@ PY
 }
 
 run_local_smoke() {
-  log "Running local smoke checks via localhost"
+  if [[ "$SKIP_LOCAL_SMOKE" == "1" ]]; then
+    log "Skipping local smoke checks (SKIP_LOCAL_SMOKE=1)"
+    return 0
+  fi
+
+  log "Running local smoke checks (candidates: ${LOCAL_SMOKE_CANDIDATES})"
   local max_attempts="${LOCAL_SMOKE_MAX_ATTEMPTS:-24}"
   local sleep_seconds="${LOCAL_SMOKE_SLEEP_SECONDS:-5}"
   local attempt=1
+  local candidate
+  local ok=0
 
   while (( attempt <= max_attempts )); do
-    if ./scripts/ops/check_chat_health.sh http://localhost >/dev/null 2>&1 && \
-       ./scripts/ops/security_smoke.sh http://localhost >/dev/null 2>&1; then
-      log "Local smoke checks passed (attempt ${attempt}/${max_attempts})"
+    ok=0
+    IFS=',' read -r -a _urls <<< "$LOCAL_SMOKE_CANDIDATES"
+    for candidate in "${_urls[@]}"; do
+      candidate="$(echo "$candidate" | xargs)"
+      [[ -z "$candidate" ]] && continue
+
+      if ./scripts/ops/check_chat_health.sh "$candidate" >/dev/null 2>&1 && \
+         ./scripts/ops/security_smoke.sh "$candidate" >/dev/null 2>&1; then
+        log "Local smoke checks passed via ${candidate} (attempt ${attempt}/${max_attempts})"
+        ok=1
+        break
+      fi
+    done
+
+    if [[ "$ok" == "1" ]]; then
       return 0
     fi
 
@@ -109,7 +131,7 @@ run_local_smoke() {
     attempt=$((attempt + 1))
   done
 
-  fail "Local smoke checks failed after ${max_attempts} attempts"
+  fail "Local smoke checks failed after ${max_attempts} attempts (candidates: ${LOCAL_SMOKE_CANDIDATES})"
 }
 
 run_domain_quick_health_wait() {
