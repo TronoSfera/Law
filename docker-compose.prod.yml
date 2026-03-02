@@ -72,6 +72,12 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  security-scheduler:
+    volumes:
+      - ./reports:/app/reports
+    security_opt:
+      - no-new-privileges:true
+
   # Production: keep official ClamAV image on x86_64 hosts.
   clamav:
     platform: linux/amd64

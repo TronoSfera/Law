@@ -139,6 +139,9 @@ def _send_via_email_service(*, email: str, subject: str, body: str) -> dict[str,
 
 
 def send_otp_email_message(*, email: str, code: str, purpose: str, track_number: str | None = None) -> dict[str, Any]:
+    if not bool(getattr(settings, "EMAIL_SERVICE_ENABLED", True)):
+        raise EmailDeliveryError("Email-рассылка отключена (EMAIL_SERVICE_ENABLED=false)")
+
     normalized_email = _normalize_email(email)
     if not normalized_email:
         raise EmailDeliveryError("Некорректный email")
@@ -163,6 +166,17 @@ def send_otp_email_message(*, email: str, code: str, purpose: str, track_number:
 
 
 def email_provider_health() -> dict[str, Any]:
+    if not bool(getattr(settings, "EMAIL_SERVICE_ENABLED", True)):
+        return {
+            "provider": "disabled",
+            "status": "ok",
+            "mode": "disabled",
+            "dev_mode": bool(_otp_dev_mode_enabled()),
+            "can_send": False,
+            "checks": {"email_service_enabled": False},
+            "issues": ["EMAIL_SERVICE_ENABLED=false: Email-рассылка отключена"],
+        }
+
     provider = str(settings.EMAIL_PROVIDER or "dummy").strip().lower()
     if _otp_dev_mode_enabled():
         return {

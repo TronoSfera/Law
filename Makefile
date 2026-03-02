@@ -4,7 +4,7 @@
 	prod-up prod-down prod-logs prod-ps prod-migrate \
 	prod-secrets-generate prod-secrets-apply \
 	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid \
-	security-smoke prod-security-audit \
+	security-smoke prod-security-audit prod-security-scheduler-up prod-security-scheduler-logs \
 	prod-cert-init prod-cert-renew \
 	check-prod-files check-cert-files \
 	run migrate test seed-quotes
@@ -44,6 +44,8 @@ help:
 	@echo "  incident-checklist    - Create PDn incident checklist markdown report"
 	@echo "  security-smoke        - Run security smoke checks and create report"
 	@echo "  prod-security-audit   - Full production security audit/repair workflow"
+	@echo "  prod-security-scheduler-up   - Start/update dedicated security scheduler service"
+	@echo "  prod-security-scheduler-logs - Tail security scheduler logs"
 	@echo "  rotate-encryption-kid - Add new KID key pair to .env and switch active KID"
 	@echo "  reencrypt-active-kid  - Re-encrypt historical encrypted fields using active KID"
 	@echo "  prod-cert-init    - Initial Let's Encrypt issue (nginx only 80 during bootstrap)"
@@ -129,6 +131,17 @@ prod-security-audit: check-cert-files
 	LOCAL_SMOKE_BASE_URL="$(LOCAL_SMOKE_BASE_URL)" \
 	LOCAL_SMOKE_CANDIDATES="$(LOCAL_SMOKE_CANDIDATES)" \
 	./scripts/ops/prod_security_audit.sh
+
+prod-security-scheduler-up: check-prod-files
+	@echo "[SEC] Checking MinIO TLS bundle"
+	@if [ ! -f deploy/tls/minio/ca.crt ] || ! openssl x509 -in deploy/tls/minio/ca.crt -noout >/dev/null 2>&1 || [ ! -f deploy/tls/minio/public.crt ] || ! openssl x509 -in deploy/tls/minio/public.crt -noout >/dev/null 2>&1 || [ ! -f deploy/tls/minio/private.key ]; then \
+		echo "[SEC] MinIO TLS bundle missing/invalid -> regenerating"; \
+		MINIO_TLS_OVERWRITE=true ./scripts/ops/minio_tls_bootstrap.sh; \
+	fi
+	$(PROD_COMPOSE) up -d --build --force-recreate security-scheduler
+
+prod-security-scheduler-logs: check-prod-files
+	$(PROD_COMPOSE) logs -f --tail=200 security-scheduler
 
 rotate-encryption-kid:
 	./scripts/ops/rotate_encryption_kid.sh --env-file .env

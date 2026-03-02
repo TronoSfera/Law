@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     OTP_AUTOTEST_FORCE_MOCK_SMS: bool = True
     PUBLIC_AUTH_MODE: str = "sms"  # sms | email | sms_or_email | totp
     EMAIL_PROVIDER: str = "dummy"  # dummy | smtp
+    EMAIL_SERVICE_ENABLED: bool = True
     EMAIL_SERVICE_URL: str = "http://email-service:8010"
     INTERNAL_SERVICE_TOKEN: str = "change_me_internal_service_token"
     SMTP_HOST: str = ""

@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 BASE_URL="${1:-http://localhost:8081}"
 REPORT_DIR="${REPORT_DIR:-reports/security}"
+SECURITY_SMOKE_SKIP_DOCKER_CHECKS="${SECURITY_SMOKE_SKIP_DOCKER_CHECKS:-0}"
 TS_HUMAN="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
 TS_FILE="$(date -u +"%Y%m%d-%H%M%S")"
 REPORT_FILE="${REPORT_DIR}/security-smoke-${TS_FILE}.md"
@@ -166,6 +167,10 @@ check_cookie_and_security_flags() {
 }
 
 check_compose_service_running() {
+  if [[ "$SECURITY_SMOKE_SKIP_DOCKER_CHECKS" == "1" ]]; then
+    add_warn "docker checks disabled by SECURITY_SMOKE_SKIP_DOCKER_CHECKS=1"
+    return 0
+  fi
   local service="$1"
   if ! command -v docker >/dev/null 2>&1; then
     add_warn "docker is not available: service checks skipped"
@@ -182,6 +187,10 @@ check_compose_service_running() {
 }
 
 check_db_security_audit_table() {
+  if [[ "$SECURITY_SMOKE_SKIP_DOCKER_CHECKS" == "1" ]]; then
+    add_warn "db checks disabled by SECURITY_SMOKE_SKIP_DOCKER_CHECKS=1"
+    return 0
+  fi
   if ! command -v docker >/dev/null 2>&1; then
     add_warn "docker is not available: DB checks skipped"
     return 0

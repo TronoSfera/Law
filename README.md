@@ -169,7 +169,8 @@ OTP sending is implemented through a dedicated SMS service layer (`app/services/
 Public auth mode can be selected via environment:
 ```bash
 PUBLIC_AUTH_MODE=sms          # sms | email | sms_or_email | totp
-EMAIL_PROVIDER=dummy          # dummy | smtp
+EMAIL_SERVICE_ENABLED=true    # false -> email-service stays healthy but sending is disabled
+EMAIL_PROVIDER=dummy          # dummy | smtp | service
 EMAIL_SERVICE_URL=http://email-service:8010
 INTERNAL_SERVICE_TOKEN=change_me_internal_service_token
 OTP_EMAIL_FALLBACK_ENABLED=true
@@ -204,9 +205,15 @@ OTP_EMAIL_TEMPLATE=Ваш код подтверждения: {code}
 
 For dedicated email microservice (recommended in production):
 ```bash
+EMAIL_SERVICE_ENABLED=true
 EMAIL_PROVIDER=service
 EMAIL_SERVICE_URL=http://email-service:8010
 INTERNAL_SERVICE_TOKEN=<strong-random-token>
+```
+
+To keep infrastructure healthy but disable email sending temporarily:
+```bash
+EMAIL_SERVICE_ENABLED=false
 ```
 
 Admin/Lawyer TOTP endpoints:
@@ -370,6 +377,31 @@ You can override:
 ```bash
 make prod-security-audit LOCAL_SMOKE_CANDIDATES="https://127.0.0.1,http://127.0.0.1"
 ```
+
+## Dedicated security scheduler entity
+`security-scheduler` is a separate container service that runs periodic smoke checks automatically.
+
+Start/update:
+```bash
+make prod-security-scheduler-up
+```
+
+Logs:
+```bash
+make prod-security-scheduler-logs
+```
+
+Main env knobs:
+```bash
+SECURITY_SCHEDULER_INTERVAL_SECONDS=900
+SECURITY_SCHEDULER_INTERNAL_BASE_URL=http://frontend
+SECURITY_SCHEDULER_EXTERNAL_DOMAINS=ruakb.ru,ruakb.online
+SECURITY_SCHEDULER_SKIP_DOCKER_CHECKS=1
+SECURITY_SCHEDULER_RUN_INCIDENT_ON_FAIL=1
+```
+
+Scheduler script:
+- `/Users/tronosfera/Develop/Law/scripts/ops/security_scheduler.sh`
 
 ## Container health and alerting
 Docker Compose is configured with:

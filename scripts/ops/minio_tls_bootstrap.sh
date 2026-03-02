@@ -10,14 +10,29 @@ OVERWRITE="${MINIO_TLS_OVERWRITE:-false}"
 
 mkdir -p "$OUT_DIR"
 
-if [[ "$OVERWRITE" != "true" ]]; then
-  for required in ca.crt ca.key public.crt private.key; do
-    if [[ -f "$OUT_DIR/$required" ]]; then
-      echo "[ERROR] $OUT_DIR/$required already exists. Set MINIO_TLS_OVERWRITE=true to regenerate." >&2
-      exit 1
+prepare_output_path() {
+  local path="$1"
+  if [[ -d "$path" ]]; then
+    if [[ "$OVERWRITE" == "true" ]]; then
+      rm -rf "$path"
+      return 0
     fi
-  done
-fi
+    echo "[ERROR] $path is a directory. Set MINIO_TLS_OVERWRITE=true to replace it." >&2
+    exit 1
+  fi
+  if [[ -f "$path" ]]; then
+    if [[ "$OVERWRITE" == "true" ]]; then
+      rm -f "$path"
+      return 0
+    fi
+    echo "[ERROR] $path already exists. Set MINIO_TLS_OVERWRITE=true to regenerate." >&2
+    exit 1
+  fi
+}
+
+for required in ca.crt ca.key public.crt private.key; do
+  prepare_output_path "$OUT_DIR/$required"
+done
 
 if ! command -v openssl >/dev/null 2>&1; then
   echo "[ERROR] openssl not found" >&2

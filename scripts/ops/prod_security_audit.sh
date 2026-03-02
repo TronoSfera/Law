@@ -62,7 +62,19 @@ ensure_env_file() {
 ensure_minio_tls_bundle() {
   if file_missing "deploy/tls/minio/public.crt" || file_missing "deploy/tls/minio/private.key" || file_missing "deploy/tls/minio/ca.crt"; then
     log "MinIO TLS bundle is missing -> generating"
-    ./scripts/ops/minio_tls_bootstrap.sh
+    MINIO_TLS_OVERWRITE=true ./scripts/ops/minio_tls_bootstrap.sh
+    return 0
+  fi
+
+  if ! openssl x509 -in "deploy/tls/minio/ca.crt" -noout >/dev/null 2>&1; then
+    log "MinIO CA certificate is invalid -> regenerating"
+    MINIO_TLS_OVERWRITE=true ./scripts/ops/minio_tls_bootstrap.sh
+    return 0
+  fi
+
+  if ! openssl x509 -in "deploy/tls/minio/public.crt" -noout >/dev/null 2>&1; then
+    log "MinIO public certificate is invalid -> regenerating"
+    MINIO_TLS_OVERWRITE=true ./scripts/ops/minio_tls_bootstrap.sh
   else
     log "MinIO TLS bundle present"
   fi
@@ -82,12 +94,13 @@ stack_up_and_migrate() {
   "${PROD_COMPOSE[@]}" up -d --build --remove-orphans --force-recreate db redis minio clamav
 
   log "Starting app services (backend/chat/email/worker/beat)"
-  "${PROD_COMPOSE[@]}" up -d --build --remove-orphans --force-recreate backend chat-service email-service worker beat
+  "${PROD_COMPOSE[@]}" up -d --build --remove-orphans --force-recreate backend chat-service email-service worker beat security-scheduler
 
   log "Waiting app services to become healthy"
   wait_service_healthy "backend" 60
   wait_service_healthy "chat-service" 60
   wait_service_healthy "email-service" 60
+  wait_service_healthy "security-scheduler" 90
 
   # Force recreate frontend/edge after chat/backend to avoid stale DNS upstream cache in nginx.
   log "Starting/recreating frontend and edge"

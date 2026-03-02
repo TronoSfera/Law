@@ -17,16 +17,24 @@ class InternalEmailSend(BaseModel):
 
 @app.on_event("startup")
 def _validate_security_config_on_startup() -> None:
+    if not bool(getattr(settings, "EMAIL_SERVICE_ENABLED", True)):
+        return
     validate_production_security_or_raise("email-service")
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "email-service"}
+    return {
+        "status": "ok",
+        "service": "email-service",
+        "enabled": bool(getattr(settings, "EMAIL_SERVICE_ENABLED", True)),
+    }
 
 
 @app.post("/internal/send-otp")
 def internal_send_otp(payload: InternalEmailSend, x_internal_token: str | None = Header(default=None)):
+    if not bool(getattr(settings, "EMAIL_SERVICE_ENABLED", True)):
+        raise HTTPException(status_code=503, detail="Email service disabled")
     expected = str(settings.INTERNAL_SERVICE_TOKEN or "").strip()
     if not expected:
         raise HTTPException(status_code=500, detail="INTERNAL_SERVICE_TOKEN не настроен")
