@@ -923,9 +923,9 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
             <div>
               <div className="client-title-row">
                 <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
-                <h1>Кабинет клиента</h1>
+                <h1>Личный кабинет * Представление клиента</h1>
               </div>
-              <p className="muted">Работа с заявками: статусы, чат, файлы и обращения.</p>
+              <p className="muted">Мы рады помочь Вам</p>
             </div>
             <button
               className="icon-btn workspace-head-icon"
@@ -968,6 +968,9 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
                   </span>
                   <span className="client-summary-chip client-summary-chip-topic">
                     Тема: <span id="cabinet-request-topic">{summary ? String(summary.topic_name || summary.topic_code || "-") : "-"}</span>
+                  </span>
+                  <span className="client-summary-chip client-summary-chip-lawyer">
+                    Юрист: <span>{summary ? String(summary.assigned_lawyer_name || summary.assigned_lawyer_id || "Не назначен") : "-"}</span>
                   </span>
                 </div>
                 <div className="client-summary-dates">

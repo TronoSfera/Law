@@ -533,6 +533,14 @@ def get_status_route_by_track(
         return payload
     except Exception:
         current = str(req.status_code or "").strip()
+        current_name = current
+        if current:
+            try:
+                status_row = db.query(Status).filter(Status.code == current).first()
+            except SQLAlchemyError:
+                status_row = None
+            if status_row is not None:
+                current_name = str(status_row.name or current)
         changed_at = _to_iso(req.updated_at or req.created_at)
         payload = {
             "request_id": str(req.id),
@@ -546,7 +554,7 @@ def get_status_route_by_track(
                     "id": "current",
                     "from_status": None,
                     "to_status": current or None,
-                    "to_status_name": current or None,
+                    "to_status_name": current_name or None,
                     "changed_at": changed_at,
                     "important_date_at": _to_iso(req.important_date_at),
                     "comment": None,
@@ -556,7 +564,7 @@ def get_status_route_by_track(
             "nodes": [
                 {
                     "code": current or "",
-                    "name": current or "-",
+                    "name": current_name or "-",
                     "kind": "DEFAULT",
                     "state": "current",
                     "changed_at": changed_at,

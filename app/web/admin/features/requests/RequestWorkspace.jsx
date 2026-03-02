@@ -175,6 +175,7 @@ export function RequestWorkspace({
   const canSeeRate = viewerRoleCode !== "CLIENT";
   const canSeeCreatedUpdatedInCard = viewerRoleCode !== "CLIENT";
   const showTopicStatusInCard = viewerRoleCode !== "CLIENT";
+  const showContactsInCard = viewerRoleCode !== "CLIENT";
   const safeMessages = Array.isArray(messages) ? messages : [];
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
   const safeStatusHistory = Array.isArray(statusHistory) ? statusHistory : [];
@@ -1250,6 +1251,7 @@ export function RequestWorkspace({
                 </button>
               </div>
             </div>
+            <div className="request-card-head-spacer" aria-hidden="true" />
             {loading ? (
               <p className="muted">Загрузка...</p>
             ) : row ? (
@@ -1289,24 +1291,28 @@ export function RequestWorkspace({
                       {row.description ? String(row.description) : "Описание не заполнено"}
                     </span>
                   </div>
-                  <div className="request-field">
-                    <span className="request-field-label">Клиент</span>
-                    <span
-                      className={"request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : "")}
-                      data-tooltip={clientHasPhone ? clientPhone : undefined}
-                    >
-                      {clientLabel}
-                    </span>
-                  </div>
-                  <div className="request-field">
-                    <span className="request-field-label">Юрист</span>
-                    <span
-                      className={"request-field-value" + (lawyerHasPhone ? " has-tooltip request-contact-value" : "")}
-                      data-tooltip={lawyerHasPhone ? lawyerPhone : undefined}
-                    >
-                      {lawyerLabel}
-                    </span>
-                  </div>
+                  {showContactsInCard ? (
+                    <>
+                      <div className="request-field">
+                        <span className="request-field-label">Клиент</span>
+                        <span
+                          className={"request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : "")}
+                          data-tooltip={clientHasPhone ? clientPhone : undefined}
+                        >
+                          {clientLabel}
+                        </span>
+                      </div>
+                      <div className="request-field">
+                        <span className="request-field-label">Юрист</span>
+                        <span
+                          className={"request-field-value" + (lawyerHasPhone ? " has-tooltip request-contact-value" : "")}
+                          data-tooltip={lawyerHasPhone ? lawyerPhone : undefined}
+                        >
+                          {lawyerLabel}
+                        </span>
+                      </div>
+                    </>
+                  ) : null}
                   {canSeeCreatedUpdatedInCard ? (
                     <>
                       <div className="request-field">
@@ -1326,7 +1332,9 @@ export function RequestWorkspace({
                     <ol className="request-route-list" id="request-status-route">
                       {routeNodes.map((node, index) => {
                         const state = String(node?.state || "pending");
-                        const name = String(node?.name || statusLabel(node?.code));
+                        const code = String(node?.code || "").trim();
+                        const rawName = String(node?.name || "").trim();
+                        const name = rawName && rawName !== code ? rawName : statusLabel(code || rawName);
                         const note = String(node?.note || "").trim();
                         const changedAtSource = String(node?.changed_at || "").trim() || (index === 0 ? String(row?.created_at || "").trim() : "");
                         const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";

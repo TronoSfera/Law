@@ -1549,6 +1549,11 @@
       margin: 0;
     }
 
+    .request-card-head-spacer {
+      min-height: 1rem;
+      margin: -0.1rem 0 0.55rem;
+    }
+
     .request-card-head-actions {
       display: inline-flex;
       align-items: center;

@@ -209,6 +209,11 @@
   background: rgba(96, 126, 171, 0.15);
 }
 
+.client-summary-chip-lawyer {
+  border-color: rgba(123, 165, 132, 0.34);
+  background: rgba(74, 124, 86, 0.16);
+}
+
 .client-summary-dates {
   display: inline-flex;
   align-items: center;
