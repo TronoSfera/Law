@@ -1,6 +1,70 @@
 import { KANBAN_GROUPS } from "../shared/constants.js";
 import { createTableState } from "../shared/state.js";
 
+function normalizeKanbanColumns(rows, columns) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const safeColumns = Array.isArray(columns) ? columns : [];
+  const canonicalByLabel = new Map();
+  const aliases = new Map();
+  const mergedColumns = [];
+
+  safeColumns.forEach((column, index) => {
+    const key = String(column?.key || "").trim();
+    if (!key) return;
+    const label = String(column?.label || key).trim() || key;
+    const labelKey = label.toLocaleLowerCase("ru-RU");
+    const sortOrder = Number.isFinite(Number(column?.sort_order)) ? Number(column.sort_order) : index;
+    if (!canonicalByLabel.has(labelKey)) {
+      const canonical = {
+        key,
+        label,
+        sort_order: sortOrder,
+        total: 0,
+      };
+      canonicalByLabel.set(labelKey, canonical);
+      mergedColumns.push(canonical);
+      return;
+    }
+    const canonical = canonicalByLabel.get(labelKey);
+    if (canonical && canonical.key !== key) aliases.set(key, canonical.key);
+  });
+
+  if (!aliases.size) {
+    return { rows: safeRows, columns: safeColumns };
+  }
+
+  const remapGroup = (groupKey) => {
+    const normalized = String(groupKey || "").trim();
+    if (!normalized) return normalized;
+    return aliases.get(normalized) || normalized;
+  };
+
+  const normalizedRows = safeRows.map((row) => ({
+    ...row,
+    status_group: remapGroup(row?.status_group),
+    available_transitions: Array.isArray(row?.available_transitions)
+      ? row.available_transitions.map((transition) => ({
+          ...transition,
+          target_group: remapGroup(transition?.target_group),
+        }))
+      : [],
+  }));
+
+  const totals = new Map();
+  normalizedRows.forEach((row) => {
+    const key = String(row?.status_group || "").trim();
+    if (!key) return;
+    totals.set(key, Number(totals.get(key) || 0) + 1);
+  });
+
+  const normalizedColumns = mergedColumns.map((column) => ({
+    ...column,
+    total: Number(totals.get(String(column.key || "").trim()) || 0),
+  }));
+
+  return { rows: normalizedRows, columns: normalizedColumns };
+}
+
 export function useKanban({ api, setStatus, setTableState, tablesRef }) {
   const { useCallback, useState } = React;
 
@@ -31,8 +95,11 @@ export function useKanban({ api, setStatus, setTableState, tablesRef }) {
       setStatus("kanban", "Загрузка...", "");
       try {
         const data = await api("/api/admin/requests/kanban?" + params.toString(), {}, tokenOverride);
-        const rows = Array.isArray(data.rows) ? data.rows : [];
-        const columns = Array.isArray(data.columns) && data.columns.length ? data.columns : KANBAN_GROUPS;
+        const rawRows = Array.isArray(data.rows) ? data.rows : [];
+        const rawColumns = Array.isArray(data.columns) && data.columns.length ? data.columns : KANBAN_GROUPS;
+        const normalized = normalizeKanbanColumns(rawRows, rawColumns);
+        const rows = Array.isArray(normalized.rows) ? normalized.rows : rawRows;
+        const columns = Array.isArray(normalized.columns) && normalized.columns.length ? normalized.columns : rawColumns;
         setKanbanData({
           rows,
           columns,

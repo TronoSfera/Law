@@ -1,5 +1,6 @@
 import { OPERATOR_LABELS, REQUEST_UPDATE_EVENT_LABELS, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
 import { fmtDate, statusLabel } from "../../shared/utils.js";
+import { AddIcon, FilterIcon } from "../../shared/icons.jsx";
 
 function renderRequestUpdatesCell(row, role) {
   const hasServiceRequestUnread = Boolean(row?.has_service_requests_unread);
@@ -122,6 +123,16 @@ export function RequestsSection({
           <h2>Заявки</h2>
           <p className="muted">Серверная фильтрация и просмотр клиентских заявок.</p>
         </div>
+        <div className="section-head-actions">
+          {onCreate ? (
+            <button className="btn secondary table-control-btn" type="button" onClick={onCreate} title="Добавить" aria-label="Добавить">
+              <AddIcon />
+            </button>
+          ) : null}
+          <button className="btn secondary table-control-btn" type="button" onClick={onOpenFilter} title="Фильтр" aria-label="Фильтр">
+            <FilterIcon />
+          </button>
+        </div>
       </div>
       <FilterToolbar
         filters={tableState.filters}
@@ -175,8 +186,13 @@ export function RequestsSection({
             <td>{fmtDate(row.created_at)}</td>
             <td>
               <div className="table-actions">
-                {role === "LAWYER" && !row.assigned_lawyer_id ? (
-                  <IconButton icon="📥" tooltip="Взять в работу" onClick={() => onClaimRequest(row.id)} />
+                {role === "LAWYER" ? (
+                  <IconButton
+                    icon="📥"
+                    tooltip={row.assigned_lawyer_id ? "Заявка уже назначена" : "Взять в работу"}
+                    onClick={() => onClaimRequest(row.id)}
+                    disabled={Boolean(row.assigned_lawyer_id)}
+                  />
                 ) : null}
                 {role === "ADMIN" && row.assigned_lawyer_id ? (
                   <IconButton icon="⇄" tooltip="Переназначить" onClick={() => onOpenReassign(row)} />
@@ -194,8 +210,6 @@ export function RequestsSection({
         onNext={onNext}
         onLoadAll={onLoadAll}
         onRefresh={onRefresh}
-        onCreate={onCreate}
-        onOpenFilter={onOpenFilter}
       />
       <StatusLine status={status || (typeof getStatus === "function" ? getStatus("requests") : null)} />
     </>

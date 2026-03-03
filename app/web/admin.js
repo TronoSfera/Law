@@ -3364,7 +3364,7 @@
     const TablePager = TablePagerComponent;
     const StatusLine = StatusLineComponent;
     const IconButton = IconButtonComponent;
-    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0421\u0447\u0435\u0442\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0435 \u0441\u0447\u0435\u0442\u0430 \u043A\u043B\u0438\u0435\u043D\u0442\u0430\u043C, \u0441\u0442\u0430\u0442\u0443\u0441\u044B \u043E\u043F\u043B\u0430\u0442\u044B \u0438 \u0432\u044B\u0433\u0440\u0443\u0437\u043A\u0430 PDF."))), /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0421\u0447\u0435\u0442\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0435 \u0441\u0447\u0435\u0442\u0430 \u043A\u043B\u0438\u0435\u043D\u0442\u0430\u043C, \u0441\u0442\u0430\u0442\u0443\u0441\u044B \u043E\u043F\u043B\u0430\u0442\u044B \u0438 \u0432\u044B\u0433\u0440\u0443\u0437\u043A\u0430 PDF.")), /* @__PURE__ */ React.createElement("div", { className: "section-head-actions" }, onCreate ? /* @__PURE__ */ React.createElement("button", { className: "btn secondary table-control-btn", type: "button", onClick: onCreate, title: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C", "aria-label": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C" }, /* @__PURE__ */ React.createElement(AddIcon, null)) : null, /* @__PURE__ */ React.createElement("button", { className: "btn secondary table-control-btn", type: "button", onClick: onOpenFilter, title: "\u0424\u0438\u043B\u044C\u0442\u0440", "aria-label": "\u0424\u0438\u043B\u044C\u0442\u0440" }, /* @__PURE__ */ React.createElement(FilterIcon, null)))), /* @__PURE__ */ React.createElement(
       FilterToolbar,
       {
         filters: tableState.filters,
@@ -3404,7 +3404,7 @@
             title: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443"
           },
           /* @__PURE__ */ React.createElement("code", null, row.request_track_number || row.request_id || "-")
-        ) : /* @__PURE__ */ React.createElement("code", null, row.request_track_number || row.request_id || "-")), /* @__PURE__ */ React.createElement("td", null, row.issued_by_name || "-"), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.issued_at)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.paid_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u2B07", tooltip: "\u0421\u043A\u0430\u0447\u0430\u0442\u044C PDF", onClick: () => onDownloadPdf(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0447\u0435\u0442", onClick: () => onEditRecord(row) }), role === "ADMIN" ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0447\u0435\u0442", onClick: () => onDeleteRecord(row.id), tone: "danger" }) : null)))
+        ) : /* @__PURE__ */ React.createElement("code", null, row.request_track_number || row.request_id || "-")), /* @__PURE__ */ React.createElement("td", null, row.issued_by_name || "-"), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.issued_at)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.paid_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u2B07", tooltip: "\u0421\u043A\u0430\u0447\u0430\u0442\u044C PDF", onClick: () => onDownloadPdf(row) }), role === "ADMIN" ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0447\u0435\u0442", onClick: () => onEditRecord(row) }) : null, role === "ADMIN" ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u0447\u0435\u0442", onClick: () => onDeleteRecord(row.id), tone: "danger" }) : null)))
       }
     ), /* @__PURE__ */ React.createElement(
       TablePager,
@@ -3413,9 +3413,7 @@
         onPrev,
         onNext,
         onLoadAll,
-        onRefresh,
-        onCreate,
-        onOpenFilter
+        onRefresh
       }
     ), /* @__PURE__ */ React.createElement(StatusLine, { status }));
   }
@@ -3478,7 +3476,7 @@
     const TablePager = TablePagerComponent;
     const StatusLine = StatusLineComponent;
     const IconButton = IconButtonComponent;
-    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0417\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0421\u0435\u0440\u0432\u0435\u0440\u043D\u0430\u044F \u0444\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F \u0438 \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0438\u0445 \u0437\u0430\u044F\u0432\u043E\u043A."))), /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0417\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0421\u0435\u0440\u0432\u0435\u0440\u043D\u0430\u044F \u0444\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F \u0438 \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0438\u0445 \u0437\u0430\u044F\u0432\u043E\u043A.")), /* @__PURE__ */ React.createElement("div", { className: "section-head-actions" }, onCreate ? /* @__PURE__ */ React.createElement("button", { className: "btn secondary table-control-btn", type: "button", onClick: onCreate, title: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C", "aria-label": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C" }, /* @__PURE__ */ React.createElement(AddIcon, null)) : null, /* @__PURE__ */ React.createElement("button", { className: "btn secondary table-control-btn", type: "button", onClick: onOpenFilter, title: "\u0424\u0438\u043B\u044C\u0442\u0440", "aria-label": "\u0424\u0438\u043B\u044C\u0442\u0440" }, /* @__PURE__ */ React.createElement(FilterIcon, null)))), /* @__PURE__ */ React.createElement(
       FilterToolbar,
       {
         filters: tableState.filters,
@@ -3520,7 +3518,15 @@
             title: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443"
           },
           /* @__PURE__ */ React.createElement("code", null, row.track_number || "-")
-        )), /* @__PURE__ */ React.createElement("td", null, row.client_name || "-"), /* @__PURE__ */ React.createElement("td", null, row.client_phone || "-"), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.status_code)), /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, resolveReferenceLabel({ table: "admin_users", value_field: "id", label_field: "name" }, row.assigned_lawyer_id)), /* @__PURE__ */ React.createElement("td", null, row.invoice_amount == null ? "-" : String(row.invoice_amount)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.paid_at)), /* @__PURE__ */ React.createElement("td", null, renderRequestUpdatesCell(row, role)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, role === "LAWYER" && !row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F4E5}", tooltip: "\u0412\u0437\u044F\u0442\u044C \u0432 \u0440\u0430\u0431\u043E\u0442\u0443", onClick: () => onClaimRequest(row.id) }) : null, role === "ADMIN" && row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u21C4", tooltip: "\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C", onClick: () => onOpenReassign(row) }) : null, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => onEditRecord(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => onDeleteRecord(row.id), tone: "danger" }))))
+        )), /* @__PURE__ */ React.createElement("td", null, row.client_name || "-"), /* @__PURE__ */ React.createElement("td", null, row.client_phone || "-"), /* @__PURE__ */ React.createElement("td", null, statusLabel(row.status_code)), /* @__PURE__ */ React.createElement("td", null, row.topic_code || "-"), /* @__PURE__ */ React.createElement("td", null, resolveReferenceLabel({ table: "admin_users", value_field: "id", label_field: "name" }, row.assigned_lawyer_id)), /* @__PURE__ */ React.createElement("td", null, row.invoice_amount == null ? "-" : String(row.invoice_amount)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.paid_at)), /* @__PURE__ */ React.createElement("td", null, renderRequestUpdatesCell(row, role)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, role === "LAWYER" ? /* @__PURE__ */ React.createElement(
+          IconButton,
+          {
+            icon: "\u{1F4E5}",
+            tooltip: row.assigned_lawyer_id ? "\u0417\u0430\u044F\u0432\u043A\u0430 \u0443\u0436\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0430" : "\u0412\u0437\u044F\u0442\u044C \u0432 \u0440\u0430\u0431\u043E\u0442\u0443",
+            onClick: () => onClaimRequest(row.id),
+            disabled: Boolean(row.assigned_lawyer_id)
+          }
+        ) : null, role === "ADMIN" && row.assigned_lawyer_id ? /* @__PURE__ */ React.createElement(IconButton, { icon: "\u21C4", tooltip: "\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C", onClick: () => onOpenReassign(row) }) : null, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => onEditRecord(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", onClick: () => onDeleteRecord(row.id), tone: "danger" }))))
       }
     ), /* @__PURE__ */ React.createElement(
       TablePager,
@@ -3529,9 +3535,7 @@
         onPrev,
         onNext,
         onLoadAll,
-        onRefresh,
-        onCreate,
-        onOpenFilter
+        onRefresh
       }
     ), /* @__PURE__ */ React.createElement(StatusLine, { status: status || (typeof getStatus === "function" ? getStatus("requests") : null) }));
   }
@@ -3635,7 +3639,9 @@
     getStatus,
     getFieldDef,
     getFilterValuePreview,
+    resolveReferenceLabel,
     onRefresh,
+    onCreate,
     onOpenFilter,
     onRemoveFilter,
     onEditFilter,
@@ -3660,7 +3666,7 @@
     const StatusLine = StatusLineComponent;
     const IconButton = IconButtonComponent;
     const roleCode = String(role || "").toUpperCase();
-    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0417\u0430\u043F\u0440\u043E\u0441\u044B"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0417\u0430\u043F\u0440\u043E\u0441\u044B \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443 \u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043D\u0430 \u0441\u043C\u0435\u043D\u0443 \u044E\u0440\u0438\u0441\u0442\u0430."))), /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u0417\u0430\u043F\u0440\u043E\u0441\u044B"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0417\u0430\u043F\u0440\u043E\u0441\u044B \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443 \u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043D\u0430 \u0441\u043C\u0435\u043D\u0443 \u044E\u0440\u0438\u0441\u0442\u0430.")), /* @__PURE__ */ React.createElement("div", { className: "section-head-actions" }, onCreate && roleCode === "ADMIN" ? /* @__PURE__ */ React.createElement("button", { className: "btn secondary table-control-btn", type: "button", onClick: onCreate, title: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C", "aria-label": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C" }, /* @__PURE__ */ React.createElement(AddIcon, null)) : null, /* @__PURE__ */ React.createElement("button", { className: "btn secondary table-control-btn", type: "button", onClick: onOpenFilter, title: "\u0424\u0438\u043B\u044C\u0442\u0440", "aria-label": "\u0424\u0438\u043B\u044C\u0442\u0440" }, /* @__PURE__ */ React.createElement(FilterIcon, null)))), /* @__PURE__ */ React.createElement(
       FilterToolbar,
       {
         filters: tableState.filters,
@@ -3689,7 +3695,14 @@
         emptyColspan: 7,
         onSort,
         sortClause: tableState.sort && tableState.sort[0] || TABLE_SERVER_CONFIG.serviceRequests.sort[0],
-        renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, serviceRequestTypeLabel(row.type)), /* @__PURE__ */ React.createElement("td", null, serviceRequestStatusLabel(row.status)), /* @__PURE__ */ React.createElement("td", null, row.body || "-"), /* @__PURE__ */ React.createElement("td", null, row.request_id ? /* @__PURE__ */ React.createElement("button", { type: "button", className: "request-track-link", onClick: (event) => onOpenRequest(row.request_id, event), title: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443" }, /* @__PURE__ */ React.createElement("code", null, row.request_id)) : "-"), /* @__PURE__ */ React.createElement("td", null, unreadLabel(row, roleCode)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u2713", tooltip: "\u041E\u0442\u043C\u0435\u0442\u0438\u0442\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u043C", onClick: () => onMarkRead(row.id) }), roleCode === "ADMIN" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441", onClick: () => onEditRecord(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441", onClick: () => onDeleteRecord(row.id), tone: "danger" })) : null)))
+        renderRow: (row) => /* @__PURE__ */ React.createElement("tr", { key: row.id }, /* @__PURE__ */ React.createElement("td", null, serviceRequestTypeLabel(row.type)), /* @__PURE__ */ React.createElement("td", null, serviceRequestStatusLabel(row.status)), /* @__PURE__ */ React.createElement("td", null, row.body || "-"), /* @__PURE__ */ React.createElement("td", null, (() => {
+          const requestTrackNumber = String((row == null ? void 0 : row.request_track_number) || "").trim() || String(
+            typeof resolveReferenceLabel === "function" ? resolveReferenceLabel({ table: "requests", value_field: "id", label_field: "track_number" }, row == null ? void 0 : row.request_id) : ""
+          ).trim();
+          const requestLabel = requestTrackNumber || String((row == null ? void 0 : row.request_id) || "").trim() || "-";
+          if (!row.request_id) return "-";
+          return /* @__PURE__ */ React.createElement("button", { type: "button", className: "request-track-link", onClick: (event) => onOpenRequest(row.request_id, event), title: "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443" }, /* @__PURE__ */ React.createElement("code", null, requestLabel));
+        })()), /* @__PURE__ */ React.createElement("td", null, unreadLabel(row, roleCode)), /* @__PURE__ */ React.createElement("td", null, fmtDate(row.created_at)), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement("div", { className: "table-actions" }, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u2713", tooltip: "\u041E\u0442\u043C\u0435\u0442\u0438\u0442\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u043C", onClick: () => onMarkRead(row.id) }), roleCode === "ADMIN" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(IconButton, { icon: "\u270E", tooltip: "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441", onClick: () => onEditRecord(row) }), /* @__PURE__ */ React.createElement(IconButton, { icon: "\u{1F5D1}", tooltip: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441", onClick: () => onDeleteRecord(row.id), tone: "danger" })) : null)))
       }
     ), /* @__PURE__ */ React.createElement(
       TablePager,
@@ -3698,8 +3711,7 @@
         onPrev,
         onNext,
         onLoadAll,
-        onRefresh,
-        onOpenFilter
+        onRefresh
       }
     ), /* @__PURE__ */ React.createElement(StatusLine, { status: status || (typeof getStatus === "function" ? getStatus("serviceRequests") : null) }));
   }
@@ -5838,6 +5850,60 @@
   }
 
   // app/web/admin/hooks/useKanban.js
+  function normalizeKanbanColumns(rows, columns) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const safeColumns = Array.isArray(columns) ? columns : [];
+    const canonicalByLabel = /* @__PURE__ */ new Map();
+    const aliases = /* @__PURE__ */ new Map();
+    const mergedColumns = [];
+    safeColumns.forEach((column, index) => {
+      const key = String((column == null ? void 0 : column.key) || "").trim();
+      if (!key) return;
+      const label = String((column == null ? void 0 : column.label) || key).trim() || key;
+      const labelKey = label.toLocaleLowerCase("ru-RU");
+      const sortOrder = Number.isFinite(Number(column == null ? void 0 : column.sort_order)) ? Number(column.sort_order) : index;
+      if (!canonicalByLabel.has(labelKey)) {
+        const canonical2 = {
+          key,
+          label,
+          sort_order: sortOrder,
+          total: 0
+        };
+        canonicalByLabel.set(labelKey, canonical2);
+        mergedColumns.push(canonical2);
+        return;
+      }
+      const canonical = canonicalByLabel.get(labelKey);
+      if (canonical && canonical.key !== key) aliases.set(key, canonical.key);
+    });
+    if (!aliases.size) {
+      return { rows: safeRows, columns: safeColumns };
+    }
+    const remapGroup = (groupKey) => {
+      const normalized = String(groupKey || "").trim();
+      if (!normalized) return normalized;
+      return aliases.get(normalized) || normalized;
+    };
+    const normalizedRows = safeRows.map((row) => ({
+      ...row,
+      status_group: remapGroup(row == null ? void 0 : row.status_group),
+      available_transitions: Array.isArray(row == null ? void 0 : row.available_transitions) ? row.available_transitions.map((transition) => ({
+        ...transition,
+        target_group: remapGroup(transition == null ? void 0 : transition.target_group)
+      })) : []
+    }));
+    const totals = /* @__PURE__ */ new Map();
+    normalizedRows.forEach((row) => {
+      const key = String((row == null ? void 0 : row.status_group) || "").trim();
+      if (!key) return;
+      totals.set(key, Number(totals.get(key) || 0) + 1);
+    });
+    const normalizedColumns = mergedColumns.map((column) => ({
+      ...column,
+      total: Number(totals.get(String(column.key || "").trim()) || 0)
+    }));
+    return { rows: normalizedRows, columns: normalizedColumns };
+  }
   function useKanban({ api, setStatus, setTableState, tablesRef }) {
     const { useCallback, useState } = React;
     const [kanbanData, setKanbanData] = useState({
@@ -5865,8 +5931,11 @@
         setStatus("kanban", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...", "");
         try {
           const data = await api("/api/admin/requests/kanban?" + params.toString(), {}, tokenOverride);
-          const rows = Array.isArray(data.rows) ? data.rows : [];
-          const columns = Array.isArray(data.columns) && data.columns.length ? data.columns : KANBAN_GROUPS;
+          const rawRows = Array.isArray(data.rows) ? data.rows : [];
+          const rawColumns = Array.isArray(data.columns) && data.columns.length ? data.columns : KANBAN_GROUPS;
+          const normalized = normalizeKanbanColumns(rawRows, rawColumns);
+          const rows = Array.isArray(normalized.rows) ? normalized.rows : rawRows;
+          const columns = Array.isArray(normalized.columns) && normalized.columns.length ? normalized.columns : rawColumns;
           setKanbanData({
             rows,
             columns,
@@ -6874,8 +6943,13 @@
     function Overlay({ open, onClose, children, id }) {
       return /* @__PURE__ */ React.createElement("div", { className: "overlay" + (open ? " open" : ""), id, onClick: onClose }, children);
     }
-    function IconButton({ icon, tooltip, onClick, tone }) {
+    function IconButton({ icon, tooltip, onClick, tone, disabled = false }) {
       const handleClick = (event) => {
+        if (disabled) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (event.nativeEvent && typeof event.nativeEvent.stopImmediatePropagation === "function") {
@@ -6898,7 +6972,8 @@
           "data-tooltip": tooltip,
           onClick: handleClick,
           onAuxClick: handleAuxClick,
-          "aria-label": tooltip
+          "aria-label": tooltip,
+          disabled
         },
         icon
       );
@@ -7190,7 +7265,7 @@
       const renderField = (field) => {
         var _a;
         const value = (_a = form[field.key]) != null ? _a : "";
-        const options = typeof field.options === "function" ? field.options() : [];
+        const options = typeof field.options === "function" ? field.options(form || {}) : [];
         const id = "record-field-" + field.key;
         const disabled = Boolean(field.readOnly) || (typeof field.readOnlyWhen === "function" ? Boolean(field.readOnlyWhen(form || {})) : false);
         if (field.type === "textarea" || field.type === "json") {
@@ -7476,6 +7551,12 @@
       const getInvoiceStatusOptions = useCallback(() => {
         return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
       }, []);
+      const getServiceRequestTypeOptions = useCallback(() => {
+        return Object.entries(SERVICE_REQUEST_TYPE_LABELS).map(([code, name]) => ({ value: code, label: name }));
+      }, []);
+      const getServiceRequestStatusOptions = useCallback(() => {
+        return Object.entries(SERVICE_REQUEST_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
+      }, []);
       const getStatusKindOptions = useCallback(() => {
         return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name }));
       }, []);
@@ -7574,7 +7655,7 @@
           return { value: track, label: parts.join(" \u2022 ") };
         }).filter(Boolean).sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
       }, [getInvoiceRequestRows]);
-      const getInvoicePayerOptions = useCallback(() => {
+      const getInvoicePayerOptions = useCallback((formOrTrack) => {
         const map = /* @__PURE__ */ new Map();
         const addPayer = (nameRaw, phoneRaw) => {
           const name = String(nameRaw || "").trim();
@@ -7583,9 +7664,22 @@
           if (map.has(name)) return;
           map.set(name, phone ? `${name} (${phone})` : name);
         };
-        const clientRows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
-        clientRows.forEach((row) => addPayer((row == null ? void 0 : row.full_name) || (row == null ? void 0 : row.client_name), (row == null ? void 0 : row.phone) || (row == null ? void 0 : row.client_phone)));
-        getInvoiceRequestRows().forEach((row) => addPayer(row == null ? void 0 : row.client_name, row == null ? void 0 : row.client_phone));
+        const rows = getInvoiceRequestRows();
+        const trackFromInput = typeof formOrTrack === "string" ? formOrTrack : String((formOrTrack == null ? void 0 : formOrTrack.request_track_number) || "").trim();
+        const requestIdFromInput = typeof formOrTrack === "string" ? "" : String((formOrTrack == null ? void 0 : formOrTrack.request_id) || "").trim();
+        const normalizedTrack = String(trackFromInput || "").trim().toUpperCase();
+        const selectedRequest = rows.find((row) => {
+          const rowTrack = String((row == null ? void 0 : row.track_number) || "").trim().toUpperCase();
+          const rowId = String((row == null ? void 0 : row.id) || "").trim();
+          return normalizedTrack && rowTrack === normalizedTrack || requestIdFromInput && rowId === requestIdFromInput;
+        });
+        if (selectedRequest) {
+          addPayer(selectedRequest == null ? void 0 : selectedRequest.client_name, selectedRequest == null ? void 0 : selectedRequest.client_phone);
+        } else {
+          const clientRows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
+          clientRows.forEach((row) => addPayer((row == null ? void 0 : row.full_name) || (row == null ? void 0 : row.client_name), (row == null ? void 0 : row.phone) || (row == null ? void 0 : row.client_phone)));
+          rows.forEach((row) => addPayer(row == null ? void 0 : row.client_name, row == null ? void 0 : row.client_phone));
+        }
         return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
       }, [getInvoiceRequestRows, referenceRowsMap.clients]);
       const dictionaryTableItems = useMemo(() => {
@@ -7655,8 +7749,8 @@
           }
           if (tableKey === "serviceRequests") {
             return [
-              { field: "type", label: "\u0422\u0438\u043F", type: "text" },
-              { field: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "text" },
+              { field: "type", label: "\u0422\u0438\u043F", type: "enum", options: getServiceRequestTypeOptions },
+              { field: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "enum", options: getServiceRequestStatusOptions },
               { field: "request_id", label: "ID \u0437\u0430\u044F\u0432\u043A\u0438", type: "text" },
               { field: "client_id", label: "ID \u043A\u043B\u0438\u0435\u043D\u0442\u0430", type: "text" },
               { field: "assigned_lawyer_id", label: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0439 \u044E\u0440\u0438\u0441\u0442", type: "reference", options: getLawyerOptions },
@@ -7798,6 +7892,8 @@
           getInvoiceStatusOptions,
           getLawyerOptions,
           getRoleOptions,
+          getServiceRequestStatusOptions,
+          getServiceRequestTypeOptions,
           role,
           getStatusGroupOptions,
           getStatusKindOptions,
@@ -7946,8 +8042,23 @@
               { key: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "enum", required: true, options: getInvoiceStatusOptions, defaultValue: "WAITING_PAYMENT" },
               { key: "amount", label: "\u0421\u0443\u043C\u043C\u0430", type: "number", required: true },
               { key: "currency", label: "\u0412\u0430\u043B\u044E\u0442\u0430", type: "text", optional: true, defaultValue: "RUB" },
-              { key: "payer_display_name", label: "\u041F\u043B\u0430\u0442\u0435\u043B\u044C\u0449\u0438\u043A (\u0424\u0418\u041E / \u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F)", type: "reference", required: true, options: getInvoicePayerOptions },
-              { key: "payer_details", label: "\u0420\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B (JSON, \u0448\u0438\u0444\u0440\u0443\u0435\u0442\u0441\u044F)", type: "json", optional: true, omitIfEmpty: true, placeholder: '{"inn":"..."}' }
+              {
+                key: "payer_display_name",
+                label: "\u041F\u043B\u0430\u0442\u0435\u043B\u044C\u0449\u0438\u043A (\u0424\u0418\u041E / \u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F)",
+                type: "reference",
+                required: true,
+                options: (form) => getInvoicePayerOptions(form)
+              }
+            ];
+          }
+          if (tableKey === "serviceRequests") {
+            return [
+              { key: "type", label: "\u0422\u0438\u043F", type: "enum", required: true, options: getServiceRequestTypeOptions },
+              { key: "status", label: "\u0421\u0442\u0430\u0442\u0443\u0441", type: "enum", required: true, options: getServiceRequestStatusOptions },
+              { key: "body", label: "\u041E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435", type: "textarea", required: true, fullRow: true },
+              { key: "request_id", label: "ID \u0437\u0430\u044F\u0432\u043A\u0438", type: "text", required: true },
+              { key: "client_id", label: "ID \u043A\u043B\u0438\u0435\u043D\u0442\u0430", type: "text", optional: true },
+              { key: "assigned_lawyer_id", label: "ID \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u043E\u0433\u043E \u044E\u0440\u0438\u0441\u0442\u0430", type: "text", optional: true }
             ];
           }
           if (tableKey === "quotes") {
@@ -8093,6 +8204,8 @@
           getClientOptions,
           getLawyerOptions,
           getRoleOptions,
+          getServiceRequestStatusOptions,
+          getServiceRequestTypeOptions,
           getStatusGroupOptions,
           getStatusKindOptions,
           getStatusOptions,
@@ -8410,10 +8523,19 @@
             } else initial[field.key] = "";
           });
           if (tableKey === "requests" && !initial.status_code) initial.status_code = "NEW";
+          if (tableKey === "invoices") {
+            const selectedTrack = String(initial.request_track_number || "").trim().toUpperCase();
+            if (selectedTrack) {
+              const rows = getInvoiceRequestRows();
+              const found = rows.find((row) => String((row == null ? void 0 : row.track_number) || "").trim().toUpperCase() === selectedTrack);
+              const autoPayer = String((found == null ? void 0 : found.client_name) || "").trim();
+              if (autoPayer) initial.payer_display_name = autoPayer;
+            }
+          }
           setRecordModal({ open: true, tableKey, mode: "create", rowId: null, form: initial });
           setStatus("recordForm", "", "");
         },
-        [getRecordFields, setStatus]
+        [getInvoiceRequestRows, getRecordFields, setStatus]
       );
       const openCreateStatusTransitionForTopic = useCallback(() => {
         const topicCode = String(statusDesignerTopicCode || "").trim();
@@ -8440,11 +8562,23 @@
         setStatus("recordForm", "", "");
       }, [setStatus, statusDesignerRows, statusDesignerTopicCode]);
       const openEditRecordModal = useCallback(
-        (tableKey, row) => {
+        async (tableKey, row) => {
+          let sourceRow = row || {};
+          if (tableKey === "requests" && role === "ADMIN" && (row == null ? void 0 : row.id)) {
+            try {
+              setStatus("requests", "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043E\u043B\u043D\u0443\u044E \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u0437\u0430\u044F\u0432\u043A\u0438...", "");
+              const loaded = await api("/api/admin/requests/" + row.id);
+              sourceRow = { ...row || {}, ...loaded || {} };
+              setStatus("requests", "", "");
+            } catch (error) {
+              setStatus("requests", "\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u0437\u0430\u044F\u0432\u043A\u0438: " + error.message, "error");
+              return;
+            }
+          }
           const fields = getRecordFields(tableKey);
           const nextForm = {};
           fields.forEach((field) => {
-            const value = row[field.key];
+            const value = sourceRow[field.key];
             if (field.type === "boolean") nextForm[field.key] = value ? "true" : "false";
             else if (field.type === "json") nextForm[field.key] = value == null ? "" : JSON.stringify(value, null, 2);
             else nextForm[field.key] = value == null ? "" : String(value);
@@ -8452,10 +8586,10 @@
           if (tableKey === "requests" && role !== "LAWYER" && !String(nextForm.client_id || "").trim()) {
             nextForm.client_id = NEW_REQUEST_CLIENT_OPTION;
           }
-          setRecordModal({ open: true, tableKey, mode: "edit", rowId: row.id, form: nextForm });
+          setRecordModal({ open: true, tableKey, mode: "edit", rowId: sourceRow.id, form: nextForm });
           setStatus("recordForm", "", "");
         },
-        [getRecordFields, setStatus]
+        [api, getRecordFields, role, setStatus]
       );
       const closeRecordModal = useCallback(() => {
         setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
@@ -8564,10 +8698,12 @@
         (tableKey, form, mode) => {
           const fields = getRecordFields(tableKey);
           const payload = {};
-          const isLawyerRequestEdit = tableKey === "requests" && role === "LAWYER";
-          const lawyerRequestRestricted = /* @__PURE__ */ new Set(["assigned_lawyer_id", "effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"]);
+          const isLawyerRequestEdit = tableKey === "requests" && role === "LAWYER" && mode === "edit";
+          const isAdminRequestEdit = tableKey === "requests" && role === "ADMIN" && mode === "edit";
+          const adminRequestRestricted = /* @__PURE__ */ new Set(["client_id", "client_name", "client_phone"]);
           fields.forEach((field) => {
-            if (isLawyerRequestEdit && lawyerRequestRestricted.has(field.key)) return;
+            if (isLawyerRequestEdit && field.key !== "topic_code") return;
+            if (isAdminRequestEdit && adminRequestRestricted.has(field.key)) return;
             const raw = form[field.key];
             if (field.type === "boolean") {
               payload[field.key] = raw === "true";
@@ -9547,9 +9683,23 @@
       const filterTableLabel = useMemo(() => getTableLabel(filterModal.tableKey), [filterModal.tableKey, getTableLabel]);
       const recordModalFields = useMemo(() => {
         const all = getRecordFields(recordModal.tableKey);
-        if (recordModal.mode !== "create") return all.filter((field) => !field.createOnly);
-        return all.filter((field) => !field.autoCreate);
-      }, [getRecordFields, recordModal.mode, recordModal.tableKey]);
+        const isEdit = recordModal.mode !== "create";
+        const roleCode = String(role || "").toUpperCase();
+        const visible = isEdit ? all.filter((field) => !field.createOnly) : all.filter((field) => !field.autoCreate);
+        return visible.map((field) => {
+          const nextField = { ...field };
+          if (recordModal.tableKey === "requests" && isEdit) {
+            if (roleCode === "LAWYER" && field.key !== "topic_code") nextField.readOnly = true;
+            if (roleCode === "ADMIN" && (field.key === "client_id" || field.key === "client_name" || field.key === "client_phone")) {
+              nextField.readOnly = true;
+            }
+          }
+          if (recordModal.tableKey === "serviceRequests" && isEdit && (field.key === "request_id" || field.key === "client_id" || field.key === "assigned_lawyer_id")) {
+            nextField.readOnly = true;
+          }
+          return nextField;
+        });
+      }, [getRecordFields, recordModal.mode, recordModal.tableKey, role]);
       const activeConfigTableState = useMemo(() => {
         return tables[configActiveKey] || createTableState();
       }, [configActiveKey, tables]);
@@ -9746,7 +9896,9 @@
           status: getStatus("serviceRequests"),
           getFieldDef,
           getFilterValuePreview,
+          resolveReferenceLabel,
           onRefresh: () => loadTable("serviceRequests", { resetOffset: true }),
+          onCreate: () => openCreateRecordModal("serviceRequests"),
           onOpenFilter: () => openFilterModal("serviceRequests"),
           onRemoveFilter: (index) => removeFilterChip("serviceRequests", index),
           onEditFilter: (index) => openFilterEditModal("serviceRequests", index),

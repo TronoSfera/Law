@@ -5,6 +5,7 @@ import {
   TABLE_SERVER_CONFIG,
 } from "../../shared/constants.js";
 import { fmtDate } from "../../shared/utils.js";
+import { AddIcon, FilterIcon } from "../../shared/icons.jsx";
 
 function serviceRequestTypeLabel(value) {
   const code = String(value || "").toUpperCase();
@@ -30,7 +31,9 @@ export function ServiceRequestsSection({
   getStatus,
   getFieldDef,
   getFilterValuePreview,
+  resolveReferenceLabel,
   onRefresh,
+  onCreate,
   onOpenFilter,
   onRemoveFilter,
   onEditFilter,
@@ -62,6 +65,16 @@ export function ServiceRequestsSection({
         <div>
           <h2>Запросы</h2>
           <p className="muted">Запросы клиента к куратору и обращения на смену юриста.</p>
+        </div>
+        <div className="section-head-actions">
+          {onCreate && roleCode === "ADMIN" ? (
+            <button className="btn secondary table-control-btn" type="button" onClick={onCreate} title="Добавить" aria-label="Добавить">
+              <AddIcon />
+            </button>
+          ) : null}
+          <button className="btn secondary table-control-btn" type="button" onClick={onOpenFilter} title="Фильтр" aria-label="Фильтр">
+            <FilterIcon />
+          </button>
         </div>
       </div>
       <FilterToolbar
@@ -101,13 +114,22 @@ export function ServiceRequestsSection({
             <td>{serviceRequestStatusLabel(row.status)}</td>
             <td>{row.body || "-"}</td>
             <td>
-              {row.request_id ? (
-                <button type="button" className="request-track-link" onClick={(event) => onOpenRequest(row.request_id, event)} title="Открыть заявку">
-                  <code>{row.request_id}</code>
-                </button>
-              ) : (
-                "-"
-              )}
+              {(() => {
+                const requestTrackNumber =
+                  String(row?.request_track_number || "").trim() ||
+                  String(
+                    typeof resolveReferenceLabel === "function"
+                      ? resolveReferenceLabel({ table: "requests", value_field: "id", label_field: "track_number" }, row?.request_id)
+                      : ""
+                  ).trim();
+                const requestLabel = requestTrackNumber || String(row?.request_id || "").trim() || "-";
+                if (!row.request_id) return "-";
+                return (
+                  <button type="button" className="request-track-link" onClick={(event) => onOpenRequest(row.request_id, event)} title="Открыть заявку">
+                    <code>{requestLabel}</code>
+                  </button>
+                );
+              })()}
             </td>
             <td>{unreadLabel(row, roleCode)}</td>
             <td>{fmtDate(row.created_at)}</td>
@@ -131,7 +153,6 @@ export function ServiceRequestsSection({
         onNext={onNext}
         onLoadAll={onLoadAll}
         onRefresh={onRefresh}
-        onOpenFilter={onOpenFilter}
       />
       <StatusLine status={status || (typeof getStatus === "function" ? getStatus("serviceRequests") : null)} />
     </>

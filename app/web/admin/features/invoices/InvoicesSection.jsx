@@ -1,5 +1,6 @@
 import { OPERATOR_LABELS, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
 import { fmtDate, invoiceStatusLabel } from "../../shared/utils.js";
+import { AddIcon, FilterIcon } from "../../shared/icons.jsx";
 
 export function InvoicesSection({
   role,
@@ -39,6 +40,16 @@ export function InvoicesSection({
         <div>
           <h2>Счета</h2>
           <p className="muted">Выставленные счета клиентам, статусы оплаты и выгрузка PDF.</p>
+        </div>
+        <div className="section-head-actions">
+          {onCreate ? (
+            <button className="btn secondary table-control-btn" type="button" onClick={onCreate} title="Добавить" aria-label="Добавить">
+              <AddIcon />
+            </button>
+          ) : null}
+          <button className="btn secondary table-control-btn" type="button" onClick={onOpenFilter} title="Фильтр" aria-label="Фильтр">
+            <FilterIcon />
+          </button>
         </div>
       </div>
       <FilterToolbar
@@ -96,7 +107,7 @@ export function InvoicesSection({
             <td>
               <div className="table-actions">
                 <IconButton icon="⬇" tooltip="Скачать PDF" onClick={() => onDownloadPdf(row)} />
-                <IconButton icon="✎" tooltip="Редактировать счет" onClick={() => onEditRecord(row)} />
+                {role === "ADMIN" ? <IconButton icon="✎" tooltip="Редактировать счет" onClick={() => onEditRecord(row)} /> : null}
                 {role === "ADMIN" ? (
                   <IconButton icon="🗑" tooltip="Удалить счет" onClick={() => onDeleteRecord(row.id)} tone="danger" />
                 ) : null}
@@ -111,8 +122,6 @@ export function InvoicesSection({
         onNext={onNext}
         onLoadAll={onLoadAll}
         onRefresh={onRefresh}
-        onCreate={onCreate}
-        onOpenFilter={onOpenFilter}
       />
       <StatusLine status={status} />
     </>

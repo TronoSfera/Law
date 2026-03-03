@@ -344,7 +344,7 @@ def update_invoice(
     invoice_id: str,
     payload: dict,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+    admin: dict = Depends(require_role("ADMIN")),
 ):
     role = str(admin.get("role") or "").upper()
     actor_id = _actor_uuid_or_401(admin)

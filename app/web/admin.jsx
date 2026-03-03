@@ -4,6 +4,8 @@ import {
   LS_TOKEN,
   OPERATOR_LABELS,
   ROLE_LABELS,
+  SERVICE_REQUEST_STATUS_LABELS,
+  SERVICE_REQUEST_TYPE_LABELS,
   STATUS_LABELS,
   STATUS_KIND_LABELS,
   TABLE_KEY_ALIASES,
@@ -230,8 +232,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
   }
 
-  function IconButton({ icon, tooltip, onClick, tone }) {
+  function IconButton({ icon, tooltip, onClick, tone, disabled = false }) {
     const handleClick = (event) => {
+      if (disabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       if (event.nativeEvent && typeof event.nativeEvent.stopImmediatePropagation === "function") {
@@ -254,6 +261,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         onClick={handleClick}
         onAuxClick={handleAuxClick}
         aria-label={tooltip}
+        disabled={disabled}
       >
         {icon}
       </button>
@@ -927,7 +935,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const renderField = (field) => {
       const value = form[field.key] ?? "";
-      const options = typeof field.options === "function" ? field.options() : [];
+      const options = typeof field.options === "function" ? field.options(form || {}) : [];
       const id = "record-field-" + field.key;
       const disabled = Boolean(field.readOnly) || (typeof field.readOnlyWhen === "function" ? Boolean(field.readOnlyWhen(form || {})) : false);
 
@@ -1300,6 +1308,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
     }, []);
 
+    const getServiceRequestTypeOptions = useCallback(() => {
+      return Object.entries(SERVICE_REQUEST_TYPE_LABELS).map(([code, name]) => ({ value: code, label: name }));
+    }, []);
+
+    const getServiceRequestStatusOptions = useCallback(() => {
+      return Object.entries(SERVICE_REQUEST_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
+    }, []);
+
     const getStatusKindOptions = useCallback(() => {
       return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name }));
     }, []);
@@ -1422,7 +1438,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         .sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
     }, [getInvoiceRequestRows]);
 
-    const getInvoicePayerOptions = useCallback(() => {
+    const getInvoicePayerOptions = useCallback((formOrTrack) => {
       const map = new Map();
       const addPayer = (nameRaw, phoneRaw) => {
         const name = String(nameRaw || "").trim();
@@ -1432,9 +1448,26 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         map.set(name, phone ? `${name} (${phone})` : name);
       };
 
-      const clientRows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
-      clientRows.forEach((row) => addPayer(row?.full_name || row?.client_name, row?.phone || row?.client_phone));
-      getInvoiceRequestRows().forEach((row) => addPayer(row?.client_name, row?.client_phone));
+      const rows = getInvoiceRequestRows();
+      const trackFromInput =
+        typeof formOrTrack === "string"
+          ? formOrTrack
+          : String(formOrTrack?.request_track_number || "").trim();
+      const requestIdFromInput = typeof formOrTrack === "string" ? "" : String(formOrTrack?.request_id || "").trim();
+      const normalizedTrack = String(trackFromInput || "").trim().toUpperCase();
+      const selectedRequest = rows.find((row) => {
+        const rowTrack = String(row?.track_number || "").trim().toUpperCase();
+        const rowId = String(row?.id || "").trim();
+        return (normalizedTrack && rowTrack === normalizedTrack) || (requestIdFromInput && rowId === requestIdFromInput);
+      });
+
+      if (selectedRequest) {
+        addPayer(selectedRequest?.client_name, selectedRequest?.client_phone);
+      } else {
+        const clientRows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
+        clientRows.forEach((row) => addPayer(row?.full_name || row?.client_name, row?.phone || row?.client_phone));
+        rows.forEach((row) => addPayer(row?.client_name, row?.client_phone));
+      }
 
       return Array.from(map.entries())
         .map(([value, label]) => ({ value, label }))
@@ -1518,8 +1551,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         }
         if (tableKey === "serviceRequests") {
           return [
-            { field: "type", label: "Тип", type: "text" },
-            { field: "status", label: "Статус", type: "text" },
+            { field: "type", label: "Тип", type: "enum", options: getServiceRequestTypeOptions },
+            { field: "status", label: "Статус", type: "enum", options: getServiceRequestStatusOptions },
             { field: "request_id", label: "ID заявки", type: "text" },
             { field: "client_id", label: "ID клиента", type: "text" },
             { field: "assigned_lawyer_id", label: "Назначенный юрист", type: "reference", options: getLawyerOptions },
@@ -1663,6 +1696,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         getInvoiceStatusOptions,
         getLawyerOptions,
         getRoleOptions,
+        getServiceRequestStatusOptions,
+        getServiceRequestTypeOptions,
         role,
         getStatusGroupOptions,
         getStatusKindOptions,
@@ -1821,8 +1856,23 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             { key: "status", label: "Статус", type: "enum", required: true, options: getInvoiceStatusOptions, defaultValue: "WAITING_PAYMENT" },
             { key: "amount", label: "Сумма", type: "number", required: true },
             { key: "currency", label: "Валюта", type: "text", optional: true, defaultValue: "RUB" },
-            { key: "payer_display_name", label: "Плательщик (ФИО / компания)", type: "reference", required: true, options: getInvoicePayerOptions },
-            { key: "payer_details", label: "Реквизиты (JSON, шифруется)", type: "json", optional: true, omitIfEmpty: true, placeholder: "{\"inn\":\"...\"}" },
+            {
+              key: "payer_display_name",
+              label: "Плательщик (ФИО / компания)",
+              type: "reference",
+              required: true,
+              options: (form) => getInvoicePayerOptions(form),
+            },
+          ];
+        }
+        if (tableKey === "serviceRequests") {
+          return [
+            { key: "type", label: "Тип", type: "enum", required: true, options: getServiceRequestTypeOptions },
+            { key: "status", label: "Статус", type: "enum", required: true, options: getServiceRequestStatusOptions },
+            { key: "body", label: "Обращение", type: "textarea", required: true, fullRow: true },
+            { key: "request_id", label: "ID заявки", type: "text", required: true },
+            { key: "client_id", label: "ID клиента", type: "text", optional: true },
+            { key: "assigned_lawyer_id", label: "ID назначенного юриста", type: "text", optional: true },
           ];
         }
         if (tableKey === "quotes") {
@@ -1970,6 +2020,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         getClientOptions,
         getLawyerOptions,
         getRoleOptions,
+        getServiceRequestStatusOptions,
+        getServiceRequestTypeOptions,
         getStatusGroupOptions,
         getStatusKindOptions,
         getStatusOptions,
@@ -2315,10 +2367,19 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           else initial[field.key] = "";
         });
         if (tableKey === "requests" && !initial.status_code) initial.status_code = "NEW";
+        if (tableKey === "invoices") {
+          const selectedTrack = String(initial.request_track_number || "").trim().toUpperCase();
+          if (selectedTrack) {
+            const rows = getInvoiceRequestRows();
+            const found = rows.find((row) => String(row?.track_number || "").trim().toUpperCase() === selectedTrack);
+            const autoPayer = String(found?.client_name || "").trim();
+            if (autoPayer) initial.payer_display_name = autoPayer;
+          }
+        }
         setRecordModal({ open: true, tableKey, mode: "create", rowId: null, form: initial });
         setStatus("recordForm", "", "");
       },
-      [getRecordFields, setStatus]
+      [getInvoiceRequestRows, getRecordFields, setStatus]
     );
 
     const openCreateStatusTransitionForTopic = useCallback(() => {
@@ -2347,11 +2408,23 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     }, [setStatus, statusDesignerRows, statusDesignerTopicCode]);
 
     const openEditRecordModal = useCallback(
-      (tableKey, row) => {
+      async (tableKey, row) => {
+        let sourceRow = row || {};
+        if (tableKey === "requests" && role === "ADMIN" && row?.id) {
+          try {
+            setStatus("requests", "Загружаем полную карточку заявки...", "");
+            const loaded = await api("/api/admin/requests/" + row.id);
+            sourceRow = { ...(row || {}), ...(loaded || {}) };
+            setStatus("requests", "", "");
+          } catch (error) {
+            setStatus("requests", "Ошибка загрузки заявки: " + error.message, "error");
+            return;
+          }
+        }
         const fields = getRecordFields(tableKey);
         const nextForm = {};
         fields.forEach((field) => {
-          const value = row[field.key];
+          const value = sourceRow[field.key];
           if (field.type === "boolean") nextForm[field.key] = value ? "true" : "false";
           else if (field.type === "json") nextForm[field.key] = value == null ? "" : JSON.stringify(value, null, 2);
           else nextForm[field.key] = value == null ? "" : String(value);
@@ -2359,10 +2432,10 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         if (tableKey === "requests" && role !== "LAWYER" && !String(nextForm.client_id || "").trim()) {
           nextForm.client_id = NEW_REQUEST_CLIENT_OPTION;
         }
-        setRecordModal({ open: true, tableKey, mode: "edit", rowId: row.id, form: nextForm });
+        setRecordModal({ open: true, tableKey, mode: "edit", rowId: sourceRow.id, form: nextForm });
         setStatus("recordForm", "", "");
       },
-      [getRecordFields, setStatus]
+      [api, getRecordFields, role, setStatus]
     );
 
     const closeRecordModal = useCallback(() => {
@@ -2479,10 +2552,12 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       (tableKey, form, mode) => {
         const fields = getRecordFields(tableKey);
         const payload = {};
-        const isLawyerRequestEdit = tableKey === "requests" && role === "LAWYER";
-        const lawyerRequestRestricted = new Set(["assigned_lawyer_id", "effective_rate", "invoice_amount", "paid_at", "paid_by_admin_id"]);
+        const isLawyerRequestEdit = tableKey === "requests" && role === "LAWYER" && mode === "edit";
+        const isAdminRequestEdit = tableKey === "requests" && role === "ADMIN" && mode === "edit";
+        const adminRequestRestricted = new Set(["client_id", "client_name", "client_phone"]);
         fields.forEach((field) => {
-          if (isLawyerRequestEdit && lawyerRequestRestricted.has(field.key)) return;
+          if (isLawyerRequestEdit && field.key !== "topic_code") return;
+          if (isAdminRequestEdit && adminRequestRestricted.has(field.key)) return;
           const raw = form[field.key];
           if (field.type === "boolean") {
             payload[field.key] = raw === "true";
@@ -3547,9 +3622,27 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const recordModalFields = useMemo(() => {
       const all = getRecordFields(recordModal.tableKey);
-      if (recordModal.mode !== "create") return all.filter((field) => !field.createOnly);
-      return all.filter((field) => !field.autoCreate);
-    }, [getRecordFields, recordModal.mode, recordModal.tableKey]);
+      const isEdit = recordModal.mode !== "create";
+      const roleCode = String(role || "").toUpperCase();
+      const visible = isEdit ? all.filter((field) => !field.createOnly) : all.filter((field) => !field.autoCreate);
+      return visible.map((field) => {
+        const nextField = { ...field };
+        if (recordModal.tableKey === "requests" && isEdit) {
+          if (roleCode === "LAWYER" && field.key !== "topic_code") nextField.readOnly = true;
+          if (roleCode === "ADMIN" && (field.key === "client_id" || field.key === "client_name" || field.key === "client_phone")) {
+            nextField.readOnly = true;
+          }
+        }
+        if (
+          recordModal.tableKey === "serviceRequests" &&
+          isEdit &&
+          (field.key === "request_id" || field.key === "client_id" || field.key === "assigned_lawyer_id")
+        ) {
+          nextField.readOnly = true;
+        }
+        return nextField;
+      });
+    }, [getRecordFields, recordModal.mode, recordModal.tableKey, role]);
 
     const activeConfigTableState = useMemo(() => {
       return tables[configActiveKey] || createTableState();
@@ -3812,7 +3905,9 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 status={getStatus("serviceRequests")}
                 getFieldDef={getFieldDef}
                 getFilterValuePreview={getFilterValuePreview}
+                resolveReferenceLabel={resolveReferenceLabel}
                 onRefresh={() => loadTable("serviceRequests", { resetOffset: true })}
+                onCreate={() => openCreateRecordModal("serviceRequests")}
                 onOpenFilter={() => openFilterModal("serviceRequests")}
                 onRemoveFilter={(index) => removeFilterChip("serviceRequests", index)}
                 onEditFilter={(index) => openFilterEditModal("serviceRequests", index)}
