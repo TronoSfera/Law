@@ -2969,10 +2969,6 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       [loadCurrentConfigTable, resetAdminRoute]
     );
 
-    const refreshAll = useCallback(() => {
-      refreshSection(activeSection);
-    }, [activeSection, refreshSection]);
-
     const activateSection = useCallback(
       (section) => {
         const nextSection = canAccessSection(role, section) ? section : "dashboard";
@@ -3724,13 +3720,6 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 </>
               ) : null}
             </nav>
-            {role !== "LAWYER" ? (
-              <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <button className="btn secondary" type="button" onClick={refreshAll}>
-                  Обновить
-                </button>
-              </div>
-            ) : null}
           </aside>
 
           <main className="main">

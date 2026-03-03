@@ -5522,7 +5522,11 @@
           onFocus: () => setRequestTemplateSuggestOpen(true),
           onBlur: () => window.setTimeout(() => setRequestTemplateSuggestOpen(false), 120),
           disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate,
-          placeholder: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0448\u0430\u0431\u043B\u043E\u043D\u0430"
+          placeholder: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0448\u0430\u0431\u043B\u043E\u043D\u0430",
+          autoComplete: "new-password",
+          autoCorrect: "off",
+          autoCapitalize: "none",
+          spellCheck: false
         }
       ), requestTemplateBadge ? /* @__PURE__ */ React.createElement("span", { className: "request-data-template-badge " + requestTemplateBadge.kind }, requestTemplateBadge.label) : null, requestTemplateSuggestOpen && filteredRequestTemplates.length ? /* @__PURE__ */ React.createElement("div", { className: "request-data-suggest-list", role: "listbox", "aria-label": "\u0428\u0430\u0431\u043B\u043E\u043D\u044B \u0437\u0430\u043F\u0440\u043E\u0441\u0430" }, filteredRequestTemplates.map((tpl) => /* @__PURE__ */ React.createElement(
         "button",
@@ -5570,7 +5574,10 @@
           onBlur: () => window.setTimeout(() => setCatalogFieldSuggestOpen(false), 120),
           disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate,
           placeholder: "\u041D\u0430\u0447\u043D\u0438\u0442\u0435 \u0432\u0432\u043E\u0434\u0438\u0442\u044C \u043D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u043E\u043B\u044F",
-          autoComplete: "off"
+          autoComplete: "new-password",
+          autoCorrect: "off",
+          autoCapitalize: "none",
+          spellCheck: false
         }
       ), catalogFieldSuggestOpen && filteredCatalogFields.length ? /* @__PURE__ */ React.createElement("div", { className: "request-data-suggest-list", role: "listbox", "aria-label": "\u041F\u043E\u043B\u044F \u0434\u0430\u043D\u043D\u044B\u0445" }, filteredCatalogFields.map((tpl) => /* @__PURE__ */ React.createElement(
         "button",
@@ -9116,9 +9123,6 @@
         },
         [loadCurrentConfigTable, resetAdminRoute]
       );
-      const refreshAll = useCallback(() => {
-        refreshSection(activeSection);
-      }, [activeSection, refreshSection]);
       const activateSection = useCallback(
         (section) => {
           const nextSection = canAccessSection(role, section) ? section : "dashboard";
@@ -9789,7 +9793,7 @@
           onClick: () => selectConfigNode(item.key)
         },
         getTableLabel(item.key)
-      ))) : null) : null), role !== "LAWYER" ? /* @__PURE__ */ React.createElement("div", { style: { marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: refreshAll }, "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C")) : null), /* @__PURE__ */ React.createElement("main", { className: "main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", null, "\u041F\u0430\u043D\u0435\u043B\u044C \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "UniversalQuery, RBAC \u0438 \u0430\u0443\u0434\u0438\u0442 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439 \u043F\u043E \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u043C \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044F\u043C \u0441\u0438\u0441\u0442\u0435\u043C\u044B.")), /* @__PURE__ */ React.createElement("div", { className: "topbar-actions", "aria-label": "\u0411\u044B\u0441\u0442\u0440\u044B\u0435 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F \u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044C" }, showServiceRequestIcon ? /* @__PURE__ */ React.createElement(
+      ))) : null) : null)), /* @__PURE__ */ React.createElement("main", { className: "main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", null, "\u041F\u0430\u043D\u0435\u043B\u044C \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "UniversalQuery, RBAC \u0438 \u0430\u0443\u0434\u0438\u0442 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439 \u043F\u043E \u043A\u043B\u044E\u0447\u0435\u0432\u044B\u043C \u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044F\u043C \u0441\u0438\u0441\u0442\u0435\u043C\u044B.")), /* @__PURE__ */ React.createElement("div", { className: "topbar-actions", "aria-label": "\u0411\u044B\u0441\u0442\u0440\u044B\u0435 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F \u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044C" }, showServiceRequestIcon ? /* @__PURE__ */ React.createElement(
         "button",
         {
           type: "button",

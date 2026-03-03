@@ -2409,6 +2409,10 @@ export function RequestWorkspace({
                     onBlur={() => window.setTimeout(() => setRequestTemplateSuggestOpen(false), 120)}
                     disabled={dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate}
                     placeholder="Введите название шаблона"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                   {requestTemplateBadge ? (
                     <span className={"request-data-template-badge " + requestTemplateBadge.kind}>{requestTemplateBadge.label}</span>
@@ -2494,7 +2498,10 @@ export function RequestWorkspace({
                     onBlur={() => window.setTimeout(() => setCatalogFieldSuggestOpen(false), 120)}
                     disabled={dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate}
                     placeholder="Начните вводить наименование поля"
-                    autoComplete="off"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                   {catalogFieldSuggestOpen && filteredCatalogFields.length ? (
                     <div className="request-data-suggest-list" role="listbox" aria-label="Поля данных">
