@@ -11,6 +11,7 @@ const DEFAULT_INVOICE_REQUISITES = Object.freeze({
   bank_account: "40702810501860000582",
   bank_corr_account: "30101810200000000593",
 });
+const UPLOAD_MAX_ATTEMPTS = 4;
 
 async function buildStorageUploadError(response, fallbackMessage) {
   const base = String(fallbackMessage || "Не удалось загрузить файл в хранилище");
@@ -27,6 +28,31 @@ async function buildStorageUploadError(response, fallbackMessage) {
   if (status > 0) parts.push("HTTP " + status + (statusText ? " " + statusText : ""));
   if (details) parts.push(details);
   return parts.length ? base + " (" + parts.join("; ") + ")" : base;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function nextUploadRetryDelayMs(attempt) {
+  const base = Math.min(1200 * Math.pow(2, Math.max(0, Number(attempt || 1) - 1)), 7000);
+  const jitter = Math.floor(Math.random() * 250);
+  return base + jitter;
+}
+
+function isRetryableUploadError(error) {
+  const status = Number(error?.httpStatus || error?.status || 0);
+  if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  if (status > 0) return false;
+  const message = String(error?.message || "").toLowerCase();
+  if (!message) return true;
+  return (
+    message.includes("networkerror") ||
+    message.includes("failed to fetch") ||
+    message.includes("load failed") ||
+    message.includes("network request failed") ||
+    message.includes("timeout")
+  );
 }
 
 export function useRequestWorkspace(options) {
@@ -84,6 +110,73 @@ export function useRequestWorkspace(options) {
   const clearRequestModalFiles = useCallback(() => {
     setRequestModal((prev) => ({ ...prev, selectedFiles: [] }));
   }, []);
+
+  const uploadRequestAttachmentWithRetry = useCallback(
+    async ({ requestId, file, messageId }) => {
+      if (!api) throw new Error("API недоступен");
+      const targetRequestId = String(requestId || "").trim();
+      if (!targetRequestId) throw new Error("Не выбрана заявка");
+      if (!file) throw new Error("Файл не выбран");
+      const mimeType = String(file.type || "application/octet-stream");
+
+      const runUploadStepWithRetry = async (label, action) => {
+        let lastError = null;
+        let attemptsUsed = 0;
+        for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+          attemptsUsed = attempt;
+          try {
+            return await action(attempt);
+          } catch (error) {
+            lastError = error;
+            const canRetry = attempt < UPLOAD_MAX_ATTEMPTS && isRetryableUploadError(error);
+            if (!canRetry) break;
+            await wait(nextUploadRetryDelayMs(attempt));
+          }
+        }
+        const reason = String(lastError?.message || "Ошибка сети");
+        throw new Error(label + ": " + reason + " (попыток: " + attemptsUsed + ")");
+      };
+
+      const init = await runUploadStepWithRetry("Не удалось начать загрузку файла", async () => {
+        return api("/api/admin/uploads/init", {
+          method: "POST",
+          body: {
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "REQUEST_ATTACHMENT",
+            request_id: targetRequestId,
+          },
+        });
+      });
+      await runUploadStepWithRetry("Не удалось загрузить файл в хранилище", async () => {
+        const putResp = await fetch(init.presigned_url, {
+          method: "PUT",
+          headers: { "Content-Type": mimeType },
+          body: file,
+        });
+        if (putResp.ok) return null;
+        const error = new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
+        error.httpStatus = Number(putResp.status || 0);
+        throw error;
+      });
+      return runUploadStepWithRetry("Не удалось завершить загрузку файла", async () => {
+        return api("/api/admin/uploads/complete", {
+          method: "POST",
+          body: {
+            key: init.key,
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "REQUEST_ATTACHMENT",
+            request_id: targetRequestId,
+            message_id: messageId || null,
+          },
+        });
+      });
+    },
+    [api]
+  );
 
   const loadRequestModalData = useCallback(
     async (requestId, loadOptions) => {
@@ -264,35 +357,7 @@ export function useRequestWorkspace(options) {
         }
 
         for (const file of files) {
-          const mimeType = String(file.type || "application/octet-stream");
-          const init = await api("/api/admin/uploads/init", {
-            method: "POST",
-            body: {
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "REQUEST_ATTACHMENT",
-              request_id: requestId,
-            },
-          });
-          const putResp = await fetch(init.presigned_url, {
-            method: "PUT",
-            headers: { "Content-Type": mimeType },
-            body: file,
-          });
-          if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
-          await api("/api/admin/uploads/complete", {
-            method: "POST",
-            body: {
-              key: init.key,
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "REQUEST_ATTACHMENT",
-              request_id: requestId,
-              message_id: messageId,
-            },
-          });
+          await uploadRequestAttachmentWithRetry({ requestId, file, messageId });
         }
 
         setRequestModal((prev) => ({ ...prev, messageDraft: "", selectedFiles: [], fileUploading: false }));
@@ -304,7 +369,15 @@ export function useRequestWorkspace(options) {
         if (typeof setStatus === "function") setStatus("requestModal", "Ошибка отправки: " + error.message, "error");
       }
     },
-    [api, loadRequestModalData, requestModal.messageDraft, requestModal.requestId, requestModal.selectedFiles, setStatus]
+    [
+      api,
+      loadRequestModalData,
+      requestModal.messageDraft,
+      requestModal.requestId,
+      requestModal.selectedFiles,
+      setStatus,
+      uploadRequestAttachmentWithRetry,
+    ]
   );
 
   const loadRequestDataTemplates = useCallback(
@@ -439,42 +512,14 @@ export function useRequestWorkspace(options) {
         messageId = String(message?.id || "").trim() || null;
       }
       for (const file of attachedFiles) {
-        const mimeType = String(file.type || "application/octet-stream");
-        const init = await api("/api/admin/uploads/init", {
-          method: "POST",
-          body: {
-            file_name: file.name,
-            mime_type: mimeType,
-            size_bytes: file.size,
-            scope: "REQUEST_ATTACHMENT",
-            request_id: targetRequestId,
-          },
-        });
-        const putResp = await fetch(init.presigned_url, {
-          method: "PUT",
-          headers: { "Content-Type": mimeType },
-          body: file,
-        });
-        if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
-        await api("/api/admin/uploads/complete", {
-          method: "POST",
-          body: {
-            key: init.key,
-            file_name: file.name,
-            mime_type: mimeType,
-            size_bytes: file.size,
-            scope: "REQUEST_ATTACHMENT",
-            request_id: targetRequestId,
-            message_id: messageId,
-          },
-        });
+        await uploadRequestAttachmentWithRetry({ requestId: targetRequestId, file, messageId });
       }
 
       if (typeof setStatus === "function") setStatus("requestModal", "Статус заявки обновлен", "ok");
       await loadRequestModalData(targetRequestId, { showLoading: false });
       return result;
     },
-    [api, loadRequestModalData, requestModal.availableStatuses, requestModal.requestId, setStatus]
+    [api, loadRequestModalData, requestModal.availableStatuses, requestModal.requestId, setStatus, uploadRequestAttachmentWithRetry]
   );
 
   const issueRequestInvoice = useCallback(

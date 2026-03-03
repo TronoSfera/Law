@@ -5764,7 +5764,9 @@
         }
         if (!response.ok) {
           const message = payload && (payload.detail || payload.error || payload.raw) || "HTTP " + response.status;
-          throw new Error(translateApiError(String(message)));
+          const error = new Error(translateApiError(String(message)));
+          error.httpStatus = Number(response.status || 0);
+          throw error;
         }
         return payload;
       },
@@ -6025,6 +6027,7 @@
     bank_account: "40702810501860000582",
     bank_corr_account: "30101810200000000593"
   });
+  var UPLOAD_MAX_ATTEMPTS = 4;
   async function buildStorageUploadError(response, fallbackMessage) {
     const base = String(fallbackMessage || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435");
     const status = Number((response == null ? void 0 : response.status) || 0);
@@ -6040,6 +6043,22 @@
     if (status > 0) parts.push("HTTP " + status + (statusText ? " " + statusText : ""));
     if (details) parts.push(details);
     return parts.length ? base + " (" + parts.join("; ") + ")" : base;
+  }
+  function wait(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  }
+  function nextUploadRetryDelayMs(attempt) {
+    const base = Math.min(1200 * Math.pow(2, Math.max(0, Number(attempt || 1) - 1)), 7e3);
+    const jitter = Math.floor(Math.random() * 250);
+    return base + jitter;
+  }
+  function isRetryableUploadError(error) {
+    const status = Number((error == null ? void 0 : error.httpStatus) || (error == null ? void 0 : error.status) || 0);
+    if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+    if (status > 0) return false;
+    const message = String((error == null ? void 0 : error.message) || "").toLowerCase();
+    if (!message) return true;
+    return message.includes("networkerror") || message.includes("failed to fetch") || message.includes("load failed") || message.includes("network request failed") || message.includes("timeout");
   }
   function useRequestWorkspace(options) {
     const { useCallback, useRef, useState } = React;
@@ -6086,6 +6105,70 @@
     const clearRequestModalFiles = useCallback(() => {
       setRequestModal((prev) => ({ ...prev, selectedFiles: [] }));
     }, []);
+    const uploadRequestAttachmentWithRetry = useCallback(
+      async ({ requestId, file, messageId }) => {
+        if (!api) throw new Error("API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
+        const targetRequestId = String(requestId || "").trim();
+        if (!targetRequestId) throw new Error("\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 \u0437\u0430\u044F\u0432\u043A\u0430");
+        if (!file) throw new Error("\u0424\u0430\u0439\u043B \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D");
+        const mimeType = String(file.type || "application/octet-stream");
+        const runUploadStepWithRetry = async (label, action) => {
+          let lastError = null;
+          let attemptsUsed = 0;
+          for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+            attemptsUsed = attempt;
+            try {
+              return await action(attempt);
+            } catch (error) {
+              lastError = error;
+              const canRetry = attempt < UPLOAD_MAX_ATTEMPTS && isRetryableUploadError(error);
+              if (!canRetry) break;
+              await wait(nextUploadRetryDelayMs(attempt));
+            }
+          }
+          const reason = String((lastError == null ? void 0 : lastError.message) || "\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0435\u0442\u0438");
+          throw new Error(label + ": " + reason + " (\u043F\u043E\u043F\u044B\u0442\u043E\u043A: " + attemptsUsed + ")");
+        };
+        const init = await runUploadStepWithRetry("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0444\u0430\u0439\u043B\u0430", async () => {
+          return api("/api/admin/uploads/init", {
+            method: "POST",
+            body: {
+              file_name: file.name,
+              mime_type: mimeType,
+              size_bytes: file.size,
+              scope: "REQUEST_ATTACHMENT",
+              request_id: targetRequestId
+            }
+          });
+        });
+        await runUploadStepWithRetry("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435", async () => {
+          const putResp = await fetch(init.presigned_url, {
+            method: "PUT",
+            headers: { "Content-Type": mimeType },
+            body: file
+          });
+          if (putResp.ok) return null;
+          const error = new Error(await buildStorageUploadError(putResp, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435"));
+          error.httpStatus = Number(putResp.status || 0);
+          throw error;
+        });
+        return runUploadStepWithRetry("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0444\u0430\u0439\u043B\u0430", async () => {
+          return api("/api/admin/uploads/complete", {
+            method: "POST",
+            body: {
+              key: init.key,
+              file_name: file.name,
+              mime_type: mimeType,
+              size_bytes: file.size,
+              scope: "REQUEST_ATTACHMENT",
+              request_id: targetRequestId,
+              message_id: messageId || null
+            }
+          });
+        });
+      },
+      [api]
+    );
     const loadRequestModalData = useCallback(
       async (requestId, loadOptions) => {
         if (!api || !requestId) return;
@@ -6261,35 +6344,7 @@
             messageId = String((message == null ? void 0 : message.id) || "").trim() || null;
           }
           for (const file of files) {
-            const mimeType = String(file.type || "application/octet-stream");
-            const init = await api("/api/admin/uploads/init", {
-              method: "POST",
-              body: {
-                file_name: file.name,
-                mime_type: mimeType,
-                size_bytes: file.size,
-                scope: "REQUEST_ATTACHMENT",
-                request_id: requestId
-              }
-            });
-            const putResp = await fetch(init.presigned_url, {
-              method: "PUT",
-              headers: { "Content-Type": mimeType },
-              body: file
-            });
-            if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435"));
-            await api("/api/admin/uploads/complete", {
-              method: "POST",
-              body: {
-                key: init.key,
-                file_name: file.name,
-                mime_type: mimeType,
-                size_bytes: file.size,
-                scope: "REQUEST_ATTACHMENT",
-                request_id: requestId,
-                message_id: messageId
-              }
-            });
+            await uploadRequestAttachmentWithRetry({ requestId, file, messageId });
           }
           setRequestModal((prev) => ({ ...prev, messageDraft: "", selectedFiles: [], fileUploading: false }));
           const successMessage = body && files.length ? "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0438 \u0444\u0430\u0439\u043B\u044B \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B" : files.length ? "\u0424\u0430\u0439\u043B\u044B \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B" : "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E";
@@ -6300,7 +6355,15 @@
           if (typeof setStatus === "function") setStatus("requestModal", "\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438: " + error.message, "error");
         }
       },
-      [api, loadRequestModalData, requestModal.messageDraft, requestModal.requestId, requestModal.selectedFiles, setStatus]
+      [
+        api,
+        loadRequestModalData,
+        requestModal.messageDraft,
+        requestModal.requestId,
+        requestModal.selectedFiles,
+        setStatus,
+        uploadRequestAttachmentWithRetry
+      ]
     );
     const loadRequestDataTemplates = useCallback(
       async (documentName) => {
@@ -6420,41 +6483,13 @@
           messageId = String((message == null ? void 0 : message.id) || "").trim() || null;
         }
         for (const file of attachedFiles) {
-          const mimeType = String(file.type || "application/octet-stream");
-          const init = await api("/api/admin/uploads/init", {
-            method: "POST",
-            body: {
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "REQUEST_ATTACHMENT",
-              request_id: targetRequestId
-            }
-          });
-          const putResp = await fetch(init.presigned_url, {
-            method: "PUT",
-            headers: { "Content-Type": mimeType },
-            body: file
-          });
-          if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435"));
-          await api("/api/admin/uploads/complete", {
-            method: "POST",
-            body: {
-              key: init.key,
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "REQUEST_ATTACHMENT",
-              request_id: targetRequestId,
-              message_id: messageId
-            }
-          });
+          await uploadRequestAttachmentWithRetry({ requestId: targetRequestId, file, messageId });
         }
         if (typeof setStatus === "function") setStatus("requestModal", "\u0421\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u044F\u0432\u043A\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D", "ok");
         await loadRequestModalData(targetRequestId, { showLoading: false });
         return result;
       },
-      [api, loadRequestModalData, requestModal.availableStatuses, requestModal.requestId, setStatus]
+      [api, loadRequestModalData, requestModal.availableStatuses, requestModal.requestId, setStatus, uploadRequestAttachmentWithRetry]
     );
     const issueRequestInvoice = useCallback(
       async ({ requestId, amount, serviceDescription, payerDisplayName } = {}) => {

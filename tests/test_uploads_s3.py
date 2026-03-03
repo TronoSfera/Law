@@ -285,6 +285,63 @@ class UploadsS3Tests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].s3_key, key)
 
+    def test_public_upload_complete_is_idempotent_for_same_key(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-PUB-IDEMPOTENT",
+                client_name="Клиент",
+                client_phone="+79991112244",
+                topic_code="civil-law",
+                status_code="NEW",
+                extra_fields={},
+                total_attachments_bytes=0,
+            )
+            db.add(req)
+            db.commit()
+            request_id = str(req.id)
+            track = req.track_number
+
+        public_token = create_jwt({"sub": track, "purpose": "VIEW_REQUEST"}, settings.PUBLIC_JWT_SECRET, timedelta(days=1))
+        cookies = {settings.PUBLIC_COOKIE_NAME: public_token}
+
+        with patch("app.api.public.uploads.get_s3_storage", return_value=fake_s3):
+            init_resp = self.client.post(
+                "/api/public/uploads/init",
+                cookies=cookies,
+                json={
+                    "file_name": "retry-safe.pdf",
+                    "mime_type": "application/pdf",
+                    "size_bytes": 4096,
+                    "scope": "REQUEST_ATTACHMENT",
+                    "request_id": request_id,
+                },
+            )
+            self.assertEqual(init_resp.status_code, 200)
+            key = init_resp.json()["key"]
+            payload = {
+                "key": key,
+                "file_name": "retry-safe.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 4096,
+                "scope": "REQUEST_ATTACHMENT",
+                "request_id": request_id,
+            }
+            fake_s3.objects[key] = {"size": 4096, "mime": "application/pdf", "content": b"p" * 4096}
+
+            first = self.client.post("/api/public/uploads/complete", cookies=cookies, json=payload)
+            second = self.client.post("/api/public/uploads/complete", cookies=cookies, json=payload)
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(first.json().get("attachment_id"), second.json().get("attachment_id"))
+
+        with self.SessionLocal() as db:
+            req = db.get(Request, UUID(request_id))
+            self.assertIsNotNone(req)
+            self.assertEqual(req.total_attachments_bytes, 4096)
+            attachments = db.query(Attachment).filter(Attachment.request_id == UUID(request_id)).all()
+            self.assertEqual(len(attachments), 1)
+
     def test_public_attachment_object_preview_returns_inline_response(self):
         fake_s3 = _FakeS3Storage()
         with self.SessionLocal() as db:
@@ -427,6 +484,68 @@ class UploadsS3Tests(unittest.TestCase):
             self.assertEqual(req.total_attachments_bytes, 2048)
             self.assertTrue(req.client_has_unread_updates)
             self.assertEqual(req.client_unread_event_type, "ATTACHMENT")
+
+    def test_admin_upload_complete_is_idempotent_for_same_key(self):
+        fake_s3 = _FakeS3Storage()
+        with self.SessionLocal() as db:
+            admin = AdminUser(
+                role="ADMIN",
+                name="Админ Идемпотентность",
+                email="admin-idempotent@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            req = Request(
+                track_number="TRK-ADM-IDEMPOTENT",
+                client_name="Клиент",
+                client_phone="+79995556644",
+                topic_code="civil-law",
+                status_code="IN_PROGRESS",
+                extra_fields={},
+                total_attachments_bytes=0,
+            )
+            db.add_all([admin, req])
+            db.commit()
+            admin_id = str(admin.id)
+            request_id = str(req.id)
+
+        headers = self._admin_headers(sub=admin_id, role="ADMIN", email="admin-idempotent@example.com")
+        with patch("app.api.admin.uploads.get_s3_storage", return_value=fake_s3):
+            init_resp = self.client.post(
+                "/api/admin/uploads/init",
+                headers=headers,
+                json={
+                    "file_name": "retry-safe-admin.pdf",
+                    "mime_type": "application/pdf",
+                    "size_bytes": 2048,
+                    "scope": "REQUEST_ATTACHMENT",
+                    "request_id": request_id,
+                },
+            )
+            self.assertEqual(init_resp.status_code, 200)
+            key = init_resp.json()["key"]
+            payload = {
+                "key": key,
+                "file_name": "retry-safe-admin.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 2048,
+                "scope": "REQUEST_ATTACHMENT",
+                "request_id": request_id,
+            }
+            fake_s3.objects[key] = {"size": 2048, "mime": "application/pdf", "content": b"x" * 2048}
+
+            first = self.client.post("/api/admin/uploads/complete", headers=headers, json=payload)
+            second = self.client.post("/api/admin/uploads/complete", headers=headers, json=payload)
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(first.json().get("attachment_id"), second.json().get("attachment_id"))
+
+        with self.SessionLocal() as db:
+            req = db.get(Request, UUID(request_id))
+            self.assertIsNotNone(req)
+            self.assertEqual(req.total_attachments_bytes, 2048)
+            attachments = db.query(Attachment).filter(Attachment.request_id == UUID(request_id)).all()
+            self.assertEqual(len(attachments), 1)
 
     def test_admin_upload_rejects_attachment_for_immutable_message(self):
         fake_s3 = _FakeS3Storage()

@@ -414,6 +414,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
   }
 
   function App() {
+    const UPLOAD_MAX_ATTEMPTS = 4;
     const [requestModal, setRequestModal] = useState(createRequestModalState());
     const [requestsList, setRequestsList] = useState([]);
     const [activeTrack, setActiveTrack] = useState("");
@@ -451,7 +452,11 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
         window.location.href = "/";
         throw new Error("Нет доступа");
       }
-      if (!response.ok) throw new Error(apiError(data, fallbackMessage || "Ошибка запроса"));
+      if (!response.ok) {
+        const error = new Error(apiError(data, fallbackMessage || "Ошибка запроса"));
+        error.httpStatus = Number(response.status || 0);
+        throw error;
+      }
       return data;
     }, []);
 
@@ -472,50 +477,105 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
       return parts.length ? base + " (" + parts.join("; ") + ")" : base;
     }, []);
 
+    const wait = useCallback(async (ms) => {
+      await new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+    }, []);
+
+    const nextUploadRetryDelayMs = useCallback((attempt) => {
+      const base = Math.min(1200 * Math.pow(2, Math.max(0, Number(attempt || 1) - 1)), 7000);
+      const jitter = Math.floor(Math.random() * 250);
+      return base + jitter;
+    }, []);
+
+    const isRetryableUploadError = useCallback((error) => {
+      const status = Number(error?.httpStatus || error?.status || 0);
+      if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+      if (status > 0) return false;
+      const message = String(error?.message || "").toLowerCase();
+      if (!message) return true;
+      return (
+        message.includes("networkerror") ||
+        message.includes("failed to fetch") ||
+        message.includes("load failed") ||
+        message.includes("network request failed") ||
+        message.includes("timeout")
+      );
+    }, []);
+
+    const runUploadStepWithRetry = useCallback(
+      async (label, action) => {
+        let lastError = null;
+        let attemptsUsed = 0;
+        for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+          attemptsUsed = attempt;
+          try {
+            return await action(attempt);
+          } catch (error) {
+            lastError = error;
+            const canRetry = attempt < UPLOAD_MAX_ATTEMPTS && isRetryableUploadError(error);
+            if (!canRetry) break;
+            await wait(nextUploadRetryDelayMs(attempt));
+          }
+        }
+        const reason = String(lastError?.message || "Ошибка сети");
+        throw new Error(label + ": " + reason + " (попыток: " + attemptsUsed + ")");
+      },
+      [UPLOAD_MAX_ATTEMPTS, isRetryableUploadError, nextUploadRetryDelayMs, wait]
+    );
+
     const uploadPublicRequestAttachment = useCallback(async (file, extra = {}) => {
       const requestId = String(requestModal.requestId || "").trim();
       if (!requestId) throw new Error("Не выбрана заявка");
       const mimeType = String(file?.type || "application/octet-stream");
-      const initData = await apiJson(
-        "/api/public/uploads/init",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file_name: file.name,
-            mime_type: mimeType,
-            size_bytes: file.size,
-            scope: "REQUEST_ATTACHMENT",
-            request_id: requestId,
-          }),
-        },
-        "Не удалось начать загрузку файла"
-      );
-      const putResponse = await fetch(initData.presigned_url, {
-        method: "PUT",
-        headers: { "Content-Type": mimeType },
-        body: file,
+      const initData = await runUploadStepWithRetry("Не удалось начать загрузку файла", async () => {
+        return apiJson(
+          "/api/public/uploads/init",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file_name: file.name,
+              mime_type: mimeType,
+              size_bytes: file.size,
+              scope: "REQUEST_ATTACHMENT",
+              request_id: requestId,
+            }),
+          },
+          "Не удалось начать загрузку файла"
+        );
       });
-      if (!putResponse.ok) throw new Error(await buildStorageUploadError(putResponse, "Ошибка передачи файла в хранилище"));
-      const completeData = await apiJson(
-        "/api/public/uploads/complete",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            key: initData.key,
-            file_name: file.name,
-            mime_type: mimeType,
-            size_bytes: file.size,
-            scope: "REQUEST_ATTACHMENT",
-            request_id: requestId,
-            message_id: extra?.message_id || null,
-          }),
-        },
-        "Не удалось завершить загрузку файла"
-      );
+      await runUploadStepWithRetry("Ошибка передачи файла в хранилище", async () => {
+        const putResponse = await fetch(initData.presigned_url, {
+          method: "PUT",
+          headers: { "Content-Type": mimeType },
+          body: file,
+        });
+        if (putResponse.ok) return null;
+        const error = new Error(await buildStorageUploadError(putResponse, "Ошибка передачи файла в хранилище"));
+        error.httpStatus = Number(putResponse.status || 0);
+        throw error;
+      });
+      const completeData = await runUploadStepWithRetry("Не удалось завершить загрузку файла", async () => {
+        return apiJson(
+          "/api/public/uploads/complete",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              key: initData.key,
+              file_name: file.name,
+              mime_type: mimeType,
+              size_bytes: file.size,
+              scope: "REQUEST_ATTACHMENT",
+              request_id: requestId,
+              message_id: extra?.message_id || null,
+            }),
+          },
+          "Не удалось завершить загрузку файла"
+        );
+      });
       return completeData;
-    }, [apiJson, buildStorageUploadError, requestModal.requestId]);
+    }, [apiJson, buildStorageUploadError, requestModal.requestId, runUploadStepWithRetry]);
 
     const loadRequestWorkspace = useCallback(
       async (trackNumber, showLoading) => {

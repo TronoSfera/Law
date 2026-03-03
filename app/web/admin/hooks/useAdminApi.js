@@ -30,7 +30,9 @@ export function useAdminApi(token) {
 
       if (!response.ok) {
         const message = (payload && (payload.detail || payload.error || payload.raw)) || "HTTP " + response.status;
-        throw new Error(translateApiError(String(message)));
+        const error = new Error(translateApiError(String(message)));
+        error.httpStatus = Number(response.status || 0);
+        throw error;
       }
 
       return payload;

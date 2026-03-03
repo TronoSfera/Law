@@ -185,6 +185,31 @@ def upload_complete(
             raise HTTPException(status_code=404, detail="Заявка не найдена")
         _ensure_public_request_access_or_403(request, session)
         _ensure_object_key_prefix_or_400(payload.key, f"requests/{request.id}/")
+        existing_row = (
+            db.query(Attachment)
+            .filter(Attachment.request_id == request.id, Attachment.s3_key == payload.key)
+            .first()
+        )
+        if existing_row is not None:
+            record_file_security_event(
+                db,
+                actor_role="CLIENT",
+                actor_subject=actor_subject,
+                actor_ip=actor_ip,
+                action="UPLOAD_COMPLETE",
+                scope=scope_name,
+                allowed=True,
+                object_key=payload.key,
+                request_id=request.id,
+                details={
+                    "mime_type": existing_row.mime_type,
+                    "size_bytes": int(existing_row.size_bytes or 0),
+                    "idempotent_replay": True,
+                },
+                responsible="Клиент",
+            )
+            db.commit()
+            return UploadCompleteResponse(status="ok", attachment_id=str(existing_row.id))
 
         storage = get_s3_storage()
         try:
