@@ -269,6 +269,7 @@ export function buildUniversalQuery(filters, sort, limit, offset) {
 }
 
 export function canAccessSection(role, section) {
+  const roleCode = String(role || "").toUpperCase();
   const allowed = new Set([
     "dashboard",
     "kanban",
@@ -282,7 +283,9 @@ export function canAccessSection(role, section) {
     "availableTables",
   ]);
   if (!allowed.has(section)) return false;
-  if (section === "quotes" || section === "config" || section === "availableTables") return role === "ADMIN";
+  if (section === "requests") return roleCode === "ADMIN";
+  if (section === "serviceRequests") return roleCode === "ADMIN" || roleCode === "CURATOR";
+  if (section === "quotes" || section === "config" || section === "availableTables") return roleCode === "ADMIN";
   return true;
 }
 

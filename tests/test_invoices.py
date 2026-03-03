@@ -1,8 +1,9 @@
 import os
 import unittest
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from uuid import UUID
 from uuid import uuid4
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete
@@ -21,9 +22,17 @@ from app.core.security import create_jwt
 from app.db.session import get_db
 from app.main import app
 from app.models.admin_user import AdminUser
+from app.models.attachment import Attachment
 from app.models.invoice import Invoice
+from app.models.message import Message
+from app.models.notification import Notification
 from app.models.request import Request
 from app.services.invoice_crypto import decrypt_requisites
+
+
+class _FakeS3Storage:
+    def __init__(self):
+        self.objects = {}
 
 
 class InvoiceApiTests(unittest.TestCase):
@@ -37,11 +46,17 @@ class InvoiceApiTests(unittest.TestCase):
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         AdminUser.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
+        Notification.__table__.create(bind=cls.engine)
+        Message.__table__.create(bind=cls.engine)
+        Attachment.__table__.create(bind=cls.engine)
         Invoice.__table__.create(bind=cls.engine)
 
     @classmethod
     def tearDownClass(cls):
         Invoice.__table__.drop(bind=cls.engine)
+        Attachment.__table__.drop(bind=cls.engine)
+        Message.__table__.drop(bind=cls.engine)
+        Notification.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
         AdminUser.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
@@ -49,6 +64,9 @@ class InvoiceApiTests(unittest.TestCase):
     def setUp(self):
         with self.SessionLocal() as db:
             db.execute(delete(Invoice))
+            db.execute(delete(Attachment))
+            db.execute(delete(Message))
+            db.execute(delete(Notification))
             db.execute(delete(Request))
             db.execute(delete(AdminUser))
             db.commit()
@@ -115,9 +133,13 @@ class InvoiceApiTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
+        self.fake_s3 = _FakeS3Storage()
+        self.s3_patch = patch("app.services.invoice_chat.get_s3_storage", return_value=self.fake_s3)
+        self.s3_patch.start()
 
     def tearDown(self):
         self.client.close()
+        self.s3_patch.stop()
         app.dependency_overrides.clear()
 
     @staticmethod
@@ -154,7 +176,8 @@ class InvoiceApiTests(unittest.TestCase):
         self.assertEqual(body["request_track_number"], "TRK-INV-A")
         self.assertEqual(body["status"], "WAITING_PAYMENT")
         self.assertEqual(body["amount"], 12345.67)
-        self.assertTrue(str(body["invoice_number"]).startswith("INV-"))
+        date_prefix = datetime.now(timezone.utc).strftime("%Y%m%d")
+        self.assertRegex(str(body["invoice_number"]), rf"^{date_prefix}(?:-\d+)?$")
 
         invoice_id = body["id"]
         with self.SessionLocal() as db:
@@ -165,6 +188,23 @@ class InvoiceApiTests(unittest.TestCase):
             decrypted = decrypt_requisites(row.payer_details_encrypted)
             self.assertEqual(decrypted["inn"], "7700000000")
             self.assertEqual(decrypted["kpp"], "770001001")
+            message = db.query(Message).filter(Message.request_id == UUID(self.request_a_id)).order_by(Message.created_at.desc()).first()
+            self.assertIsNotNone(message)
+            self.assertEqual(message.body, "Счет на оплату")
+            attachment = (
+                db.query(Attachment)
+                .filter(Attachment.request_id == UUID(self.request_a_id), Attachment.message_id == message.id)
+                .order_by(Attachment.created_at.desc())
+                .first()
+            )
+            self.assertIsNotNone(attachment)
+            self.assertEqual(attachment.mime_type, "application/pdf")
+            self.assertTrue(str(attachment.file_name).endswith(".pdf"))
+
+            stored = self.fake_s3.objects.get(str(attachment.s3_key))
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.get("mime"), "application/pdf")
+            self.assertTrue(bytes(stored.get("content") or b"").startswith(b"%PDF"))
 
     def test_lawyer_scope_and_paid_restriction(self):
         admin_headers = self._admin_headers(self.admin_id, "ADMIN", "admin@example.com")
@@ -292,4 +332,25 @@ class InvoiceApiTests(unittest.TestCase):
             f"/api/public/requests/TRK-INV-A/invoices/{invoice_id}/pdf",
             cookies=self._public_cookie("TRK-INV-B"),
         )
-        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.status_code, 404)
+
+    def test_invoice_number_autonumber_uses_date_and_sequence_suffix(self):
+        headers = self._admin_headers(self.admin_id, "ADMIN", "admin@example.com")
+        first = self.client.post(
+            "/api/admin/invoices",
+            headers=headers,
+            json={"request_id": self.request_a_id, "amount": 1500, "payer_display_name": "ООО Первый"},
+        )
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post(
+            "/api/admin/invoices",
+            headers=headers,
+            json={"request_id": self.request_b_id, "amount": 2300, "payer_display_name": "ООО Второй"},
+        )
+        self.assertEqual(second.status_code, 201)
+
+        date_prefix = datetime.now(timezone.utc).strftime("%Y%m%d")
+        first_number = str(first.json().get("invoice_number") or "")
+        second_number = str(second.json().get("invoice_number") or "")
+        self.assertEqual(first_number, date_prefix)
+        self.assertEqual(second_number, f"{date_prefix}-2")

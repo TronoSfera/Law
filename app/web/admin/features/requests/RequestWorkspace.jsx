@@ -7,6 +7,7 @@ import {
   fmtShortDateTime,
   fmtTimeOnly,
   humanizeKey,
+  invoiceStatusLabel,
   statusLabel,
 } from "../../shared/utils.js";
 
@@ -17,6 +18,7 @@ export function RequestWorkspace({
   trackNumber,
   requestData,
   financeSummary,
+  invoices,
   statusRouteNodes,
   statusHistory,
   availableStatuses,
@@ -38,6 +40,8 @@ export function RequestWorkspace({
   onLoadRequestDataTemplateDetails,
   onSaveRequestDataTemplate,
   onSaveRequestDataBatch,
+  onIssueInvoice,
+  onDownloadInvoicePdf,
   onSaveRequestDataValues,
   onUploadRequestAttachment,
   onChangeStatus,
@@ -53,6 +57,14 @@ export function RequestWorkspace({
   const [chatTab, setChatTab] = useState("chat");
   const [dropActive, setDropActive] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
+  const [financeIssueForm, setFinanceIssueForm] = useState({
+    open: false,
+    saving: false,
+    amount: "",
+    serviceDescription: "",
+    payerDisplayName: "",
+    error: "",
+  });
   const [requestDataListOpen, setRequestDataListOpen] = useState(false);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [requestTemplateSuggestOpen, setRequestTemplateSuggestOpen] = useState(false);
@@ -178,6 +190,7 @@ export function RequestWorkspace({
   const showContactsInCard = viewerRoleCode !== "CLIENT";
   const safeMessages = Array.isArray(messages) ? messages : [];
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
+  const safeInvoices = Array.isArray(invoices) ? invoices : [];
   const safeStatusHistory = Array.isArray(statusHistory) ? statusHistory : [];
   const safeAvailableStatuses = Array.isArray(availableStatuses) ? availableStatuses : [];
   const totalFilesBytes = safeAttachments.reduce((acc, item) => acc + Number(item?.size_bytes || 0), 0);
@@ -265,7 +278,7 @@ export function RequestWorkspace({
         .filter((item) => item && item.code)
         .map((item) => ({
           code: String(item.code),
-          name: String(item.name || item.code),
+          name: String(item.name || "").trim() || humanizeKey(item.code),
           groupName: item.status_group_name ? String(item.status_group_name) : "",
           isTerminal: Boolean(item.is_terminal),
         })),
@@ -310,6 +323,61 @@ export function RequestWorkspace({
     if (days > 0) return days + " д " + hours + " ч";
     if (hours > 0) return hours + " ч " + minutes + " мин";
     return Math.max(0, minutes) + " мин";
+  };
+
+  const formatMoneyInput = (value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount <= 0) return "";
+    return String(Math.round((amount + Number.EPSILON) * 100) / 100);
+  };
+
+  const openFinanceIssueForm = () => {
+    const defaultAmount =
+      finance?.request_cost ??
+      row?.request_cost ??
+      row?.invoice_amount ??
+      finance?.effective_rate ??
+      row?.effective_rate ??
+      "";
+    setFinanceIssueForm({
+      open: true,
+      saving: false,
+      amount: formatMoneyInput(defaultAmount),
+      serviceDescription: String(row?.topic_name || row?.topic_code || "Юридические услуги"),
+      payerDisplayName: String(row?.client_name || "").trim() || "Клиент",
+      error: "",
+    });
+  };
+
+  const closeFinanceIssueForm = () => {
+    setFinanceIssueForm((prev) => ({ ...prev, open: false, saving: false, error: "" }));
+  };
+
+  const closeFinanceModal = () => {
+    setFinanceOpen(false);
+    closeFinanceIssueForm();
+  };
+
+  const submitFinanceIssueForm = async (event) => {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    if (!row?.id || typeof onIssueInvoice !== "function") return;
+    const normalizedAmount = Number(String(financeIssueForm.amount || "").replace(",", "."));
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      setFinanceIssueForm((prev) => ({ ...prev, error: "Укажите корректную сумму счета" }));
+      return;
+    }
+    setFinanceIssueForm((prev) => ({ ...prev, saving: true, error: "" }));
+    try {
+      await onIssueInvoice({
+        requestId: String(row.id),
+        amount: normalizedAmount,
+        serviceDescription: String(financeIssueForm.serviceDescription || ""),
+        payerDisplayName: String(financeIssueForm.payerDisplayName || ""),
+      });
+      setFinanceIssueForm((prev) => ({ ...prev, open: false, saving: false, error: "" }));
+    } catch (error) {
+      setFinanceIssueForm((prev) => ({ ...prev, saving: false, error: error?.message || "Не удалось выставить счет" }));
+    }
   };
 
   const openStatusChangeModal = (preset) => {
@@ -1146,7 +1214,7 @@ export function RequestWorkspace({
     Array.isArray(statusRouteNodes) && statusRouteNodes.length
       ? statusRouteNodes
       : row?.status_code
-        ? [{ code: row.status_code, name: statusLabel(row.status_code), state: "current", note: "Текущий этап обработки заявки" }]
+        ? [{ code: row.status_code, name: String(row?.status_name || statusLabel(row.status_code) || row.status_code), state: "current", note: "Текущий этап обработки заявки" }]
         : [];
   const upcomingImportantDate = useMemo(() => {
     const source = String(currentImportantDateAt || row?.important_date_at || "").trim();
@@ -1156,7 +1224,7 @@ export function RequestWorkspace({
     return new Date(timestamp).toISOString();
   }, [currentImportantDateAt, row?.important_date_at]);
   const routeNodes = useMemo(() => {
-    if (viewerRoleCode !== "CLIENT" || !upcomingImportantDate) return baseRouteNodes;
+    if ((viewerRoleCode !== "CLIENT" && viewerRoleCode !== "LAWYER") || !upcomingImportantDate) return baseRouteNodes;
     if (!Array.isArray(baseRouteNodes) || !baseRouteNodes.length) {
       return [
         {
@@ -1183,6 +1251,31 @@ export function RequestWorkspace({
     next.splice(currentIndex + 1, 0, virtualNode);
     return next;
   }, [baseRouteNodes, upcomingImportantDate, viewerRoleCode]);
+  const routeNodesForDisplay = useMemo(() => {
+    if (!Array.isArray(routeNodes) || !routeNodes.length) return [];
+    const important = [];
+    const current = [];
+    const completed = [];
+    const pending = [];
+    routeNodes.forEach((node) => {
+      const code = String(node?.code || "").trim();
+      const state = String(node?.state || "pending").trim().toLowerCase();
+      if (code === "__IMPORTANT_DATE__") {
+        important.push(node);
+        return;
+      }
+      if (state === "current") {
+        current.push(node);
+        return;
+      }
+      if (state === "completed") {
+        completed.push(node);
+        return;
+      }
+      pending.push(node);
+    });
+    return [...important, ...current, ...completed.reverse(), ...pending];
+  }, [routeNodes]);
 
   const AttachmentPreviewModal = AttachmentPreviewModalComponent;
   const StatusLine = StatusLineComponent;
@@ -1213,6 +1306,56 @@ export function RequestWorkspace({
     );
   };
 
+  const resolveServiceMessageContent = (payload) => {
+    const messageKind = String(payload?.message_kind || "");
+    if (messageKind === "REQUEST_DATA") return null;
+    const bodyRaw = String(payload?.body || "").replace(/\r/g, "").trim();
+    if (!bodyRaw) return null;
+    const lines = bodyRaw.split("\n");
+    const firstLine = String(lines[0] || "").trim();
+    const restLines = lines.slice(1);
+    const normalizeDetail = (value) => String(value || "").trim();
+    const withTail = (firstDetail) =>
+      [normalizeDetail(firstDetail), ...restLines.map((line) => normalizeDetail(line)).filter(Boolean)].filter(Boolean).join("\n");
+
+    if (firstLine === "Счет на оплату" || firstLine.startsWith("Счет на оплату:")) {
+      return {
+        title: "Счет на оплату",
+        text: withTail(firstLine.startsWith("Счет на оплату:") ? firstLine.slice("Счет на оплату:".length) : ""),
+      };
+    }
+    if (firstLine.startsWith("Изменился статус:") || firstLine.startsWith("Смена статуса:")) {
+      const source = firstLine.startsWith("Изменился статус:") ? firstLine : firstLine.slice("Смена статуса:".length);
+      const detail = firstLine.startsWith("Изменился статус:") ? source.slice("Изменился статус:".length) : source;
+      return {
+        title: "Изменился статус",
+        text: withTail(detail),
+      };
+    }
+    if (firstLine.startsWith("Назначен юрист:") || firstLine.startsWith("Переназначено:")) {
+      const detail = firstLine.startsWith("Назначен юрист:")
+        ? firstLine.slice("Назначен юрист:".length)
+        : firstLine.slice("Переназначено:".length);
+      return {
+        title: "Назначен юрист",
+        text: withTail(detail),
+      };
+    }
+    return null;
+  };
+
+  const resolveStatusDisplayName = (code, explicitName) => {
+    const explicit = String(explicitName || "").trim();
+    if (explicit) return explicit;
+    const normalizedCode = String(code || "").trim();
+    if (!normalizedCode) return "-";
+    const optionName = String(statusByCode.get(normalizedCode)?.name || "").trim();
+    if (optionName) return optionName;
+    const legacyName = String(statusLabel(normalizedCode) || "").trim();
+    if (legacyName && legacyName !== normalizedCode) return legacyName;
+    return humanizeKey(normalizedCode);
+  };
+
   const formatRequestDataValue = (item) => {
     const type = String(item?.field_type || "string").toLowerCase();
     if (type === "date") {
@@ -1234,6 +1377,8 @@ export function RequestWorkspace({
     const text = String(item?.value_text || "").trim();
     return text || "Не заполнено";
   };
+
+  const currentStatusName = resolveStatusDisplayName(row?.status_code, row?.status_name || "");
 
   const dataRequestProgress = useMemo(() => {
     const rows = Array.isArray(dataRequestModal.rows) ? dataRequestModal.rows : [];
@@ -1300,7 +1445,7 @@ export function RequestWorkspace({
                       </div>
                       <div className="request-field">
                         <span className="request-field-label">Статус</span>
-                        <span className="request-field-value">{statusLabel(row.status_code)}</span>
+                        <span className="request-field-value">{currentStatusName}</span>
                       </div>
                     </>
                   ) : null}
@@ -1363,17 +1508,19 @@ export function RequestWorkspace({
                 </div>
                 <div className="request-status-route">
                   <h4>Маршрут статусов</h4>
-                  {routeNodes.length ? (
+                  {routeNodesForDisplay.length ? (
                     <ol className="request-route-list" id="request-status-route">
-                      {routeNodes.map((node, index) => {
+                      {routeNodesForDisplay.map((node, index) => {
                         const state = String(node?.state || "pending");
                         const code = String(node?.code || "").trim();
                         const rawName = String(node?.name || "").trim();
-                        const name = rawName && rawName !== code ? rawName : statusLabel(code || rawName);
+                        const name = resolveStatusDisplayName(code, rawName && rawName !== code ? rawName : "");
                         const note = String(node?.note || "").trim();
-                        const changedAtSource = String(node?.changed_at || "").trim() || (index === 0 ? String(row?.created_at || "").trim() : "");
-                        const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";
                         const isImportantDateNode = code === "__IMPORTANT_DATE__";
+                        const changedAtSource =
+                          String(node?.changed_at || "").trim() ||
+                          (isImportantDateNode ? String(currentImportantDateAt || row?.important_date_at || "").trim() : "");
+                        const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";
                         const className =
                           "route-item " +
                           (state === "current" ? "current" : state === "completed" ? "completed" : "pending") +
@@ -1383,8 +1530,14 @@ export function RequestWorkspace({
                             <span className="route-dot" />
                             <div className="route-body">
                               <b>{name}</b>
-                              {note ? <p>{note}</p> : null}
-                              <div className="muted route-time">Дата статуса: {changedAt || "-"}</div>
+                              {isImportantDateNode ? (
+                                <p>{"Контрольный срок: " + (changedAt || "-")}</p>
+                              ) : (
+                                <>
+                                  {note ? <p>{note}</p> : null}
+                                  <div className="muted route-time">Дата изменения: {changedAt || "-"}</div>
+                                </>
+                              )}
                             </div>
                           </li>
                         );
@@ -1479,6 +1632,7 @@ export function RequestWorkspace({
                       (() => {
                         const messageKind = String(entry.payload?.message_kind || "");
                         const isRequestDataMessage = messageKind === "REQUEST_DATA";
+                        const serviceMessageContent = resolveServiceMessageContent(entry.payload);
                         const requestDataInteractive = isRequestDataMessage && (canRequestData || canFillRequestData);
                         const bubbleClass =
                           "chat-message-bubble" +
@@ -1522,7 +1676,14 @@ export function RequestWorkspace({
                               {renderRequestDataMessageItems(entry.payload)}
                             </>
                           ) : (
-                            <p className="chat-message-text">{String(entry.payload?.body || "")}</p>
+                            <>
+                              {serviceMessageContent?.title ? <div className="chat-service-head">{serviceMessageContent.title}</div> : null}
+                              {serviceMessageContent ? (
+                                serviceMessageContent.text ? <p className="chat-message-text">{serviceMessageContent.text}</p> : null
+                              ) : (
+                                <p className="chat-message-text">{String(entry.payload?.body || "")}</p>
+                              )}
+                            </>
                           )}
                           {(() => {
                             if (String(entry.payload?.message_kind || "") === "REQUEST_DATA") return null;
@@ -1557,7 +1718,7 @@ export function RequestWorkspace({
                     )
                   )
                 ) : (
-                  <li className="muted">Сообщений нет</li>
+                  <li className="muted chat-empty-state">Сообщений нет</li>
                 )}
               </ul>
               <form className="stack" onSubmit={onSendMessage}>
@@ -1883,7 +2044,7 @@ export function RequestWorkspace({
                     )
                     .map((item) => (
                       <option key={item.code} value={item.code}>
-                        {item.name + " (" + item.code + ")" + (item.groupName ? " • " + item.groupName : "")}
+                        {item.name + (item.groupName ? " • " + item.groupName : "")}
                       </option>
                     ))}
                 </select>
@@ -1965,7 +2126,7 @@ export function RequestWorkspace({
                         <span className="route-dot" />
                         <div className="route-body">
                           <div className="request-status-history-row">
-                            <b>{String(item?.to_status_name || statusMeta?.name || statusLabel(statusCode) || statusCode || "-")}</b>
+                            <b>{resolveStatusDisplayName(statusCode, item?.to_status_name || statusMeta?.name || "")}</b>
                             {statusMeta?.isTerminal ? <span className="request-status-history-chip">Терминальный</span> : null}
                           </div>
                           <div className="muted route-time">{fmtShortDateTime(item?.changed_at)}</div>
@@ -1975,7 +2136,7 @@ export function RequestWorkspace({
                           </div>
                           {item?.from_status ? (
                             <div className="request-status-history-meta">
-                              <span>{"Из: " + statusLabel(item.from_status)}</span>
+                              <span>{"Из: " + resolveStatusDisplayName(item.from_status, "")}</span>
                             </div>
                           ) : null}
                           {String(item?.comment || "").trim() ? (
@@ -2005,7 +2166,7 @@ export function RequestWorkspace({
       </div>
       <div
         className={"overlay" + (financeOpen ? " open" : "")}
-        onClick={() => setFinanceOpen(false)}
+        onClick={closeFinanceModal}
         aria-hidden={financeOpen ? "false" : "true"}
       >
         <div className="modal request-finance-modal" onClick={(event) => event.stopPropagation()}>
@@ -2016,7 +2177,7 @@ export function RequestWorkspace({
                 {row?.track_number ? "Заявка " + String(row.track_number) : "Данные по заявке"}
               </p>
             </div>
-            <button className="close" type="button" onClick={() => setFinanceOpen(false)} aria-label="Закрыть">
+            <button className="close" type="button" onClick={closeFinanceModal} aria-label="Закрыть">
               ×
             </button>
           </div>
@@ -2040,6 +2201,112 @@ export function RequestWorkspace({
               </div>
             ) : null}
           </div>
+          {typeof onIssueInvoice === "function" ? (
+            <div className="request-finance-actions">
+              {!financeIssueForm.open ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={openFinanceIssueForm}
+                  disabled={loading || !row}
+                >
+                  Выставить счет
+                </button>
+              ) : (
+                <form className="stack request-finance-issue-form" onSubmit={submitFinanceIssueForm}>
+                  <div className="request-finance-issue-grid">
+                    <div className="field">
+                      <label htmlFor="request-finance-invoice-amount">Сумма</label>
+                      <input
+                        id="request-finance-invoice-amount"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={financeIssueForm.amount}
+                        onChange={(event) => setFinanceIssueForm((prev) => ({ ...prev, amount: event.target.value, error: "" }))}
+                        disabled={financeIssueForm.saving || loading}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="request-finance-invoice-payer">Плательщик</label>
+                      <input
+                        id="request-finance-invoice-payer"
+                        type="text"
+                        value={financeIssueForm.payerDisplayName}
+                        onChange={(event) =>
+                          setFinanceIssueForm((prev) => ({ ...prev, payerDisplayName: event.target.value, error: "" }))
+                        }
+                        disabled={financeIssueForm.saving || loading}
+                        placeholder="ФИО / компания"
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="request-finance-invoice-service">Услуга</label>
+                    <input
+                      id="request-finance-invoice-service"
+                      type="text"
+                      value={financeIssueForm.serviceDescription}
+                      onChange={(event) =>
+                        setFinanceIssueForm((prev) => ({ ...prev, serviceDescription: event.target.value, error: "" }))
+                      }
+                      disabled={financeIssueForm.saving || loading}
+                      placeholder="Юридические услуги"
+                    />
+                  </div>
+                  {financeIssueForm.error ? <div className="status error">{financeIssueForm.error}</div> : null}
+                  <div className="modal-actions modal-actions-right request-finance-actions-inline">
+                    <button type="button" className="btn secondary btn-sm" onClick={closeFinanceIssueForm} disabled={financeIssueForm.saving}>
+                      Отмена
+                    </button>
+                    <button type="submit" className="btn btn-sm" disabled={financeIssueForm.saving || loading}>
+                      {financeIssueForm.saving ? "Выставление..." : "Выставить"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : null}
+          <div className="request-finance-invoices">
+            <div className="request-finance-invoices-head">
+              <h4>Счета</h4>
+              <span className="muted">{safeInvoices.length ? String(safeInvoices.length) + " шт." : "Нет выставленных счетов"}</span>
+            </div>
+            {safeInvoices.length ? (
+              <div className="request-finance-invoice-list">
+                {safeInvoices.map((item) => (
+                  <div className="request-finance-invoice-row" key={String(item?.id || item?.invoice_number || item?.issued_at || "-")}>
+                    <div className="request-finance-invoice-meta">
+                      <div className="request-finance-invoice-number">
+                        <code>{String(item?.invoice_number || "-")}</code>
+                      </div>
+                      <div className="request-finance-invoice-details">
+                        <span>{invoiceStatusLabel(item?.status)}</span>
+                        <span>{fmtAmount(item?.amount) + " " + String(item?.currency || "RUB")}</span>
+                        <span>{"Создан: " + fmtDate(item?.issued_at)}</span>
+                        <span>{"Оплачен: " + fmtDate(item?.paid_at)}</span>
+                      </div>
+                    </div>
+                    {typeof onDownloadInvoicePdf === "function" ? (
+                      <button
+                        type="button"
+                        className="icon-btn request-finance-invoice-download-btn"
+                        onClick={() => onDownloadInvoicePdf(item)}
+                        disabled={loading}
+                        aria-label="Скачать счет PDF"
+                        data-tooltip="Скачать PDF"
+                      >
+                        ⬇
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted request-finance-empty">Счета по заявке пока не выставлялись</p>
+            )}
+          </div>
         </div>
       </div>
       <div
@@ -2055,7 +2322,7 @@ export function RequestWorkspace({
                 <p className="muted request-finance-subtitle">
                   {String(row?.topic_name || row?.topic_code || "Тема не указана")}
                 </p>
-                <span className="request-description-status-chip">{statusLabel(row?.status_code)}</span>
+                <span className="request-description-status-chip">{currentStatusName}</span>
               </div>
             </div>
             <button className="close" type="button" onClick={() => setDescriptionOpen(false)} aria-label="Закрыть">

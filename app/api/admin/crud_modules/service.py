@@ -82,6 +82,15 @@ from .payloads import (
 )
 
 
+def _ensure_lawyer_owns_admin_user_row_or_403(admin: dict, row_id: str) -> None:
+    if not _is_lawyer(admin):
+        return
+    actor_id = _lawyer_actor_id_or_401(admin).strip().lower()
+    target_id = str(row_id or "").strip().lower()
+    if not actor_id or not target_id or actor_id != target_id:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+
 def _apply_create_side_effects(db: Session, *, table_name: str, row: Any, admin: dict) -> None:
     if table_name == "messages" and isinstance(row, Message):
         req = db.get(Request, row.request_id)
@@ -254,6 +263,8 @@ def query_table_service(table_name: str, uq: UniversalQuery, db: Session, admin:
 def get_row_service(table_name: str, row_id: str, db: Session, admin: dict) -> dict[str, Any]:
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "read")
+    if normalized == "admin_users":
+        _ensure_lawyer_owns_admin_user_row_or_403(admin, row_id)
     row = _load_row_or_404(db, model, row_id)
     if normalized == "requests":
         req = row if isinstance(row, Request) else None
@@ -408,6 +419,12 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
     normalized, model = _resolve_table_model(table_name)
     _require_table_action(admin, normalized, "update")
     responsible = _resolve_responsible(admin)
+    if normalized == "admin_users" and _is_lawyer(admin):
+        _ensure_lawyer_owns_admin_user_row_or_403(admin, row_id)
+        allowed_fields = {"name", "email", "phone", "password", "avatar_url"}
+        forbidden_fields = sorted(set(payload.keys()) - allowed_fields)
+        if forbidden_fields:
+            raise HTTPException(status_code=403, detail="Недостаточно прав")
     if normalized == "requests" and _is_lawyer(admin) and isinstance(payload, dict):
         if "assigned_lawyer_id" in payload:
             raise HTTPException(status_code=403, detail='Назначение доступно только через действие "Взять в работу"')

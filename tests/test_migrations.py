@@ -114,7 +114,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0031_pii_retention_and_consent")
+        self.assertEqual(version, "0032_email_cols_fix")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {

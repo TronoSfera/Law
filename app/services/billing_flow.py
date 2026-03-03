@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from string import Formatter
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import inspect
@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from app.models.invoice import Invoice
 from app.models.request import Request
 from app.models.status import Status
+from app.services.invoice_chat import create_invoice_chat_message_with_attachment
 from app.services.invoice_crypto import encrypt_requisites
+from app.services.invoice_numbering import generate_invoice_number
 
 STATUS_KIND_DEFAULT = "DEFAULT"
 STATUS_KIND_INVOICE = "INVOICE"
@@ -109,15 +111,6 @@ def _status_template(db: Session, status_code: str) -> str | None:
     return value or None
 
 
-def _invoice_number(db: Session) -> str:
-    prefix = _now_utc().strftime("%Y%m%d")
-    candidate = f"INV-{prefix}-{uuid4().hex[:8].upper()}"
-    exists = db.query(Invoice.id).filter(Invoice.invoice_number == candidate).first()
-    if exists is None:
-        return candidate
-    return f"INV-{prefix}-{uuid4().hex[:12].upper()}"
-
-
 def _safe_render_template(template: str, values: dict[str, Any]) -> str:
     source = str(template or "").strip() or DEFAULT_INVOICE_TEMPLATE
     allowed = {
@@ -188,9 +181,10 @@ def _create_waiting_invoice(
 
     actor = _actor_uuid_or_none(admin)
     role = str((admin or {}).get("role") or "").strip().upper() or None
+    issued_at = _now_utc()
     invoice = Invoice(
         request_id=req.id,
-        invoice_number=_invoice_number(db),
+        invoice_number=generate_invoice_number(db, issued_at),
         status=INVOICE_STATUS_WAITING,
         amount=amount,
         currency="RUB",
@@ -204,7 +198,7 @@ def _create_waiting_invoice(
         ),
         issued_by_admin_user_id=actor,
         issued_by_role=role,
-        issued_at=_now_utc(),
+        issued_at=issued_at,
         paid_at=None,
         responsible=responsible,
     )
@@ -213,6 +207,15 @@ def _create_waiting_invoice(
         req.invoice_amount = amount
     req.responsible = responsible
     db.add(req)
+    create_invoice_chat_message_with_attachment(
+        db,
+        request=req,
+        invoice=invoice,
+        actor_role=role or "ADMIN",
+        actor_name=str((admin or {}).get("name") or (admin or {}).get("email") or responsible),
+        actor_admin_user_id=(admin or {}).get("sub"),
+        responsible=responsible,
+    )
     return invoice.invoice_number
 
 

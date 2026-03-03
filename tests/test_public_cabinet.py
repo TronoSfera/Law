@@ -164,7 +164,7 @@ class PublicCabinetTests(unittest.TestCase):
             db.commit()
 
         cookies = self._public_cookies("TRK-CAB-001")
-        messages = self.client.get("/api/public/requests/TRK-CAB-001/messages", cookies=cookies)
+        messages = self.chat_client.get("/api/public/chat/requests/TRK-CAB-001/messages", cookies=cookies)
         self.assertEqual(messages.status_code, 200)
         self.assertEqual(len(messages.json()), 1)
         self.assertEqual(messages.json()[0]["author_type"], "LAWYER")
@@ -201,12 +201,15 @@ class PublicCabinetTests(unittest.TestCase):
             request_id = req.id
 
         cookies = self._public_cookies("TRK-CAB-MSG")
-        created = self.client.post(
-            "/api/public/requests/TRK-CAB-MSG/messages",
+        created = self.chat_client.post(
+            "/api/public/chat/requests/TRK-CAB-MSG/messages",
             cookies=cookies,
             json={"body": "Добрый день, есть вопрос по документам."},
         )
         self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json().get("message_kind"), "TEXT")
+        self.assertEqual(created.json().get("request_data_items"), [])
+        self.assertFalse(bool(created.json().get("request_data_all_filled")))
         message_id = UUID(created.json()["id"])
 
         with self.SessionLocal() as db:
@@ -220,6 +223,31 @@ class PublicCabinetTests(unittest.TestCase):
             self.assertEqual(req.responsible, "Клиент")
             self.assertTrue(req.lawyer_has_unread_updates)
             self.assertEqual(req.lawyer_unread_event_type, "MESSAGE")
+
+    def test_legacy_public_request_messages_routes_are_not_exposed(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-CAB-LEGACY",
+                client_name="Клиент Legacy Route",
+                client_phone="+79992220001",
+                topic_code="consulting",
+                status_code="NEW",
+                description="Проверка отсутствия legacy chat route",
+                extra_fields={},
+            )
+            db.add(req)
+            db.commit()
+
+        cookies = self._public_cookies("TRK-CAB-LEGACY")
+        listed = self.client.get("/api/public/requests/TRK-CAB-LEGACY/messages", cookies=cookies)
+        self.assertEqual(listed.status_code, 404)
+
+        created = self.client.post(
+            "/api/public/requests/TRK-CAB-LEGACY/messages",
+            cookies=cookies,
+            json={"body": "Legacy endpoint"},
+        )
+        self.assertEqual(created.status_code, 404)
 
     def test_public_chat_service_endpoints_work_for_authorized_client(self):
         with self.SessionLocal() as db:
@@ -250,7 +278,7 @@ class PublicCabinetTests(unittest.TestCase):
         self.assertIn("выделенный сервис", listed.json()[0]["body"])
 
         denied = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
-        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.status_code, 404)
 
     def test_chat_message_is_encrypted_at_rest(self):
         with self.SessionLocal() as db:
@@ -460,8 +488,8 @@ class PublicCabinetTests(unittest.TestCase):
             db.commit()
 
         cookies = self._public_cookies("TRK-OTHER")
-        denied = self.client.get("/api/public/requests/TRK-REAL/messages", cookies=cookies)
-        self.assertEqual(denied.status_code, 403)
+        denied = self.chat_client.get("/api/public/chat/requests/TRK-REAL/messages", cookies=cookies)
+        self.assertEqual(denied.status_code, 404)
 
     def test_public_attachment_download_requires_access(self):
         fake_s3 = _FakeS3Storage()
@@ -508,7 +536,7 @@ class PublicCabinetTests(unittest.TestCase):
                 f"/api/public/uploads/object/{attachment_id}",
                 cookies=self._public_cookies("TRK-OTHER"),
             )
-            self.assertEqual(denied.status_code, 403)
+            self.assertEqual(denied.status_code, 404)
 
     def test_public_upload_complete_links_attachment_to_message_when_message_id_provided(self):
         fake_s3 = _FakeS3Storage()

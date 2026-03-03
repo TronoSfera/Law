@@ -1,5 +1,5 @@
 (() => {
-  // admin/shared/constants.js
+  // app/web/admin/shared/constants.js
   var STATUS_LABELS = {
     NEW: "\u041D\u043E\u0432\u0430\u044F",
     IN_PROGRESS: "\u0412 \u0440\u0430\u0431\u043E\u0442\u0435",
@@ -8,6 +8,11 @@
     RESOLVED: "\u0420\u0435\u0448\u0435\u043D\u0430",
     CLOSED: "\u0417\u0430\u043A\u0440\u044B\u0442\u0430",
     REJECTED: "\u041E\u0442\u043A\u043B\u043E\u043D\u0435\u043D\u0430"
+  };
+  var INVOICE_STATUS_LABELS = {
+    WAITING_PAYMENT: "\u041E\u0436\u0438\u0434\u0430\u0435\u0442 \u043E\u043F\u043B\u0430\u0442\u0443",
+    PAID: "\u041E\u043F\u043B\u0430\u0447\u0435\u043D",
+    CANCELED: "\u041E\u0442\u043C\u0435\u043D\u0435\u043D"
   };
   var TABLE_SERVER_CONFIG = {
     requests: {
@@ -100,7 +105,7 @@
   };
   var TABLE_UNALIASES = Object.fromEntries(Object.entries(TABLE_KEY_ALIASES).map(([table, alias]) => [alias, table]));
 
-  // admin/shared/utils.js
+  // app/web/admin/shared/utils.js
   function humanizeKey(value) {
     const text = String(value || "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
     if (!text) return "-";
@@ -108,6 +113,9 @@
   }
   function statusLabel(code) {
     return STATUS_LABELS[code] || code || "-";
+  }
+  function invoiceStatusLabel(code) {
+    return INVOICE_STATUS_LABELS[code] || code || "-";
   }
   function fmtDate(value) {
     if (!value) return "-";
@@ -176,7 +184,7 @@
     return "none";
   }
 
-  // admin/features/requests/RequestWorkspace.jsx
+  // app/web/admin/features/requests/RequestWorkspace.jsx
   function RequestWorkspace({
     viewerRole,
     viewerUserId,
@@ -184,6 +192,7 @@
     trackNumber,
     requestData,
     financeSummary,
+    invoices,
     statusRouteNodes,
     statusHistory,
     availableStatuses,
@@ -205,10 +214,14 @@
     onLoadRequestDataTemplateDetails,
     onSaveRequestDataTemplate,
     onSaveRequestDataBatch,
+    onIssueInvoice,
+    onDownloadInvoicePdf,
     onSaveRequestDataValues,
     onUploadRequestAttachment,
     onChangeStatus,
     onConsumePendingStatusChangePreset,
+    onLiveProbe,
+    onTypingSignal,
     domIds,
     AttachmentPreviewModalComponent,
     StatusLineComponent
@@ -219,6 +232,14 @@
     const [chatTab, setChatTab] = useState("chat");
     const [dropActive, setDropActive] = useState(false);
     const [financeOpen, setFinanceOpen] = useState(false);
+    const [financeIssueForm, setFinanceIssueForm] = useState({
+      open: false,
+      saving: false,
+      amount: "",
+      serviceDescription: "",
+      payerDisplayName: "",
+      error: ""
+    });
     const [requestDataListOpen, setRequestDataListOpen] = useState(false);
     const [descriptionOpen, setDescriptionOpen] = useState(false);
     const [requestTemplateSuggestOpen, setRequestTemplateSuggestOpen] = useState(false);
@@ -265,8 +286,19 @@
       status: "",
       error: ""
     });
+    const [composerFocused, setComposerFocused] = useState(false);
+    const [typingPeers, setTypingPeers] = useState([]);
+    const [liveMode, setLiveMode] = useState("online");
     const fileInputRef = useRef(null);
     const statusChangeFileInputRef = useRef(null);
+    const chatListRef = useRef(null);
+    const liveCursorRef = useRef("");
+    const liveTimerRef = useRef(null);
+    const liveInFlightRef = useRef(false);
+    const liveFailCountRef = useRef(0);
+    const typingHeartbeatRef = useRef(null);
+    const typingActiveRef = useRef(false);
+    const lastAutoScrollCursorRef = useRef("");
     const idMap = useMemo(
       () => ({
         messagesList: "request-modal-messages",
@@ -323,8 +355,12 @@
     const canRequestData = viewerRoleCode === "LAWYER" || viewerRoleCode === "ADMIN";
     const canFillRequestData = viewerRoleCode === "CLIENT";
     const canSeeRate = viewerRoleCode !== "CLIENT";
+    const canSeeCreatedUpdatedInCard = viewerRoleCode !== "CLIENT";
+    const showTopicStatusInCard = viewerRoleCode !== "CLIENT";
+    const showContactsInCard = viewerRoleCode !== "CLIENT";
     const safeMessages = Array.isArray(messages) ? messages : [];
     const safeAttachments = Array.isArray(attachments) ? attachments : [];
+    const safeInvoices = Array.isArray(invoices) ? invoices : [];
     const safeStatusHistory = Array.isArray(statusHistory) ? statusHistory : [];
     const safeAvailableStatuses = Array.isArray(availableStatuses) ? availableStatuses : [];
     const totalFilesBytes = safeAttachments.reduce((acc, item) => acc + Number((item == null ? void 0 : item.size_bytes) || 0), 0);
@@ -398,7 +434,7 @@
     const statusOptions = useMemo(
       () => safeAvailableStatuses.filter((item) => item && item.code).map((item) => ({
         code: String(item.code),
-        name: String(item.name || item.code),
+        name: String(item.name || "").trim() || humanizeKey(item.code),
         groupName: item.status_group_name ? String(item.status_group_name) : "",
         isTerminal: Boolean(item.is_terminal)
       })),
@@ -430,6 +466,51 @@
       if (days > 0) return days + " \u0434 " + hours + " \u0447";
       if (hours > 0) return hours + " \u0447 " + minutes + " \u043C\u0438\u043D";
       return Math.max(0, minutes) + " \u043C\u0438\u043D";
+    };
+    const formatMoneyInput = (value) => {
+      const amount = Number(value);
+      if (!Number.isFinite(amount) || amount <= 0) return "";
+      return String(Math.round((amount + Number.EPSILON) * 100) / 100);
+    };
+    const openFinanceIssueForm = () => {
+      var _a2, _b2, _c2, _d, _e;
+      const defaultAmount = (_e = (_d = (_c2 = (_b2 = (_a2 = finance == null ? void 0 : finance.request_cost) != null ? _a2 : row == null ? void 0 : row.request_cost) != null ? _b2 : row == null ? void 0 : row.invoice_amount) != null ? _c2 : finance == null ? void 0 : finance.effective_rate) != null ? _d : row == null ? void 0 : row.effective_rate) != null ? _e : "";
+      setFinanceIssueForm({
+        open: true,
+        saving: false,
+        amount: formatMoneyInput(defaultAmount),
+        serviceDescription: String((row == null ? void 0 : row.topic_name) || (row == null ? void 0 : row.topic_code) || "\u042E\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0443\u0441\u043B\u0443\u0433\u0438"),
+        payerDisplayName: String((row == null ? void 0 : row.client_name) || "").trim() || "\u041A\u043B\u0438\u0435\u043D\u0442",
+        error: ""
+      });
+    };
+    const closeFinanceIssueForm = () => {
+      setFinanceIssueForm((prev) => ({ ...prev, open: false, saving: false, error: "" }));
+    };
+    const closeFinanceModal = () => {
+      setFinanceOpen(false);
+      closeFinanceIssueForm();
+    };
+    const submitFinanceIssueForm = async (event) => {
+      if (event && typeof event.preventDefault === "function") event.preventDefault();
+      if (!(row == null ? void 0 : row.id) || typeof onIssueInvoice !== "function") return;
+      const normalizedAmount = Number(String(financeIssueForm.amount || "").replace(",", "."));
+      if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+        setFinanceIssueForm((prev) => ({ ...prev, error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u0443\u044E \u0441\u0443\u043C\u043C\u0443 \u0441\u0447\u0435\u0442\u0430" }));
+        return;
+      }
+      setFinanceIssueForm((prev) => ({ ...prev, saving: true, error: "" }));
+      try {
+        await onIssueInvoice({
+          requestId: String(row.id),
+          amount: normalizedAmount,
+          serviceDescription: String(financeIssueForm.serviceDescription || ""),
+          payerDisplayName: String(financeIssueForm.payerDisplayName || "")
+        });
+        setFinanceIssueForm((prev) => ({ ...prev, open: false, saving: false, error: "" }));
+      } catch (error) {
+        setFinanceIssueForm((prev) => ({ ...prev, saving: false, error: (error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0441\u0447\u0435\u0442" }));
+      }
     };
     const openStatusChangeModal = (preset) => {
       const suggested = Array.isArray(preset == null ? void 0 : preset.suggestedStatuses) ? preset.suggestedStatuses.filter(Boolean) : [];
@@ -498,6 +579,36 @@
       });
       return map;
     }, [safeAttachments]);
+    const localActivityCursor = useMemo(() => {
+      let latestTs = 0;
+      const pickLatest = (value) => {
+        if (!value) return;
+        const ts = new Date(value).getTime();
+        if (Number.isFinite(ts) && ts > latestTs) latestTs = ts;
+      };
+      safeMessages.forEach((item) => {
+        pickLatest(item == null ? void 0 : item.updated_at);
+        pickLatest(item == null ? void 0 : item.created_at);
+      });
+      safeAttachments.forEach((item) => {
+        pickLatest(item == null ? void 0 : item.updated_at);
+        pickLatest(item == null ? void 0 : item.created_at);
+      });
+      return latestTs > 0 ? new Date(latestTs).toISOString() : "";
+    }, [safeAttachments, safeMessages]);
+    const typingHintText = useMemo(() => {
+      const rows = Array.isArray(typingPeers) ? typingPeers : [];
+      if (!rows.length) return "";
+      const labels = rows.map((item) => String((item == null ? void 0 : item.actor_label) || (item == null ? void 0 : item.label) || "").trim()).filter(Boolean);
+      if (!labels.length) return "\u0421\u043E\u0431\u0435\u0441\u0435\u0434\u043D\u0438\u043A \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442...";
+      const unique = [];
+      labels.forEach((label) => {
+        if (!unique.includes(label)) unique.push(label);
+      });
+      if (unique.length === 1) return unique[0] + " \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442...";
+      if (unique.length === 2) return unique[0] + " \u0438 " + unique[1] + " \u043F\u0435\u0447\u0430\u0442\u0430\u044E\u0442...";
+      return unique[0] + ", " + unique[1] + " \u0438 \u0435\u0449\u0435 " + String(unique.length - 2) + " \u043F\u0435\u0447\u0430\u0442\u0430\u044E\u0442...";
+    }, [typingPeers]);
     const openAttachmentFromMessage = (item) => {
       if (!(item == null ? void 0 : item.download_url)) return;
       const kind = detectAttachmentPreviewKind(item.file_name, item.mime_type);
@@ -507,6 +618,121 @@
       }
       openPreview(item);
     };
+    const downloadAttachment = (item) => {
+      const url = String((item == null ? void 0 : item.download_url) || "").trim();
+      if (!url) return;
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      const fileName = String((item == null ? void 0 : item.file_name) || "").trim();
+      if (fileName) link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    };
+    useEffect(() => {
+      liveCursorRef.current = localActivityCursor || "";
+    }, [localActivityCursor, row == null ? void 0 : row.id]);
+    useEffect(() => {
+      if (!row || typeof onLiveProbe !== "function") {
+        setTypingPeers([]);
+        setLiveMode("online");
+        if (liveTimerRef.current) {
+          clearTimeout(liveTimerRef.current);
+          liveTimerRef.current = null;
+        }
+        liveInFlightRef.current = false;
+        liveFailCountRef.current = 0;
+        return void 0;
+      }
+      let cancelled = false;
+      const scheduleNext = (ms) => {
+        if (cancelled) return;
+        if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+        liveTimerRef.current = setTimeout(runProbe, ms);
+      };
+      const runProbe = async () => {
+        if (cancelled || liveInFlightRef.current) return;
+        liveInFlightRef.current = true;
+        try {
+          const payload = await onLiveProbe({ cursor: liveCursorRef.current });
+          const cursor = String((payload == null ? void 0 : payload.cursor) || "").trim();
+          if (cursor) liveCursorRef.current = cursor;
+          setTypingPeers(Array.isArray(payload == null ? void 0 : payload.typing) ? payload.typing : []);
+          liveFailCountRef.current = 0;
+          setLiveMode("online");
+        } catch (_) {
+          liveFailCountRef.current += 1;
+          setLiveMode(liveFailCountRef.current >= 3 ? "degraded" : "online");
+        } finally {
+          liveInFlightRef.current = false;
+          const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+          const baseInterval = hidden ? 8e3 : 2500;
+          const failStep = Math.min(5, Math.max(0, liveFailCountRef.current));
+          const backoffInterval = failStep > 0 ? Math.min(3e4, baseInterval * Math.pow(2, failStep - 1)) : baseInterval;
+          scheduleNext(backoffInterval);
+        }
+      };
+      runProbe();
+      return () => {
+        cancelled = true;
+        if (liveTimerRef.current) {
+          clearTimeout(liveTimerRef.current);
+          liveTimerRef.current = null;
+        }
+        liveInFlightRef.current = false;
+        liveFailCountRef.current = 0;
+        setTypingPeers([]);
+        setLiveMode("online");
+      };
+    }, [onLiveProbe, row, trackNumber]);
+    const typingEnabled = Boolean(
+      row && typeof onTypingSignal === "function" && !loading && !fileUploading && composerFocused && String(messageDraft || "").trim()
+    );
+    useEffect(() => {
+      if (typeof onTypingSignal !== "function" || !row) {
+        if (typingHeartbeatRef.current) {
+          clearInterval(typingHeartbeatRef.current);
+          typingHeartbeatRef.current = null;
+        }
+        typingActiveRef.current = false;
+        return;
+      }
+      if (typingEnabled) {
+        if (!typingActiveRef.current) {
+          typingActiveRef.current = true;
+          void onTypingSignal({ typing: true }).catch(() => null);
+        }
+        if (!typingHeartbeatRef.current) {
+          typingHeartbeatRef.current = setInterval(() => {
+            void onTypingSignal({ typing: true }).catch(() => null);
+          }, 2500);
+        }
+        return;
+      }
+      if (typingHeartbeatRef.current) {
+        clearInterval(typingHeartbeatRef.current);
+        typingHeartbeatRef.current = null;
+      }
+      if (typingActiveRef.current) {
+        typingActiveRef.current = false;
+        void onTypingSignal({ typing: false }).catch(() => null);
+      }
+    }, [onTypingSignal, row, typingEnabled]);
+    useEffect(
+      () => () => {
+        if (typingHeartbeatRef.current) {
+          clearInterval(typingHeartbeatRef.current);
+          typingHeartbeatRef.current = null;
+        }
+        if (typingActiveRef.current && typeof onTypingSignal === "function") {
+          typingActiveRef.current = false;
+          void onTypingSignal({ typing: false }).catch(() => null);
+        }
+      },
+      [onTypingSignal]
+    );
     const newDataRequestRow = (source) => {
       const item = source || {};
       const label = String(item.label || "").trim();
@@ -522,6 +748,7 @@
         field_type: fieldType,
         document_name: String(item.document_name || "").trim(),
         value_text: item.value_text == null ? "" : String(item.value_text),
+        value_file: item.value_file || null,
         is_filled: Boolean(item.is_filled)
       };
     };
@@ -924,15 +1151,7 @@
           message_id: currentMessageId,
           items: payloadItems
         });
-        setClientDataModal((prev) => ({
-          ...prev,
-          saving: false,
-          status: "\u0414\u0430\u043D\u043D\u044B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B.",
-          items: (prev.items || []).map((item) => ({
-            ...item,
-            pendingFile: null
-          }))
-        }));
+        closeClientDataModal();
       } catch (error) {
         setClientDataModal((prev) => ({
           ...prev,
@@ -1045,7 +1264,80 @@
       }
       chatTimelineItems.push(entry);
     });
-    const routeNodes = Array.isArray(statusRouteNodes) && statusRouteNodes.length ? statusRouteNodes : (row == null ? void 0 : row.status_code) ? [{ code: row.status_code, name: statusLabel(row.status_code), state: "current", note: "\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u044D\u0442\u0430\u043F \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0438 \u0437\u0430\u044F\u0432\u043A\u0438" }] : [];
+    useEffect(() => {
+      if (chatTab !== "chat") return;
+      const listNode = chatListRef.current;
+      if (!listNode) return;
+      const cursor = String(localActivityCursor || "");
+      if (!cursor || cursor === lastAutoScrollCursorRef.current) return;
+      lastAutoScrollCursorRef.current = cursor;
+      const raf = window.requestAnimationFrame(() => {
+        if (!chatListRef.current) return;
+        chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      });
+      return () => window.cancelAnimationFrame(raf);
+    }, [chatTab, localActivityCursor]);
+    const baseRouteNodes = Array.isArray(statusRouteNodes) && statusRouteNodes.length ? statusRouteNodes : (row == null ? void 0 : row.status_code) ? [{ code: row.status_code, name: String((row == null ? void 0 : row.status_name) || statusLabel(row.status_code) || row.status_code), state: "current", note: "\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u044D\u0442\u0430\u043F \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0438 \u0437\u0430\u044F\u0432\u043A\u0438" }] : [];
+    const upcomingImportantDate = useMemo(() => {
+      const source = String(currentImportantDateAt || (row == null ? void 0 : row.important_date_at) || "").trim();
+      if (!source) return "";
+      const timestamp = new Date(source).getTime();
+      if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return "";
+      return new Date(timestamp).toISOString();
+    }, [currentImportantDateAt, row == null ? void 0 : row.important_date_at]);
+    const routeNodes = useMemo(() => {
+      if (viewerRoleCode !== "CLIENT" && viewerRoleCode !== "LAWYER" || !upcomingImportantDate) return baseRouteNodes;
+      if (!Array.isArray(baseRouteNodes) || !baseRouteNodes.length) {
+        return [
+          {
+            code: "__IMPORTANT_DATE__",
+            name: "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430",
+            state: "pending",
+            changed_at: upcomingImportantDate,
+            note: "\u041A\u043E\u043D\u0442\u0440\u043E\u043B\u044C\u043D\u044B\u0439 \u0441\u0440\u043E\u043A"
+          }
+        ];
+      }
+      const hasVirtualNode = baseRouteNodes.some((node) => String((node == null ? void 0 : node.code) || "").trim() === "__IMPORTANT_DATE__");
+      if (hasVirtualNode) return baseRouteNodes;
+      const currentIndex = baseRouteNodes.findIndex((node) => String((node == null ? void 0 : node.state) || "").trim().toLowerCase() === "current");
+      const virtualNode = {
+        code: "__IMPORTANT_DATE__",
+        name: "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430",
+        state: "pending",
+        changed_at: upcomingImportantDate,
+        note: "\u041A\u043E\u043D\u0442\u0440\u043E\u043B\u044C\u043D\u044B\u0439 \u0441\u0440\u043E\u043A"
+      };
+      if (currentIndex < 0) return [...baseRouteNodes, virtualNode];
+      const next = [...baseRouteNodes];
+      next.splice(currentIndex + 1, 0, virtualNode);
+      return next;
+    }, [baseRouteNodes, upcomingImportantDate, viewerRoleCode]);
+    const routeNodesForDisplay = useMemo(() => {
+      if (!Array.isArray(routeNodes) || !routeNodes.length) return [];
+      const important = [];
+      const current = [];
+      const completed = [];
+      const pending = [];
+      routeNodes.forEach((node) => {
+        const code = String((node == null ? void 0 : node.code) || "").trim();
+        const state = String((node == null ? void 0 : node.state) || "pending").trim().toLowerCase();
+        if (code === "__IMPORTANT_DATE__") {
+          important.push(node);
+          return;
+        }
+        if (state === "current") {
+          current.push(node);
+          return;
+        }
+        if (state === "completed") {
+          completed.push(node);
+          return;
+        }
+        pending.push(node);
+      });
+      return [...important, ...current, ...completed.reverse(), ...pending];
+    }, [routeNodes]);
     const AttachmentPreviewModal = AttachmentPreviewModalComponent;
     const StatusLine = StatusLineComponent;
     const renderRequestDataMessageItems = (payload) => {
@@ -1055,11 +1347,56 @@
       if (!items.length) return /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, "\u0417\u0430\u043F\u0440\u043E\u0441");
       if (allFilled) {
         const fileOnly = items.length === 1 && String(((_a2 = items[0]) == null ? void 0 : _a2.field_type) || "").toLowerCase() === "file";
-        return /* @__PURE__ */ React.createElement("p", { className: "chat-message-text chat-request-data-collapsed" }, fileOnly ? "\u0424\u0430\u0439\u043B" : "\u0417\u0430\u043F\u0440\u043E\u0441");
+        return /* @__PURE__ */ React.createElement("p", { className: "chat-message-text chat-request-data-collapsed" }, fileOnly ? "\u0424\u0430\u0439\u043B" : "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D");
       }
       const visibleItems = items.slice(0, 7);
       const hiddenCount = Math.max(0, items.length - visibleItems.length);
       return /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-list" }, visibleItems.map((item, idx) => /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-item" + ((item == null ? void 0 : item.is_filled) ? " filled" : ""), key: String((item == null ? void 0 : item.id) || idx) }, /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-index" }, (item == null ? void 0 : item.is_filled) ? /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-check" }, "\u2713") : null, String((item == null ? void 0 : item.index) || idx + 1) + "."), /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-label" }, String((item == null ? void 0 : item.label_short) || (item == null ? void 0 : item.label) || "\u041F\u043E\u043B\u0435")))), hiddenCount > 0 ? /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-more" }, "... \u0435\u0449\u0435 ", hiddenCount) : null);
+    };
+    const resolveServiceMessageContent = (payload) => {
+      const messageKind = String((payload == null ? void 0 : payload.message_kind) || "");
+      if (messageKind === "REQUEST_DATA") return null;
+      const bodyRaw = String((payload == null ? void 0 : payload.body) || "").replace(/\r/g, "").trim();
+      if (!bodyRaw) return null;
+      const lines = bodyRaw.split("\n");
+      const firstLine = String(lines[0] || "").trim();
+      const restLines = lines.slice(1);
+      const normalizeDetail = (value) => String(value || "").trim();
+      const withTail = (firstDetail) => [normalizeDetail(firstDetail), ...restLines.map((line) => normalizeDetail(line)).filter(Boolean)].filter(Boolean).join("\n");
+      if (firstLine === "\u0421\u0447\u0435\u0442 \u043D\u0430 \u043E\u043F\u043B\u0430\u0442\u0443" || firstLine.startsWith("\u0421\u0447\u0435\u0442 \u043D\u0430 \u043E\u043F\u043B\u0430\u0442\u0443:")) {
+        return {
+          title: "\u0421\u0447\u0435\u0442 \u043D\u0430 \u043E\u043F\u043B\u0430\u0442\u0443",
+          text: withTail(firstLine.startsWith("\u0421\u0447\u0435\u0442 \u043D\u0430 \u043E\u043F\u043B\u0430\u0442\u0443:") ? firstLine.slice("\u0421\u0447\u0435\u0442 \u043D\u0430 \u043E\u043F\u043B\u0430\u0442\u0443:".length) : "")
+        };
+      }
+      if (firstLine.startsWith("\u0418\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u0441\u0442\u0430\u0442\u0443\u0441:") || firstLine.startsWith("\u0421\u043C\u0435\u043D\u0430 \u0441\u0442\u0430\u0442\u0443\u0441\u0430:")) {
+        const source = firstLine.startsWith("\u0418\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u0441\u0442\u0430\u0442\u0443\u0441:") ? firstLine : firstLine.slice("\u0421\u043C\u0435\u043D\u0430 \u0441\u0442\u0430\u0442\u0443\u0441\u0430:".length);
+        const detail = firstLine.startsWith("\u0418\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u0441\u0442\u0430\u0442\u0443\u0441:") ? source.slice("\u0418\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u0441\u0442\u0430\u0442\u0443\u0441:".length) : source;
+        return {
+          title: "\u0418\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u0441\u0442\u0430\u0442\u0443\u0441",
+          text: withTail(detail)
+        };
+      }
+      if (firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:") || firstLine.startsWith("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E:")) {
+        const detail = firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:") ? firstLine.slice("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:".length) : firstLine.slice("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E:".length);
+        return {
+          title: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442",
+          text: withTail(detail)
+        };
+      }
+      return null;
+    };
+    const resolveStatusDisplayName = (code, explicitName) => {
+      var _a2;
+      const explicit = String(explicitName || "").trim();
+      if (explicit) return explicit;
+      const normalizedCode = String(code || "").trim();
+      if (!normalizedCode) return "-";
+      const optionName = String(((_a2 = statusByCode.get(normalizedCode)) == null ? void 0 : _a2.name) || "").trim();
+      if (optionName) return optionName;
+      const legacyName = String(statusLabel(normalizedCode) || "").trim();
+      if (legacyName && legacyName !== normalizedCode) return legacyName;
+      return humanizeKey(normalizedCode);
     };
     const formatRequestDataValue = (item) => {
       const type = String((item == null ? void 0 : item.field_type) || "string").toLowerCase();
@@ -1082,6 +1419,13 @@
       const text = String((item == null ? void 0 : item.value_text) || "").trim();
       return text || "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E";
     };
+    const currentStatusName = resolveStatusDisplayName(row == null ? void 0 : row.status_code, (row == null ? void 0 : row.status_name) || "");
+    const dataRequestProgress = useMemo(() => {
+      const rows = Array.isArray(dataRequestModal.rows) ? dataRequestModal.rows : [];
+      const total = rows.length;
+      const filled = rows.filter((rowItem) => Boolean((rowItem == null ? void 0 : rowItem.is_filled) || String((rowItem == null ? void 0 : rowItem.value_text) || "").trim())).length;
+      return { total, filled };
+    }, [dataRequestModal.rows]);
     return /* @__PURE__ */ React.createElement("div", { className: "block" }, /* @__PURE__ */ React.createElement("div", { className: "request-workspace-layout" }, /* @__PURE__ */ React.createElement("div", { className: "request-main-column" }, /* @__PURE__ */ React.createElement("div", { className: "block" }, /* @__PURE__ */ React.createElement("div", { className: "request-card-head" }, /* @__PURE__ */ React.createElement("h3", null, "\u041A\u0430\u0440\u0442\u043E\u0447\u043A\u0430"), /* @__PURE__ */ React.createElement("div", { className: "request-card-head-actions" }, canRequestData ? /* @__PURE__ */ React.createElement(
       "button",
       {
@@ -1115,7 +1459,7 @@
         disabled: loading || !row
       },
       "$"
-    ))), loading ? /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...") : row ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "request-card-grid request-card-grid-compact" }, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0422\u0435\u043C\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, String(row.topic_name || row.topic_code || "-"))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0442\u0443\u0441"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, statusLabel(row.status_code))), /* @__PURE__ */ React.createElement("div", { className: "request-field request-field-span-2 request-field-description" }, /* @__PURE__ */ React.createElement("div", { className: "request-field-head" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u044B"), /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "request-card-head-spacer", "aria-hidden": "true" }), loading ? /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...") : row ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "request-card-grid request-card-grid-compact" }, showTopicStatusInCard ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0422\u0435\u043C\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, String(row.topic_name || row.topic_code || "-"))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0442\u0443\u0441"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, currentStatusName))) : null, /* @__PURE__ */ React.createElement("div", { className: "request-field request-field-span-2 request-field-description" }, /* @__PURE__ */ React.createElement("div", { className: "request-field-head" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u044B"), /* @__PURE__ */ React.createElement(
       "button",
       {
         type: "button",
@@ -1131,7 +1475,7 @@
           fill: "currentColor"
         }
       ))
-    )), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, row.description ? String(row.description) : "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041A\u043B\u0438\u0435\u043D\u0442"), /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, row.description ? String(row.description) : "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")), showContactsInCard ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041A\u043B\u0438\u0435\u043D\u0442"), /* @__PURE__ */ React.createElement(
       "span",
       {
         className: "request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : ""),
@@ -1145,13 +1489,17 @@
         "data-tooltip": lawyerHasPhone ? lawyerPhone : void 0
       },
       lawyerLabel
-    )), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u043E\u0437\u0434\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row.created_at))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row.updated_at)))), /* @__PURE__ */ React.createElement("div", { className: "request-status-route" }, /* @__PURE__ */ React.createElement("h4", null, "\u041C\u0430\u0440\u0448\u0440\u0443\u0442 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432"), routeNodes.length ? /* @__PURE__ */ React.createElement("ol", { className: "request-route-list", id: "request-status-route" }, routeNodes.map((node, index) => {
+    ))) : null, canSeeCreatedUpdatedInCard ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u043E\u0437\u0434\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row.created_at))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row.updated_at)))) : null), /* @__PURE__ */ React.createElement("div", { className: "request-status-route" }, /* @__PURE__ */ React.createElement("h4", null, "\u041C\u0430\u0440\u0448\u0440\u0443\u0442 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432"), routeNodesForDisplay.length ? /* @__PURE__ */ React.createElement("ol", { className: "request-route-list", id: "request-status-route" }, routeNodesForDisplay.map((node, index) => {
       const state = String((node == null ? void 0 : node.state) || "pending");
-      const name = String((node == null ? void 0 : node.name) || statusLabel(node == null ? void 0 : node.code));
+      const code = String((node == null ? void 0 : node.code) || "").trim();
+      const rawName = String((node == null ? void 0 : node.name) || "").trim();
+      const name = resolveStatusDisplayName(code, rawName && rawName !== code ? rawName : "");
       const note = String((node == null ? void 0 : node.note) || "").trim();
-      const changedAt = (node == null ? void 0 : node.changed_at) ? fmtDate(node.changed_at) : "";
-      const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending");
-      return /* @__PURE__ */ React.createElement("li", { className, key: ((node == null ? void 0 : node.code) || "node") + "-" + index }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("b", null, name), note ? /* @__PURE__ */ React.createElement("p", null, note) : null, changedAt && state !== "pending" ? /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, "\u0418\u0437\u043C\u0435\u043D\u0435\u043D: ", changedAt) : null));
+      const isImportantDateNode = code === "__IMPORTANT_DATE__";
+      const changedAtSource = String((node == null ? void 0 : node.changed_at) || "").trim() || (isImportantDateNode ? String(currentImportantDateAt || (row == null ? void 0 : row.important_date_at) || "").trim() : "");
+      const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";
+      const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending") + (isImportantDateNode ? " important-date" : "");
+      return /* @__PURE__ */ React.createElement("li", { className, key: ((node == null ? void 0 : node.code) || "node") + "-" + index }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("b", null, name), isImportantDateNode ? /* @__PURE__ */ React.createElement("p", null, "\u041A\u043E\u043D\u0442\u0440\u043E\u043B\u044C\u043D\u044B\u0439 \u0441\u0440\u043E\u043A: " + (changedAt || "-")) : /* @__PURE__ */ React.createElement(React.Fragment, null, note ? /* @__PURE__ */ React.createElement("p", null, note) : null, /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, "\u0414\u0430\u0442\u0430 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F: ", changedAt || "-"))));
     })) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041C\u0430\u0440\u0448\u0440\u0443\u0442 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432 \u0434\u043B\u044F \u0442\u0435\u043C\u044B \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"))) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435"))), /* @__PURE__ */ React.createElement("div", { className: "block request-chat-block" }, /* @__PURE__ */ React.createElement("div", { className: "request-chat-head" }, /* @__PURE__ */ React.createElement("h3", null, "\u041A\u043E\u043C\u043C\u0443\u043D\u0438\u043A\u0430\u0446\u0438\u044F"), /* @__PURE__ */ React.createElement("div", { className: "request-chat-tabs", role: "tablist", "aria-label": "\u041A\u043E\u043C\u043C\u0443\u043D\u0438\u043A\u0430\u0446\u0438\u044F" }, /* @__PURE__ */ React.createElement(
       "button",
       {
@@ -1172,7 +1520,7 @@
         onClick: () => setChatTab("files")
       },
       "\u0424\u0430\u0439\u043B\u044B" + (safeAttachments.length ? " (" + safeAttachments.length + ")" : "")
-    ))), /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "request-chat-live-row", "aria-live": "polite" }, /* @__PURE__ */ React.createElement("span", { className: "chat-live-dot" + (liveMode === "degraded" ? " degraded" : "") }), /* @__PURE__ */ React.createElement("span", { className: "request-chat-live-text" }, typingHintText || (liveMode === "degraded" ? "\u0421\u0432\u044F\u0437\u044C \u043D\u0435\u0441\u0442\u0430\u0431\u0438\u043B\u044C\u043D\u0430, \u0432\u043A\u043B\u044E\u0447\u0435\u043D backoff" : "\u041E\u043D\u043B\u0430\u0439\u043D"))), /* @__PURE__ */ React.createElement(
       "input",
       {
         id: idMap.fileInput,
@@ -1183,7 +1531,7 @@
         disabled: loading || fileUploading,
         style: { position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }
       }
-    ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList }, chatTimelineItems.length ? chatTimelineItems.map(
+    ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList, ref: chatListRef }, chatTimelineItems.length ? chatTimelineItems.map(
       (entry) => {
         var _a2, _b2, _c2, _d, _e;
         return entry.type === "date" ? /* @__PURE__ */ React.createElement("li", { key: entry.key, className: "chat-date-divider" }, /* @__PURE__ */ React.createElement("span", null, entry.label)) : entry.type === "file" ? /* @__PURE__ */ React.createElement(
@@ -1208,6 +1556,7 @@
           var _a3, _b3, _c3, _d2, _e2, _f, _g, _h, _i;
           const messageKind = String(((_a3 = entry.payload) == null ? void 0 : _a3.message_kind) || "");
           const isRequestDataMessage = messageKind === "REQUEST_DATA";
+          const serviceMessageContent = resolveServiceMessageContent(entry.payload);
           const requestDataInteractive = isRequestDataMessage && (canRequestData || canFillRequestData);
           const bubbleClass = "chat-message-bubble" + (isRequestDataMessage ? " chat-request-data-bubble" : "") + (((_b3 = entry.payload) == null ? void 0 : _b3.request_data_all_filled) ? " all-filled" : "") + (isRequestDataMessage && canFillRequestData ? " request-data-message-btn" : "");
           const itemClass = "chat-message " + (String(((_c3 = entry.payload) == null ? void 0 : _c3.author_type) || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing") + (isRequestDataMessage && canFillRequestData ? " request-data-item" + (((_d2 = entry.payload) == null ? void 0 : _d2.request_data_all_filled) ? " done" : "") : "");
@@ -1230,7 +1579,7 @@
                 }
               } : void 0
             },
-            String(((_g = entry.payload) == null ? void 0 : _g.message_kind) || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, String(((_h = entry.payload) == null ? void 0 : _h.body) || "")),
+            String(((_g = entry.payload) == null ? void 0 : _g.message_kind) || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, (serviceMessageContent == null ? void 0 : serviceMessageContent.title) ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, String(((_h = entry.payload) == null ? void 0 : _h.body) || ""))),
             (() => {
               var _a4, _b4;
               if (String(((_a4 = entry.payload) == null ? void 0 : _a4.message_kind) || "") === "REQUEST_DATA") return null;
@@ -1255,7 +1604,7 @@
           ));
         })();
       }
-    ) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u043D\u0435\u0442")), /* @__PURE__ */ React.createElement("form", { className: "stack", onSubmit: onSendMessage }, /* @__PURE__ */ React.createElement(
+    ) : /* @__PURE__ */ React.createElement("li", { className: "muted chat-empty-state" }, "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u043D\u0435\u0442")), /* @__PURE__ */ React.createElement("form", { className: "stack", onSubmit: onSendMessage }, /* @__PURE__ */ React.createElement(
       "div",
       {
         className: "field request-chat-composer-dropzone" + (dropActive ? " drag-active" : ""),
@@ -1277,6 +1626,8 @@
           placeholder: messagePlaceholder,
           value: messageDraft,
           onChange: onMessageChange,
+          onFocus: () => setComposerFocused(true),
+          onBlur: () => setComposerFocused(false),
           disabled: loading || fileUploading
         }
       ),
@@ -1299,16 +1650,6 @@
         disabled: loading || fileUploading
       },
       "\u0417\u0430\u043F\u0440\u043E\u0441\u0438\u0442\u044C"
-    ) : null, canFillRequestData && idMap.fileUploadButton ? /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        className: "btn secondary btn-sm",
-        type: "button",
-        id: idMap.fileUploadButton,
-        onClick: onSendMessage,
-        disabled: loading || fileUploading || !hasPendingFiles
-      },
-      "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B"
     ) : null, /* @__PURE__ */ React.createElement(
       "button",
       {
@@ -1444,7 +1785,7 @@
             disabled: clientDataModal.saving || clientDataModal.loading
           }
         )));
-      }) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F.")), clientDataModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, clientDataModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "status" + (clientDataModal.status ? " ok" : ""), id: idMap.dataRequestStatus }, clientDataModal.status || ""), /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
+      }) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041D\u0435\u0442 \u043F\u043E\u043B\u0435\u0439 \u0434\u043B\u044F \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F.")), clientDataModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, clientDataModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "request-data-status" + (clientDataModal.status ? " ok" : ""), id: idMap.dataRequestStatus }, clientDataModal.status || ""), /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
         "button",
         {
           type: "submit",
@@ -1484,7 +1825,7 @@
         /* @__PURE__ */ React.createElement("option", { value: "" }, "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0442\u0430\u0442\u0443\u0441"),
         statusOptions.filter((item) => item.code !== String((row == null ? void 0 : row.status_code) || "").trim()).filter(
           (item) => Array.isArray(statusChangeModal.allowedStatusCodes) && statusChangeModal.allowedStatusCodes.length ? statusChangeModal.allowedStatusCodes.includes(item.code) : true
-        ).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.code, value: item.code }, item.name + " (" + item.code + ")" + (item.groupName ? " \u2022 " + item.groupName : "")))
+        ).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.code, value: item.code }, item.name + (item.groupName ? " \u2022 " + item.groupName : "")))
       )), /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "status-change-important-date" }, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430 (\u0434\u0435\u0434\u043B\u0430\u0439\u043D)"), /* @__PURE__ */ React.createElement(
         "input",
         {
@@ -1535,7 +1876,7 @@
         const statusCode = String((item == null ? void 0 : item.to_status) || "");
         const statusMeta = statusByCode.get(statusCode);
         const itemClass = "route-item request-status-history-route-item " + (index === 0 ? "current" : "completed");
-        return /* @__PURE__ */ React.createElement("li", { key: String((item == null ? void 0 : item.id) || index), className: itemClass }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-row" }, /* @__PURE__ */ React.createElement("b", null, String((item == null ? void 0 : item.to_status_name) || (statusMeta == null ? void 0 : statusMeta.name) || statusLabel(statusCode) || statusCode || "-")), (statusMeta == null ? void 0 : statusMeta.isTerminal) ? /* @__PURE__ */ React.createElement("span", { className: "request-status-history-chip" }, "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439") : null), /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, fmtShortDateTime(item == null ? void 0 : item.changed_at)), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430: " + fmtShortDateTime(item == null ? void 0 : item.important_date_at)), /* @__PURE__ */ React.createElement("span", null, "\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C: " + formatDuration(item == null ? void 0 : item.duration_seconds))), (item == null ? void 0 : item.from_status) ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0418\u0437: " + statusLabel(item.from_status))) : null, String((item == null ? void 0 : item.comment) || "").trim() ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-comment" }, String(item.comment)) : null));
+        return /* @__PURE__ */ React.createElement("li", { key: String((item == null ? void 0 : item.id) || index), className: itemClass }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-row" }, /* @__PURE__ */ React.createElement("b", null, resolveStatusDisplayName(statusCode, (item == null ? void 0 : item.to_status_name) || (statusMeta == null ? void 0 : statusMeta.name) || "")), (statusMeta == null ? void 0 : statusMeta.isTerminal) ? /* @__PURE__ */ React.createElement("span", { className: "request-status-history-chip" }, "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439") : null), /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, fmtShortDateTime(item == null ? void 0 : item.changed_at)), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430: " + fmtShortDateTime(item == null ? void 0 : item.important_date_at)), /* @__PURE__ */ React.createElement("span", null, "\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C: " + formatDuration(item == null ? void 0 : item.duration_seconds))), (item == null ? void 0 : item.from_status) ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0418\u0437: " + resolveStatusDisplayName(item.from_status, ""))) : null, String((item == null ? void 0 : item.comment) || "").trim() ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-comment" }, String(item.comment)) : null));
       }) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432 \u043F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u0430\u044F"))), statusChangeModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, statusChangeModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
         "button",
         {
@@ -1549,10 +1890,62 @@
       "div",
       {
         className: "overlay" + (financeOpen ? " open" : ""),
-        onClick: () => setFinanceOpen(false),
+        onClick: closeFinanceModal,
         "aria-hidden": financeOpen ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-finance-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0424\u0438\u043D\u0430\u043D\u0441\u044B \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setFinanceOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-card-grid request-finance-grid" }, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount((_a = finance == null ? void 0 : finance.request_cost) != null ? _a : row == null ? void 0 : row.request_cost))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount(finance == null ? void 0 : finance.paid_total))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0414\u0430\u0442\u0430 \u043E\u043F\u043B\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime((_b = finance == null ? void 0 : finance.last_paid_at) != null ? _b : row == null ? void 0 : row.paid_at))), canSeeRate ? /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount((_c = finance == null ? void 0 : finance.effective_rate) != null ? _c : row == null ? void 0 : row.effective_rate))) : null))
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-finance-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0424\u0438\u043D\u0430\u043D\u0441\u044B \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeFinanceModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-card-grid request-finance-grid" }, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount((_a = finance == null ? void 0 : finance.request_cost) != null ? _a : row == null ? void 0 : row.request_cost))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount(finance == null ? void 0 : finance.paid_total))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0414\u0430\u0442\u0430 \u043E\u043F\u043B\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime((_b = finance == null ? void 0 : finance.last_paid_at) != null ? _b : row == null ? void 0 : row.paid_at))), canSeeRate ? /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount((_c = finance == null ? void 0 : finance.effective_rate) != null ? _c : row == null ? void 0 : row.effective_rate))) : null), typeof onIssueInvoice === "function" ? /* @__PURE__ */ React.createElement("div", { className: "request-finance-actions" }, !financeIssueForm.open ? /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "btn btn-sm",
+          onClick: openFinanceIssueForm,
+          disabled: loading || !row
+        },
+        "\u0412\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0441\u0447\u0435\u0442"
+      ) : /* @__PURE__ */ React.createElement("form", { className: "stack request-finance-issue-form", onSubmit: submitFinanceIssueForm }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-issue-grid" }, /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-finance-invoice-amount" }, "\u0421\u0443\u043C\u043C\u0430"), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          id: "request-finance-invoice-amount",
+          type: "number",
+          min: "0.01",
+          step: "0.01",
+          value: financeIssueForm.amount,
+          onChange: (event) => setFinanceIssueForm((prev) => ({ ...prev, amount: event.target.value, error: "" })),
+          disabled: financeIssueForm.saving || loading,
+          placeholder: "0.00"
+        }
+      )), /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-finance-invoice-payer" }, "\u041F\u043B\u0430\u0442\u0435\u043B\u044C\u0449\u0438\u043A"), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          id: "request-finance-invoice-payer",
+          type: "text",
+          value: financeIssueForm.payerDisplayName,
+          onChange: (event) => setFinanceIssueForm((prev) => ({ ...prev, payerDisplayName: event.target.value, error: "" })),
+          disabled: financeIssueForm.saving || loading,
+          placeholder: "\u0424\u0418\u041E / \u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F"
+        }
+      ))), /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-finance-invoice-service" }, "\u0423\u0441\u043B\u0443\u0433\u0430"), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          id: "request-finance-invoice-service",
+          type: "text",
+          value: financeIssueForm.serviceDescription,
+          onChange: (event) => setFinanceIssueForm((prev) => ({ ...prev, serviceDescription: event.target.value, error: "" })),
+          disabled: financeIssueForm.saving || loading,
+          placeholder: "\u042E\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0443\u0441\u043B\u0443\u0433\u0438"
+        }
+      )), financeIssueForm.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, financeIssueForm.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right request-finance-actions-inline" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "btn secondary btn-sm", onClick: closeFinanceIssueForm, disabled: financeIssueForm.saving }, "\u041E\u0442\u043C\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "btn btn-sm", disabled: financeIssueForm.saving || loading }, financeIssueForm.saving ? "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0438\u0435..." : "\u0412\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C")))) : null, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoices" }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoices-head" }, /* @__PURE__ */ React.createElement("h4", null, "\u0421\u0447\u0435\u0442\u0430"), /* @__PURE__ */ React.createElement("span", { className: "muted" }, safeInvoices.length ? String(safeInvoices.length) + " \u0448\u0442." : "\u041D\u0435\u0442 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0445 \u0441\u0447\u0435\u0442\u043E\u0432")), safeInvoices.length ? /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-list" }, safeInvoices.map((item) => /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-row", key: String((item == null ? void 0 : item.id) || (item == null ? void 0 : item.invoice_number) || (item == null ? void 0 : item.issued_at) || "-") }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-number" }, /* @__PURE__ */ React.createElement("code", null, String((item == null ? void 0 : item.invoice_number) || "-"))), /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-details" }, /* @__PURE__ */ React.createElement("span", null, invoiceStatusLabel(item == null ? void 0 : item.status)), /* @__PURE__ */ React.createElement("span", null, fmtAmount(item == null ? void 0 : item.amount) + " " + String((item == null ? void 0 : item.currency) || "RUB")), /* @__PURE__ */ React.createElement("span", null, "\u0421\u043E\u0437\u0434\u0430\u043D: " + fmtDate(item == null ? void 0 : item.issued_at)), /* @__PURE__ */ React.createElement("span", null, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D: " + fmtDate(item == null ? void 0 : item.paid_at)))), typeof onDownloadInvoicePdf === "function" ? /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "icon-btn request-finance-invoice-download-btn",
+          onClick: () => onDownloadInvoicePdf(item),
+          disabled: loading,
+          "aria-label": "\u0421\u043A\u0430\u0447\u0430\u0442\u044C \u0441\u0447\u0435\u0442 PDF",
+          "data-tooltip": "\u0421\u043A\u0430\u0447\u0430\u0442\u044C PDF"
+        },
+        "\u2B07"
+      ) : null))) : /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-empty" }, "\u0421\u0447\u0435\u0442\u0430 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u044F\u043B\u0438\u0441\u044C")))
     ), /* @__PURE__ */ React.createElement(
       "div",
       {
@@ -1560,7 +1953,7 @@
         onClick: () => setDescriptionOpen(false),
         "aria-hidden": descriptionOpen ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-description-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0417\u0430\u044F\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-headline" }, /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, String((row == null ? void 0 : row.topic_name) || (row == null ? void 0 : row.topic_code) || "\u0422\u0435\u043C\u0430 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u0430")), /* @__PURE__ */ React.createElement("span", { className: "request-description-status-chip" }, statusLabel(row == null ? void 0 : row.status_code)))), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setDescriptionOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-main" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-title" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u044B")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-text" }, (row == null ? void 0 : row.description) ? String(row.description) : "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041A\u043B\u0438\u0435\u043D\u0442"), /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-description-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0417\u0430\u044F\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-headline" }, /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, String((row == null ? void 0 : row.topic_name) || (row == null ? void 0 : row.topic_code) || "\u0422\u0435\u043C\u0430 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u0430")), /* @__PURE__ */ React.createElement("span", { className: "request-description-status-chip" }, currentStatusName))), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setDescriptionOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-main" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-title" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u044B")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-text" }, (row == null ? void 0 : row.description) ? String(row.description) : "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041A\u043B\u0438\u0435\u043D\u0442"), /* @__PURE__ */ React.createElement(
         "span",
         {
           className: "request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : ""),
@@ -1629,7 +2022,7 @@
           disabled: !canSaveSelectedRequestTemplate || dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate
         },
         dataRequestModal.savingTemplate ? "\u2026" : requestTemplateActionMode === "create" ? "\u271A" : "\u{1F4BE}"
-      ))), dataRequestModal.templateStatus ? /* @__PURE__ */ React.createElement("div", { className: "status ok" }, dataRequestModal.templateStatus) : null, /* @__PURE__ */ React.createElement("div", { className: "request-data-modal-grid" }, /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-data-template-select" }, "\u041F\u043E\u043B\u0435 \u0434\u0430\u043D\u043D\u044B\u0445 (\u043F\u043E\u0438\u0441\u043A \u043F\u043E \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0443)"), /* @__PURE__ */ React.createElement("div", { className: "request-data-combobox" }, /* @__PURE__ */ React.createElement(
+      ))), dataRequestModal.templateStatus ? /* @__PURE__ */ React.createElement("div", { className: "status ok" }, dataRequestModal.templateStatus) : null, canRequestData && dataRequestModal.messageId ? /* @__PURE__ */ React.createElement("div", { className: "request-data-progress-line" }, /* @__PURE__ */ React.createElement("span", { className: "request-data-progress-chip" }, "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C: " + String(dataRequestProgress.filled) + " / " + String(dataRequestProgress.total))) : null, /* @__PURE__ */ React.createElement("div", { className: "request-data-modal-grid" }, /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-data-template-select" }, "\u041F\u043E\u043B\u0435 \u0434\u0430\u043D\u043D\u044B\u0445 (\u043F\u043E\u0438\u0441\u043A \u043F\u043E \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0443)"), /* @__PURE__ */ React.createElement("div", { className: "request-data-combobox" }, /* @__PURE__ */ React.createElement(
         "input",
         {
           id: "request-data-template-select",
@@ -1737,7 +2130,17 @@
             disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)
           },
           "\xD7"
-        ))
+        )),
+        canRequestData && ((rowItem == null ? void 0 : rowItem.is_filled) || String((rowItem == null ? void 0 : rowItem.value_text) || "").trim()) ? /* @__PURE__ */ React.createElement("div", { className: "request-data-row-client-value" }, /* @__PURE__ */ React.createElement("span", { className: "request-data-row-client-label" }, "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C:"), String((rowItem == null ? void 0 : rowItem.field_type) || "").toLowerCase() === "file" ? (rowItem == null ? void 0 : rowItem.value_file) && rowItem.value_file.download_url ? /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            className: "chat-message-file-chip",
+            onClick: () => openAttachmentFromMessage(rowItem.value_file)
+          },
+          /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"),
+          /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(rowItem.value_file.file_name || "\u0424\u0430\u0439\u043B"))
+        ) : /* @__PURE__ */ React.createElement("span", { className: "muted" }, "\u0424\u0430\u0439\u043B \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D") : /* @__PURE__ */ React.createElement("span", { className: "request-data-row-client-text" }, String((rowItem == null ? void 0 : rowItem.field_type) || "").toLowerCase() === "date" ? fmtDateOnly(rowItem == null ? void 0 : rowItem.value_text) : String((rowItem == null ? void 0 : rowItem.value_text) || "").trim().slice(0, 140))) : null
       )) : /* @__PURE__ */ React.createElement("div", { className: "muted" }, "\u041F\u043E\u043B\u044F \u0434\u043B\u044F \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u0435\u0449\u0435 \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u044B"))), dataRequestModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, dataRequestModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
         "button",
         {
@@ -1758,12 +2161,12 @@
       /* @__PURE__ */ React.createElement("div", { className: "modal request-data-summary-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0414\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setRequestDataListOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-list" }, requestDataListItems.length ? requestDataListItems.map((item) => {
         const value = formatRequestDataValue(item);
         const isFile = String((item == null ? void 0 : item.field_type) || "").toLowerCase() === "file";
-        return /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-row", key: String(item.id || item.key) }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-label" }, String(item.label || humanizeKey(item.key))), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-value" }, isFile ? value && typeof value === "object" ? /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-file" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "chat-message-file-chip", onClick: () => openAttachmentFromMessage(value) }, /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"), /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(value.file_name || "\u0424\u0430\u0439\u043B")))) : /* @__PURE__ */ React.createElement("span", { className: "muted" }, "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E") : String(value || "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")));
+        return /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-row", key: String(item.id || item.key) }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-label" }, String(item.label || humanizeKey(item.key))), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-value" }, isFile ? value && typeof value === "object" ? /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-file" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "chat-message-file-chip", onClick: () => downloadAttachment(value) }, /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"), /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(value.file_name || "\u0424\u0430\u0439\u043B")))) : /* @__PURE__ */ React.createElement("span", { className: "muted" }, "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E") : String(value || "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")));
       }) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435 \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044E\u0442")))
     ));
   }
 
-  // admin/shared/state.js
+  // app/web/admin/shared/state.js
   function createRequestModalState() {
     return {
       loading: false,
@@ -1771,6 +2174,7 @@
       trackNumber: "",
       requestData: null,
       financeSummary: null,
+      invoices: [],
       statusRouteNodes: [],
       statusHistory: [],
       availableStatuses: [],
@@ -1784,19 +2188,9 @@
     };
   }
 
-  // client.jsx
+  // app/web/client.jsx
   (function() {
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const SERVICE_REQUEST_TYPE_LABELS = {
-      CURATOR_CONTACT: "\u0417\u0430\u043F\u0440\u043E\u0441 \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443",
-      LAWYER_CHANGE_REQUEST: "\u0421\u043C\u0435\u043D\u0430 \u044E\u0440\u0438\u0441\u0442\u0430"
-    };
-    const SERVICE_REQUEST_STATUS_LABELS = {
-      NEW: "\u041D\u043E\u0432\u044B\u0439",
-      IN_PROGRESS: "\u0412 \u0440\u0430\u0431\u043E\u0442\u0435",
-      RESOLVED: "\u0420\u0435\u0448\u0435\u043D",
-      REJECTED: "\u041E\u0442\u043A\u043B\u043E\u043D\u0435\u043D"
-    };
     function StatusLine({ status }) {
       return /* @__PURE__ */ React.createElement("p", { className: "status" + ((status == null ? void 0 : status.kind) ? " " + status.kind : "") }, (status == null ? void 0 : status.message) || "");
     }
@@ -1987,40 +2381,119 @@
         }
       ))), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", id: "file-preview-close", onClick: onClose }, "\xD7"))), /* @__PURE__ */ React.createElement("div", { className: "request-preview-body", id: "file-preview-body" }, loading ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430...") : null, !loading && !error && hint ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, hint) : null, error ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, error) : null, !loading && !error && kind === "image" && resolvedUrl ? /* @__PURE__ */ React.createElement("img", { className: "request-preview-image", src: resolvedUrl, alt: fileName || "attachment" }) : null, !loading && !error && kind === "video" && resolvedUrl ? /* @__PURE__ */ React.createElement("video", { className: "request-preview-video", src: resolvedUrl, controls: true, preload: "metadata" }) : null, !loading && !error && kind === "pdf" && resolvedUrl ? /* @__PURE__ */ React.createElement("iframe", { className: "request-preview-frame", src: resolvedUrl, title: fileName || "preview" }) : null, !loading && !error && kind === "text" ? /* @__PURE__ */ React.createElement("pre", { className: "request-preview-text" }, resolvedText || "\u0424\u0430\u0439\u043B \u043F\u0443\u0441\u0442.") : null, kind === "none" ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, "\u0414\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0442\u0438\u043F\u0430 \u0444\u0430\u0439\u043B\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u0435 \u0438\u043B\u0438 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0435.") : null)));
     }
-    function ServiceRequestModal({ open, type, body, status, loading, onBodyChange, onClose, onSubmit }) {
-      const title = type === "LAWYER_CHANGE_REQUEST" ? "\u0417\u0430\u043F\u0440\u043E\u0441 \u043D\u0430 \u0441\u043C\u0435\u043D\u0443 \u044E\u0440\u0438\u0441\u0442\u0430" : "\u041E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435 \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443";
-      return /* @__PURE__ */ React.createElement("div", { className: "overlay" + (open ? " open" : ""), id: "service-request-overlay", onClick: (event) => event.target.id === "service-request-overlay" && onClose() }, /* @__PURE__ */ React.createElement("div", { className: "modal service-request-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", { id: "service-request-title" }, title)), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", id: "service-request-close", onClick: onClose, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("form", { id: "service-request-form", className: "stack service-request-form", onSubmit }, /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "service-request-body" }, "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435"), /* @__PURE__ */ React.createElement(
+    function ClientHelpModal({
+      open,
+      status,
+      loadingType,
+      lawyerChangeReason,
+      curatorBlocked,
+      lawyerChangeBlocked,
+      onClose,
+      onReasonChange,
+      onSubmitCurator,
+      onSubmitLawyerChange
+    }) {
+      return /* @__PURE__ */ React.createElement("div", { className: "overlay" + (open ? " open" : ""), id: "client-help-overlay", onClick: (event) => event.target.id === "client-help-overlay" && onClose() }, /* @__PURE__ */ React.createElement("div", { className: "modal client-help-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", { id: "client-help-title" }, "\u041F\u043E\u043C\u043E\u0449\u044C \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", id: "client-help-close", onClick: onClose, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "client-help-stack" }, /* @__PURE__ */ React.createElement("section", { className: "client-help-block" }, /* @__PURE__ */ React.createElement("p", { className: "client-help-description" }, "\u0415\u0441\u043B\u0438 \u043D\u0443\u0436\u043D\u0430 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u0430\u044F \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u043A\u0430 \u043F\u043E \u0434\u0435\u043B\u0443, \u043C\u043E\u0436\u043D\u043E \u043E\u0431\u0440\u0430\u0442\u0438\u0442\u044C\u0441\u044F \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443. \u0417\u0430\u043F\u0440\u043E\u0441 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0443 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u044B."), /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          className: "btn secondary btn-sm",
+          id: "cabinet-curator-request-open",
+          type: "button",
+          disabled: curatorBlocked || loadingType === "CURATOR_CONTACT",
+          onClick: onSubmitCurator
+        },
+        loadingType === "CURATOR_CONTACT" ? "\u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430..." : "\u041E\u0431\u0440\u0430\u0442\u0438\u0442\u044C\u0441\u044F \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443"
+      )), /* @__PURE__ */ React.createElement("section", { className: "client-help-block" }, /* @__PURE__ */ React.createElement("p", { className: "client-help-description" }, "\u0415\u0441\u043B\u0438 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u044E\u0440\u0438\u0441\u0442 \u043D\u0435 \u0443\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0435\u0442, \u043C\u043E\u0436\u043D\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0435\u0433\u043E \u0441\u043C\u0435\u043D\u0443. \u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 \u0434\u043B\u044F \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430."), /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "service-request-body" }, "\u041F\u0440\u0438\u0447\u0438\u043D\u0430 \u0441\u043C\u0435\u043D\u044B \u044E\u0440\u0438\u0441\u0442\u0430"), /* @__PURE__ */ React.createElement(
         "textarea",
         {
           id: "service-request-body",
-          value: body,
-          onChange: onBodyChange,
+          value: lawyerChangeReason,
+          onChange: onReasonChange,
           maxLength: 4e3,
-          placeholder: "\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435",
-          disabled: loading
+          placeholder: "\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443",
+          disabled: lawyerChangeBlocked || loadingType === "LAWYER_CHANGE_REQUEST"
         }
-      )), /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm", id: "service-request-send", type: "submit", disabled: loading }, loading ? "\u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430..." : "\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C")), /* @__PURE__ */ React.createElement(StatusLine, { status }))));
+      )), /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          className: "btn secondary btn-sm",
+          id: "cabinet-lawyer-change-open",
+          type: "button",
+          disabled: lawyerChangeBlocked || loadingType === "LAWYER_CHANGE_REQUEST",
+          onClick: onSubmitLawyerChange
+        },
+        loadingType === "LAWYER_CHANGE_REQUEST" ? "\u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430..." : "\u0417\u0430\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0441\u043C\u0435\u043D\u0443"
+      )), /* @__PURE__ */ React.createElement(StatusLine, { status }))));
     }
-    function ServiceRequestList({ rows }) {
-      const safeRows = Array.isArray(rows) ? rows : [];
-      return /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list", id: "cabinet-service-requests" }, safeRows.length ? safeRows.map((item) => {
-        const typeCode = String((item == null ? void 0 : item.type) || "").toUpperCase();
-        const statusCode = String((item == null ? void 0 : item.status) || "").toUpperCase();
-        return /* @__PURE__ */ React.createElement("li", { key: String(item.id), className: "simple-item" }, /* @__PURE__ */ React.createElement("div", null, (SERVICE_REQUEST_TYPE_LABELS[typeCode] || typeCode || "\u0417\u0430\u043F\u0440\u043E\u0441") + " \u2022 " + (SERVICE_REQUEST_STATUS_LABELS[statusCode] || statusCode || "NEW")), /* @__PURE__ */ React.createElement("div", { className: "muted request-modal-item-meta" }, fmtShortDateTime(item == null ? void 0 : item.created_at)), (item == null ? void 0 : item.body) ? /* @__PURE__ */ React.createElement("p", null, String(item.body)) : null);
-      }) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, "\u041E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0439 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442"));
+    function RequestPickerModal({
+      open,
+      loading,
+      requests,
+      activeTrack,
+      onClose,
+      onReload,
+      onSelect
+    }) {
+      const rows = Array.isArray(requests) ? requests : [];
+      return /* @__PURE__ */ React.createElement(Overlay, { open, id: "client-request-picker-overlay", onClose: (event) => event.target.id === "client-request-picker-overlay" && onClose() }, /* @__PURE__ */ React.createElement("div", { className: "modal client-request-picker-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0412\u044B\u0431\u043E\u0440 \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted client-request-picker-subtitle" }, "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043D\u0443\u0436\u043D\u0443\u044E \u0437\u0430\u044F\u0432\u043A\u0443 \u0438\u0437 \u0441\u043F\u0438\u0441\u043A\u0430")), /* @__PURE__ */ React.createElement("div", { className: "modal-head-actions" }, /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          className: "icon-btn file-action-btn",
+          type: "button",
+          "data-tooltip": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A",
+          "aria-label": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A",
+          onClick: onReload,
+          disabled: loading
+        },
+        /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement(
+          "path",
+          {
+            d: "M12 4a8 8 0 0 1 7.7 5.8 1 1 0 0 1-1.92.56A6 6 0 1 0 16.7 16H15a1 1 0 1 1 0-2h4a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0v-1.18A8 8 0 1 1 12 4z",
+            fill: "currentColor"
+          }
+        ))
+      ), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: onClose, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7"))), /* @__PURE__ */ React.createElement("ul", { className: "simple-list client-request-picker-list", id: "client-request-picker-list" }, rows.length ? rows.map((row, index) => {
+        const track = String((row == null ? void 0 : row.track_number) || "").trim();
+        const isActive = track && track === String(activeTrack || "").trim();
+        const hasUpdates = Number((row == null ? void 0 : row.viewer_unread_total) || 0) > 0 || Boolean(row == null ? void 0 : row.client_has_unread_updates);
+        const statusName = String((row == null ? void 0 : row.status_name) || statusLabel(row == null ? void 0 : row.status_code) || "-");
+        return /* @__PURE__ */ React.createElement(
+          "li",
+          {
+            key: String((row == null ? void 0 : row.id) || track || "row-" + String(index)),
+            className: "client-request-picker-item" + (isActive ? " active" : "") + (hasUpdates ? " has-updates" : "")
+          },
+          /* @__PURE__ */ React.createElement(
+            "button",
+            {
+              type: "button",
+              className: "client-request-picker-btn",
+              onClick: () => onSelect(track),
+              disabled: !track || loading,
+              "aria-label": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443 " + (track || "")
+            },
+            /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-head" }, /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-track" }, track || "\u0411\u0435\u0437 \u043D\u043E\u043C\u0435\u0440\u0430"), /* @__PURE__ */ React.createElement("span", { className: "client-request-news-dot" + (hasUpdates ? " active" : ""), "aria-hidden": "true" })),
+            /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-meta" }, /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-status" }, statusName), /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-updated" }, fmtShortDateTime(row == null ? void 0 : row.updated_at)))
+          )
+        );
+      }) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, loading ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043F\u0438\u0441\u043A\u0430..." : "\u0417\u0430\u044F\u0432\u043E\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary btn-sm", type: "button", onClick: onClose }, "\u041E\u0442\u043C\u0435\u043D\u0430"))));
     }
     function App() {
+      var _a, _b;
       const [requestModal, setRequestModal] = useState(createRequestModalState());
       const [requestsList, setRequestsList] = useState([]);
       const [activeTrack, setActiveTrack] = useState("");
+      const [requestPickerModal, setRequestPickerModal] = useState({ open: false, loading: false });
       const [status, setStatus] = useState({ message: "", kind: "" });
       const [serviceRequests, setServiceRequests] = useState([]);
-      const [serviceRequestModal, setServiceRequestModal] = useState({ open: false, type: "", body: "", loading: false, status: { message: "", kind: "" } });
+      const [clientHelpModal, setClientHelpModal] = useState({
+        open: false,
+        loadingType: "",
+        lawyerChangeReason: "",
+        status: { message: "", kind: "" }
+      });
       const setPageStatus = useCallback((message, kind) => {
         setStatus({ message: String(message || ""), kind: kind || "" });
-      }, []);
-      const setServiceStatus = useCallback((message, kind) => {
-        setServiceRequestModal((prev) => ({ ...prev, status: { message: String(message || ""), kind: kind || "" } }));
       }, []);
       const apiError = (data, fallback) => {
         if (data && typeof data.detail === "string" && data.detail.trim()) return data.detail;
@@ -2042,6 +2515,22 @@
         }
         if (!response.ok) throw new Error(apiError(data, fallbackMessage || "\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u043F\u0440\u043E\u0441\u0430"));
         return data;
+      }, []);
+      const buildStorageUploadError = useCallback(async (response, fallbackMessage) => {
+        const base = String(fallbackMessage || "\u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0438 \u0444\u0430\u0439\u043B\u0430 \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435");
+        const status2 = Number((response == null ? void 0 : response.status) || 0);
+        const statusText = String((response == null ? void 0 : response.statusText) || "").trim();
+        let details = "";
+        try {
+          details = String(await response.text() || "").replace(/\s+/g, " ").trim();
+        } catch (_) {
+          details = "";
+        }
+        if (details.length > 180) details = details.slice(0, 180) + "...";
+        const parts = [];
+        if (status2 > 0) parts.push("HTTP " + status2 + (statusText ? " " + statusText : ""));
+        if (details) parts.push(details);
+        return parts.length ? base + " (" + parts.join("; ") + ")" : base;
       }, []);
       const uploadPublicRequestAttachment = useCallback(async (file, extra = {}) => {
         const requestId = String(requestModal.requestId || "").trim();
@@ -2067,7 +2556,7 @@
           headers: { "Content-Type": mimeType },
           body: file
         });
-        if (!putResponse.ok) throw new Error("\u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0438 \u0444\u0430\u0439\u043B\u0430 \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435");
+        if (!putResponse.ok) throw new Error(await buildStorageUploadError(putResponse, "\u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0438 \u0444\u0430\u0439\u043B\u0430 \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435"));
         const completeData = await apiJson(
           "/api/public/uploads/complete",
           {
@@ -2086,7 +2575,7 @@
           "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0444\u0430\u0439\u043B\u0430"
         );
         return completeData;
-      }, [apiJson, requestModal.requestId]);
+      }, [apiJson, buildStorageUploadError, requestModal.requestId]);
       const loadRequestWorkspace = useCallback(
         async (trackNumber, showLoading) => {
           const track = String(trackNumber || "").trim().toUpperCase();
@@ -2119,7 +2608,7 @@
           setActiveTrack(track);
           setServiceRequests(Array.isArray(serviceRequestsData) ? serviceRequestsData : []);
           setRequestModal((prev) => {
-            var _a, _b;
+            var _a2, _b2;
             return {
               ...prev,
               loading: false,
@@ -2127,8 +2616,8 @@
               trackNumber: String((requestData == null ? void 0 : requestData.track_number) || track),
               requestData: requestData || null,
               financeSummary: {
-                request_cost: (_a = requestData == null ? void 0 : requestData.request_cost) != null ? _a : null,
-                effective_rate: (_b = requestData == null ? void 0 : requestData.effective_rate) != null ? _b : null,
+                request_cost: (_a2 = requestData == null ? void 0 : requestData.request_cost) != null ? _a2 : null,
+                effective_rate: (_b2 = requestData == null ? void 0 : requestData.effective_rate) != null ? _b2 : null,
                 paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
                 last_paid_at: lastPaidAt || (requestData == null ? void 0 : requestData.paid_at) || null
               },
@@ -2136,6 +2625,7 @@
               statusHistory: Array.isArray(statusRouteData == null ? void 0 : statusRouteData.history) ? statusRouteData.history : [],
               availableStatuses: [],
               currentImportantDateAt: String((statusRouteData == null ? void 0 : statusRouteData.current_important_date_at) || (requestData == null ? void 0 : requestData.important_date_at) || ""),
+              invoices,
               messages: Array.isArray(messagesData) ? messagesData : [],
               attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
               fileUploading: false
@@ -2144,11 +2634,15 @@
         },
         [apiJson]
       );
+      const refreshRequestsList = useCallback(async () => {
+        const data = await apiJson("/api/public/requests/my", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A");
+        const rows = Array.isArray(data == null ? void 0 : data.rows) ? data.rows : [];
+        setRequestsList(rows);
+        return rows;
+      }, [apiJson]);
       const loadMyRequests = useCallback(
         async (preferredTrack) => {
-          const data = await apiJson("/api/public/requests/my", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A");
-          const rows = Array.isArray(data == null ? void 0 : data.rows) ? data.rows : [];
-          setRequestsList(rows);
+          const rows = await refreshRequestsList();
           if (!rows.length) {
             setRequestModal((prev) => ({
               ...prev,
@@ -2157,6 +2651,7 @@
               requestData: null,
               trackNumber: "",
               financeSummary: null,
+              invoices: [],
               statusRouteNodes: [],
               statusHistory: [],
               messages: [],
@@ -2172,13 +2667,43 @@
           const tracks = rows.map((row) => String(row.track_number || "").trim()).filter(Boolean);
           const selected = tracks.includes(String(preferredTrack || "").trim().toUpperCase()) ? String(preferredTrack || "").trim().toUpperCase() : tracks[0];
           await loadRequestWorkspace(selected, true);
-          setPageStatus("\u041E\u0442\u043A\u0440\u044B\u0442\u0430 \u0437\u0430\u044F\u0432\u043A\u0430: " + selected, "ok");
         },
-        [apiJson, loadRequestWorkspace, setPageStatus]
+        [loadRequestWorkspace, refreshRequestsList, setPageStatus]
+      );
+      const openRequestPicker = useCallback(() => {
+        setRequestPickerModal({ open: true, loading: true });
+        void refreshRequestsList().catch((error) => setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A", "error")).finally(() => {
+          setRequestPickerModal((prev) => ({ ...prev, loading: false }));
+        });
+      }, [refreshRequestsList, setPageStatus]);
+      const closeRequestPicker = useCallback(() => {
+        setRequestPickerModal((prev) => ({ ...prev, open: false }));
+      }, []);
+      const reloadRequestPicker = useCallback(() => {
+        setRequestPickerModal((prev) => ({ ...prev, loading: true }));
+        void refreshRequestsList().catch((error) => setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A", "error")).finally(() => {
+          setRequestPickerModal((prev) => ({ ...prev, loading: false }));
+        });
+      }, [refreshRequestsList, setPageStatus]);
+      const selectRequestFromPicker = useCallback(
+        async (trackNumber) => {
+          const track = String(trackNumber || "").trim().toUpperCase();
+          if (!track) return;
+          setRequestPickerModal((prev) => ({ ...prev, loading: true }));
+          try {
+            await loadRequestWorkspace(track, true);
+            await refreshRequestsList();
+            setRequestPickerModal({ open: false, loading: false });
+          } catch (error) {
+            setRequestPickerModal((prev) => ({ ...prev, loading: false }));
+            setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", "error");
+          }
+        },
+        [loadRequestWorkspace, refreshRequestsList, setPageStatus]
       );
       const updateMessageDraft = useCallback((event) => {
-        var _a;
-        const value = ((_a = event == null ? void 0 : event.target) == null ? void 0 : _a.value) || "";
+        var _a2;
+        const value = ((_a2 = event == null ? void 0 : event.target) == null ? void 0 : _a2.value) || "";
         setRequestModal((prev) => ({ ...prev, messageDraft: value }));
       }, []);
       const appendFiles = useCallback((files) => {
@@ -2206,6 +2731,44 @@
       const clearFiles = useCallback(() => {
         setRequestModal((prev) => ({ ...prev, selectedFiles: [] }));
       }, []);
+      const downloadPublicInvoicePdf = useCallback(
+        async (row) => {
+          const url = String((row == null ? void 0 : row.download_url) || "").trim();
+          if (!url) {
+            setPageStatus("\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 PDF \u0441\u0447\u0435\u0442\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430.", "error");
+            return;
+          }
+          try {
+            setPageStatus("\u0421\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u043C PDF...", "");
+            const response = await fetch(url, { credentials: "same-origin" });
+            if (!response.ok) {
+              const text = await response.text();
+              let payload = {};
+              try {
+                payload = text ? JSON.parse(text) : {};
+              } catch (_) {
+                payload = { raw: text };
+              }
+              const message = payload.detail || payload.error || payload.raw || "HTTP " + response.status;
+              throw new Error(String(message));
+            }
+            const blob = await response.blob();
+            const fileName = String((row == null ? void 0 : row.invoice_number) || "invoice") + ".pdf";
+            const fileUrl = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = fileUrl;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(fileUrl);
+            setPageStatus("PDF \u0441\u043A\u0430\u0447\u0430\u043D", "ok");
+          } catch (error) {
+            setPageStatus("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F: " + ((error == null ? void 0 : error.message) || "\u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u043E\u0448\u0438\u0431\u043A\u0430"), "error");
+          }
+        },
+        [setPageStatus]
+      );
       const submitMessage = useCallback(
         async (event) => {
           if (event && typeof event.preventDefault === "function") event.preventDefault();
@@ -2279,58 +2842,125 @@
         },
         [activeTrack, apiJson, loadRequestWorkspace]
       );
-      const openServiceRequestModal = useCallback((type) => {
-        const normalized = String(type || "").trim().toUpperCase();
-        if (!normalized) return;
-        setServiceRequestModal({
-          open: true,
-          type: normalized,
-          body: "",
-          loading: false,
-          status: { message: "", kind: "" }
-        });
-      }, []);
-      const closeServiceRequestModal = useCallback(() => {
-        setServiceRequestModal({ open: false, type: "", body: "", loading: false, status: { message: "", kind: "" } });
-      }, []);
-      const submitServiceRequest = useCallback(
-        async (event) => {
-          if (event && typeof event.preventDefault === "function") event.preventDefault();
+      const probeLiveState = useCallback(
+        async ({ cursor } = {}) => {
           const track = String(activeTrack || "").trim();
+          if (!track) return { has_updates: false, typing: [], cursor: null };
+          const query = cursor ? "?cursor=" + encodeURIComponent(String(cursor)) : "";
+          const payload = await apiJson(
+            "/api/public/chat/requests/" + encodeURIComponent(track) + "/live" + query,
+            null,
+            "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C live-\u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u0447\u0430\u0442\u0430"
+          );
+          if (payload && payload.has_updates) {
+            await loadRequestWorkspace(track, false);
+          }
+          return payload || { has_updates: false, typing: [], cursor: null };
+        },
+        [activeTrack, apiJson, loadRequestWorkspace]
+      );
+      const setTypingSignal = useCallback(
+        async ({ typing } = {}) => {
+          const track = String(activeTrack || "").trim();
+          if (!track) return { status: "skipped", typing: false };
+          return apiJson(
+            "/api/public/chat/requests/" + encodeURIComponent(track) + "/typing",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ typing: Boolean(typing) })
+            },
+            "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u043D\u0430\u0431\u043E\u0440\u0430"
+          );
+        },
+        [activeTrack, apiJson]
+      );
+      const openClientHelpModal = useCallback(() => {
+        setClientHelpModal((prev) => ({
+          ...prev,
+          open: true,
+          status: { message: "", kind: "" }
+        }));
+      }, []);
+      const closeClientHelpModal = useCallback(() => {
+        setClientHelpModal((prev) => ({
+          ...prev,
+          open: false,
+          loadingType: "",
+          status: { message: "", kind: "" }
+        }));
+      }, []);
+      const normalizedCurrentLawyerId = String(((_a = requestModal.requestData) == null ? void 0 : _a.assigned_lawyer_id) || "").trim().toLowerCase();
+      const serviceRequestState = useMemo(() => {
+        const rows = Array.isArray(serviceRequests) ? serviceRequests : [];
+        const curatorRows = rows.filter((item) => String((item == null ? void 0 : item.type) || "").toUpperCase() === "CURATOR_CONTACT");
+        const lawyerRows = rows.filter((item) => String((item == null ? void 0 : item.type) || "").toUpperCase() === "LAWYER_CHANGE_REQUEST");
+        const latestLawyerChange = lawyerRows[0] || null;
+        const hasCuratorRequest = curatorRows.length > 0;
+        let lawyerChangeDisabledByState = false;
+        if (latestLawyerChange) {
+          const hasLawyerSnapshot = Object.prototype.hasOwnProperty.call(latestLawyerChange, "assigned_lawyer_id");
+          if (hasLawyerSnapshot) {
+            const requestedForLawyer = String((latestLawyerChange == null ? void 0 : latestLawyerChange.assigned_lawyer_id) || "").trim().toLowerCase();
+            lawyerChangeDisabledByState = requestedForLawyer === normalizedCurrentLawyerId;
+          } else {
+            const statusCode = String((latestLawyerChange == null ? void 0 : latestLawyerChange.status) || "").toUpperCase();
+            lawyerChangeDisabledByState = statusCode === "NEW" || statusCode === "IN_PROGRESS";
+          }
+        }
+        return {
+          hasCuratorRequest,
+          lawyerChangeDisabledByState
+        };
+      }, [normalizedCurrentLawyerId, serviceRequests]);
+      const canInteract = Boolean(requestModal.requestData && !requestModal.loading);
+      const curatorBlocked = !canInteract || serviceRequestState.hasCuratorRequest;
+      const lawyerChangeBlocked = !canInteract || serviceRequestState.lawyerChangeDisabledByState;
+      const submitServiceRequest = useCallback(
+        async ({ type, body }) => {
+          const track = String(activeTrack || "").trim();
+          const requestType = String(type || "").trim().toUpperCase();
+          const message = String(body || "").trim();
           if (!track) {
-            setServiceStatus("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0437\u0430\u044F\u0432\u043A\u0443.", "error");
+            setClientHelpModal((prev) => ({ ...prev, status: { message: "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0437\u0430\u044F\u0432\u043A\u0443.", kind: "error" } }));
             return;
           }
-          const requestType = String(serviceRequestModal.type || "").trim().toUpperCase();
-          const body = String(serviceRequestModal.body || "").trim();
           if (!requestType) {
-            setServiceStatus("\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0442\u0438\u043F \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F.", "error");
+            setClientHelpModal((prev) => ({ ...prev, status: { message: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0442\u0438\u043F \u0437\u0430\u043F\u0440\u043E\u0441\u0430.", kind: "error" } }));
             return;
           }
-          if (body.length < 3) {
-            setServiceStatus("\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043E\u043B\u0436\u043D\u043E \u0441\u043E\u0434\u0435\u0440\u0436\u0430\u0442\u044C \u043C\u0438\u043D\u0438\u043C\u0443\u043C 3 \u0441\u0438\u043C\u0432\u043E\u043B\u0430.", "error");
+          if (message.length < 3) {
+            setClientHelpModal((prev) => ({ ...prev, status: { message: "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043E\u043B\u0436\u043D\u043E \u0441\u043E\u0434\u0435\u0440\u0436\u0430\u0442\u044C \u043C\u0438\u043D\u0438\u043C\u0443\u043C 3 \u0441\u0438\u043C\u0432\u043E\u043B\u0430.", kind: "error" } }));
             return;
           }
           try {
-            setServiceRequestModal((prev) => ({ ...prev, loading: true, status: { message: "", kind: "" } }));
+            setClientHelpModal((prev) => ({ ...prev, loadingType: requestType, status: { message: "", kind: "" } }));
             await apiJson(
               "/api/public/requests/" + encodeURIComponent(track) + "/service-requests",
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ type: requestType, body })
+                body: JSON.stringify({ type: requestType, body: message })
               },
               "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435"
             );
             await loadRequestWorkspace(track, false);
             setPageStatus("\u041E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E.", "ok");
-            closeServiceRequestModal();
+            setClientHelpModal((prev) => ({
+              ...prev,
+              loadingType: "",
+              status: { message: "\u041E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E.", kind: "ok" },
+              lawyerChangeReason: requestType === "LAWYER_CHANGE_REQUEST" ? "" : prev.lawyerChangeReason
+            }));
           } catch (error) {
-            setServiceRequestModal((prev) => ({ ...prev, loading: false }));
-            setServiceStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435", "error");
+            setClientHelpModal((prev) => ({
+              ...prev,
+              loadingType: "",
+              status: { message: (error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435", kind: "error" }
+            }));
           }
         },
-        [activeTrack, apiJson, closeServiceRequestModal, loadRequestWorkspace, serviceRequestModal.body, serviceRequestModal.type, setPageStatus, setServiceStatus]
+        [activeTrack, apiJson, loadRequestWorkspace, setPageStatus]
       );
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -2340,32 +2970,41 @@
         });
       }, [loadMyRequests, setPageStatus]);
       const summary = requestModal.requestData || null;
-      const canInteract = Boolean(summary && !requestModal.loading);
-      return /* @__PURE__ */ React.createElement("div", { className: "client-page-shell" }, /* @__PURE__ */ React.createElement("main", { className: "main client-main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar client-topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", null, "\u041A\u0430\u0431\u0438\u043D\u0435\u0442 \u043A\u043B\u0438\u0435\u043D\u0442\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u0437\u0430\u044F\u0432\u043A\u0430\u043C\u0438: \u0441\u0442\u0430\u0442\u0443\u0441\u044B, \u0447\u0430\u0442, \u0444\u0430\u0439\u043B\u044B \u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F.")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.45rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("a", { className: "btn secondary btn-sm", href: "/" }, "\u041D\u0430 \u043B\u0435\u043D\u0434\u0438\u043D\u0433"))), /* @__PURE__ */ React.createElement("section", { className: "section active client-section" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u041C\u043E\u0438 \u0437\u0430\u044F\u0432\u043A\u0438"))), /* @__PURE__ */ React.createElement("div", { className: "client-request-toolbar" }, /* @__PURE__ */ React.createElement("div", { className: "field grow" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "client-request-select" }, "\u041D\u043E\u043C\u0435\u0440 \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement(
-        "select",
-        {
-          id: "client-request-select",
-          value: activeTrack,
-          onChange: (event) => {
-            const track = String(event.target.value || "").trim();
-            if (!track) return;
-            void loadRequestWorkspace(track, true).then(() => setPageStatus("\u041E\u0442\u043A\u0440\u044B\u0442\u0430 \u0437\u0430\u044F\u0432\u043A\u0430: " + track, "ok")).catch((error) => setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", "error"));
-          },
-          disabled: requestModal.loading || !requestsList.length
-        },
-        requestsList.map((row) => /* @__PURE__ */ React.createElement("option", { value: String(row.track_number || ""), key: String(row.id || row.track_number || "") }, String(row.track_number || "\u0411\u0435\u0437 \u043D\u043E\u043C\u0435\u0440\u0430") + " \u2022 " + String(row.status_code || "-")))
-      )), /* @__PURE__ */ React.createElement(
+      const summaryStatusName = String((summary == null ? void 0 : summary.status_name) || statusLabel(summary == null ? void 0 : summary.status_code) || "-");
+      const viewerFullName = useMemo(() => {
+        var _a2;
+        const fullName = String(((_a2 = requestModal.requestData) == null ? void 0 : _a2.client_name) || "").trim();
+        return fullName || "\u041A\u043B\u0438\u0435\u043D\u0442";
+      }, [(_b = requestModal.requestData) == null ? void 0 : _b.client_name]);
+      const hasAnyUnreadUpdates = useMemo(
+        () => requestsList.some((row) => Number((row == null ? void 0 : row.viewer_unread_total) || 0) > 0 || Boolean(row == null ? void 0 : row.client_has_unread_updates)),
+        [requestsList]
+      );
+      return /* @__PURE__ */ React.createElement("div", { className: "client-page-shell" }, /* @__PURE__ */ React.createElement("main", { className: "main client-main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar client-topbar" }, /* @__PURE__ */ React.createElement("div", { className: "client-topbar-copy" }, /* @__PURE__ */ React.createElement("div", { className: "client-title-row" }, /* @__PURE__ */ React.createElement("img", { className: "brand-mark", src: "/brand-mark.svg", alt: "", width: "24", height: "24" }), /* @__PURE__ */ React.createElement("h1", null, /* @__PURE__ */ React.createElement("span", null, "\u041B\u0438\u0447\u043D\u044B\u0439 \u043A\u0430\u0431\u0438\u043D\u0435\u0442"), /* @__PURE__ */ React.createElement("span", { className: "client-title-separator", "aria-hidden": "true" }, "\u2022"), /* @__PURE__ */ React.createElement("span", { className: "client-title-user" }, viewerFullName))), /* @__PURE__ */ React.createElement("div", { className: "client-help-inline" }, /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041C\u044B \u0440\u0430\u0434\u044B \u0432\u0430\u043C \u043F\u043E\u043C\u043E\u0447\u044C"), /* @__PURE__ */ React.createElement(
         "button",
         {
-          className: "btn secondary",
-          id: "client-refresh",
+          className: "icon-btn workspace-head-icon",
+          id: "cabinet-help-open",
           type: "button",
-          onClick: () => {
-            void loadMyRequests(activeTrack).catch((error) => setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A", "error"));
-          }
+          "data-tooltip": "\u041F\u043E\u043C\u043E\u0449\u044C \u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F",
+          "aria-label": "\u041F\u043E\u043C\u043E\u0449\u044C \u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F",
+          disabled: !canInteract,
+          onClick: openClientHelpModal
         },
-        "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C"
-      )), /* @__PURE__ */ React.createElement("div", { className: "client-summary block", id: "cabinet-summary", hidden: !summary }, /* @__PURE__ */ React.createElement("div", { className: "client-summary-grid" }, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0442\u0443\u0441"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value", id: "cabinet-request-status" }, summary ? String(summary.status_code || "-") : "-")), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0422\u0435\u043C\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value", id: "cabinet-request-topic" }, summary ? String(summary.topic_name || summary.topic_code || "-") : "-")), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u043E\u0437\u0434\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value", id: "cabinet-request-created" }, summary ? fmtShortDateTime(summary.created_at) : "-")), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value", id: "cabinet-request-updated" }, summary ? fmtShortDateTime(summary.updated_at) : "-"))), /* @__PURE__ */ React.createElement("div", { className: "client-summary-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary btn-sm", id: "cabinet-curator-request-open", type: "button", disabled: !canInteract, onClick: () => openServiceRequestModal("CURATOR_CONTACT") }, "\u041E\u0431\u0440\u0430\u0442\u0438\u0442\u044C\u0441\u044F \u043A \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0443"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary btn-sm", id: "cabinet-lawyer-change-open", type: "button", disabled: !canInteract, onClick: () => openServiceRequestModal("LAWYER_CHANGE_REQUEST") }, "\u0417\u0430\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0441\u043C\u0435\u043D\u0443 \u044E\u0440\u0438\u0441\u0442\u0430"))), /* @__PURE__ */ React.createElement(
+        "?"
+      )))), /* @__PURE__ */ React.createElement("section", { className: "section active client-section" }, /* @__PURE__ */ React.createElement("div", { className: "section-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "\u041C\u043E\u0438 \u0437\u0430\u044F\u0432\u043A\u0438"))), /* @__PURE__ */ React.createElement("div", { className: "client-request-toolbar" }, /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          className: "btn secondary client-request-picker-trigger",
+          id: "client-request-open",
+          type: "button",
+          onClick: openRequestPicker,
+          disabled: requestModal.loading || !requestsList.length
+        },
+        /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-trigger-label" }, "\u0417\u0430\u044F\u0432\u043A\u0430"),
+        /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-trigger-track" }, activeTrack || "\u0412\u044B\u0431\u0440\u0430\u0442\u044C"),
+        hasAnyUnreadUpdates ? /* @__PURE__ */ React.createElement("span", { className: "client-request-news-dot active", "aria-hidden": "true" }) : null
+      )), /* @__PURE__ */ React.createElement("div", { className: "client-summary", id: "cabinet-summary", hidden: !summary }, /* @__PURE__ */ React.createElement("div", { className: "client-summary-row" }, /* @__PURE__ */ React.createElement("div", { className: "client-summary-chips" }, /* @__PURE__ */ React.createElement("span", { className: "client-summary-chip client-summary-chip-status" }, "\u0421\u0442\u0430\u0442\u0443\u0441: ", /* @__PURE__ */ React.createElement("span", { id: "cabinet-request-status" }, summary ? summaryStatusName : "-")), /* @__PURE__ */ React.createElement("span", { className: "client-summary-chip client-summary-chip-topic" }, "\u0422\u0435\u043C\u0430: ", /* @__PURE__ */ React.createElement("span", { id: "cabinet-request-topic" }, summary ? String(summary.topic_name || summary.topic_code || "-") : "-")), /* @__PURE__ */ React.createElement("span", { className: "client-summary-chip client-summary-chip-lawyer" }, "\u042E\u0440\u0438\u0441\u0442: ", /* @__PURE__ */ React.createElement("span", null, summary ? String(summary.assigned_lawyer_name || summary.assigned_lawyer_id || "\u041D\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D") : "-"))), /* @__PURE__ */ React.createElement("div", { className: "client-summary-dates" }, /* @__PURE__ */ React.createElement("span", null, "\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430: ", /* @__PURE__ */ React.createElement("b", { id: "cabinet-request-updated" }, summary ? fmtShortDateTime(summary.updated_at) : "-"))))), /* @__PURE__ */ React.createElement(
         RequestWorkspace,
         {
           viewerRole: "CLIENT",
@@ -2374,6 +3013,7 @@
           trackNumber: requestModal.trackNumber,
           requestData: requestModal.requestData,
           financeSummary: requestModal.financeSummary,
+          invoices: requestModal.invoices || [],
           statusRouteNodes: requestModal.statusRouteNodes || [],
           statusHistory: requestModal.statusHistory || [],
           availableStatuses: [],
@@ -2394,6 +3034,9 @@
           onSaveRequestDataValues: saveRequestDataValues,
           onUploadRequestAttachment: uploadPublicRequestAttachment,
           onChangeStatus: () => Promise.resolve(null),
+          onDownloadInvoicePdf: downloadPublicInvoicePdf,
+          onLiveProbe: probeLiveState,
+          onTypingSignal: setTypingSignal,
           AttachmentPreviewModalComponent: AttachmentPreviewModal,
           StatusLineComponent: StatusLine,
           domIds: {
@@ -2402,24 +3045,40 @@
             messageBody: "cabinet-chat-body",
             sendButton: "cabinet-chat-send",
             fileInput: "cabinet-file-input",
-            fileUploadButton: "cabinet-file-upload",
             dataRequestOverlay: "data-request-overlay",
             dataRequestItems: "data-request-items",
             dataRequestStatus: "data-request-status",
             dataRequestSave: "data-request-save"
           }
         }
-      ), /* @__PURE__ */ React.createElement("div", { className: "block client-service-requests" }, /* @__PURE__ */ React.createElement("h3", null, "\u041C\u043E\u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F"), /* @__PURE__ */ React.createElement(ServiceRequestList, { rows: serviceRequests }))), /* @__PURE__ */ React.createElement("p", { className: "status", id: "client-page-status" }, status.message)), /* @__PURE__ */ React.createElement(
-        ServiceRequestModal,
+      )), /* @__PURE__ */ React.createElement("p", { className: "status", id: "client-page-status" }, status.message)), /* @__PURE__ */ React.createElement(
+        RequestPickerModal,
         {
-          open: serviceRequestModal.open,
-          type: serviceRequestModal.type,
-          body: serviceRequestModal.body,
-          status: serviceRequestModal.status,
-          loading: serviceRequestModal.loading,
-          onBodyChange: (event) => setServiceRequestModal((prev) => ({ ...prev, body: event.target.value })),
-          onClose: closeServiceRequestModal,
-          onSubmit: submitServiceRequest
+          open: requestPickerModal.open,
+          loading: requestPickerModal.loading,
+          requests: requestsList,
+          activeTrack,
+          onClose: closeRequestPicker,
+          onReload: reloadRequestPicker,
+          onSelect: selectRequestFromPicker
+        }
+      ), /* @__PURE__ */ React.createElement(
+        ClientHelpModal,
+        {
+          open: clientHelpModal.open,
+          status: clientHelpModal.status,
+          loadingType: clientHelpModal.loadingType,
+          lawyerChangeReason: clientHelpModal.lawyerChangeReason,
+          curatorBlocked,
+          lawyerChangeBlocked,
+          onClose: closeClientHelpModal,
+          onReasonChange: (event) => setClientHelpModal((prev) => ({
+            ...prev,
+            lawyerChangeReason: event.target.value,
+            status: { message: "", kind: "" }
+          })),
+          onSubmitCurator: () => submitServiceRequest({ type: "CURATOR_CONTACT", body: "\u041F\u0440\u043E\u0448\u0443 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043A\u0443\u0440\u0430\u0442\u043E\u0440\u0430 \u043A \u0442\u0435\u043A\u0443\u0449\u0435\u0439 \u0437\u0430\u044F\u0432\u043A\u0435." }),
+          onSubmitLawyerChange: () => submitServiceRequest({ type: "LAWYER_CHANGE_REQUEST", body: clientHelpModal.lawyerChangeReason })
         }
       ), /* @__PURE__ */ React.createElement(GlobalTooltipLayer, null));
     }

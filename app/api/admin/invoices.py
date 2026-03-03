@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
 from fastapi.responses import StreamingResponse
@@ -16,7 +16,9 @@ from app.models.admin_user import AdminUser
 from app.models.invoice import Invoice
 from app.models.request import Request
 from app.schemas.universal import UniversalQuery
+from app.services.invoice_chat import create_invoice_chat_message_with_attachment
 from app.services.invoice_crypto import decrypt_requisites, encrypt_requisites
+from app.services.invoice_numbering import generate_invoice_number
 from app.services.invoice_pdf import build_invoice_pdf_bytes
 from app.services.security_audit import extract_client_ip, record_pii_access_event
 from app.services.universal_query import apply_universal_query
@@ -88,15 +90,6 @@ def _amount_or_400(raw) -> float:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _invoice_number(db: Session) -> str:
-    prefix = _now_utc().strftime("%Y%m%d")
-    candidate = f"INV-{prefix}-{uuid4().hex[:8].upper()}"
-    exists = db.query(Invoice.id).filter(Invoice.invoice_number == candidate).first()
-    if exists is None:
-        return candidate
-    return f"INV-{prefix}-{uuid4().hex[:12].upper()}"
 
 
 def _parse_requisites(raw) -> dict:
@@ -290,6 +283,8 @@ def create_invoice(
     role = str(admin.get("role") or "").upper()
     actor_id = _actor_uuid_or_401(admin)
     actor_email = str(admin.get("email") or "").strip() or "Администратор системы"
+    actor_user = db.get(AdminUser, actor_id)
+    actor_name = str(actor_user.name if actor_user else "").strip() or str(actor_user.email if actor_user else "").strip() or actor_email
 
     req = _request_from_payload_or_404(db, payload)
     _ensure_lawyer_owns_request_or_403(role, actor_id, req)
@@ -302,10 +297,11 @@ def create_invoice(
     if not payer_display_name:
         raise HTTPException(status_code=400, detail='Поле "payer_display_name" обязательно')
 
+    issued_at = _now_utc()
     invoice = Invoice(
         request_id=req.id,
         client_id=req.client_id,
-        invoice_number=str(payload.get("invoice_number") or "").strip() or _invoice_number(db),
+        invoice_number=str(payload.get("invoice_number") or "").strip() or generate_invoice_number(db, issued_at),
         status=status,
         amount=_amount_or_400(payload.get("amount")),
         currency=_normalize_currency(payload.get("currency")),
@@ -313,7 +309,7 @@ def create_invoice(
         payer_details_encrypted=encrypt_requisites(_parse_requisites(payload.get("payer_details"))),
         issued_by_admin_user_id=actor_id,
         issued_by_role=role,
-        issued_at=_now_utc(),
+        issued_at=issued_at,
         paid_at=None,
         responsible=actor_email,
     )
@@ -327,6 +323,15 @@ def create_invoice(
 
     db.add(invoice)
     db.add(req)
+    create_invoice_chat_message_with_attachment(
+        db,
+        request=req,
+        invoice=invoice,
+        actor_role=role,
+        actor_name=actor_name,
+        actor_admin_user_id=str(actor_id),
+        responsible=actor_email,
+    )
     _commit_or_400(db, "Счет с таким номером уже существует")
     db.refresh(invoice)
 

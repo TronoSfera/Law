@@ -43,6 +43,9 @@ def serialize_message(row: Message) -> dict[str, Any]:
         "author_type": row.author_type,
         "author_name": row.author_name,
         "body": row.body,
+        "message_kind": "TEXT",
+        "request_data_items": [],
+        "request_data_all_filled": False,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }

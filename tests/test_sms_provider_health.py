@@ -27,6 +27,7 @@ class SmsProviderHealthTests(unittest.TestCase):
             "SMSAERO_API_KEY": settings.SMSAERO_API_KEY,
             "OTP_DEV_MODE": settings.OTP_DEV_MODE,
         }
+        settings.OTP_DEV_MODE = False
 
     def tearDown(self):
         self.client.close()

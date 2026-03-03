@@ -294,55 +294,92 @@ def get_request_status_route_service(
             transition_sla_by_edge[(from_status, to_status)] = sla_hours
             incoming_sla_by_status.setdefault(to_status, sla_hours)
 
-    sequence_from_history: list[str] = []
+    route_steps: list[dict[str, Any]] = []
     if history_rows:
         first_from = str(history_rows[0].from_status or "").strip()
         if first_from:
-            sequence_from_history.append(first_from)
+            route_steps.append(
+                {
+                    "code": first_from,
+                    "edge_from": None,
+                    "changed_at": None,
+                    "source": "history",
+                }
+            )
         for row in history_rows:
             to_code = str(row.to_status or "").strip()
-            if to_code:
-                sequence_from_history.append(to_code)
+            if not to_code:
+                continue
+            from_code = str(row.from_status or "").strip() or None
+            route_steps.append(
+                {
+                    "code": to_code,
+                    "edge_from": from_code,
+                    "changed_at": row.created_at.isoformat() if row.created_at else None,
+                    "source": "history",
+                }
+            )
     elif current_status:
-        sequence_from_history.append(current_status)
+        route_steps.append(
+            {
+                "code": current_status,
+                "edge_from": None,
+                "changed_at": (req.updated_at or req.created_at).isoformat() if (req.updated_at or req.created_at) else None,
+                "source": "current",
+            }
+        )
 
-    ordered_codes: list[str] = []
-    seen_codes: set[str] = set()
+    if current_status and not any(str(step.get("code") or "").strip() == current_status for step in route_steps):
+        route_steps.append(
+            {
+                "code": current_status,
+                "edge_from": None,
+                "changed_at": (req.updated_at or req.created_at).isoformat() if (req.updated_at or req.created_at) else None,
+                "source": "current",
+            }
+        )
 
-    def add_code(code: str) -> None:
-        normalized = str(code or "").strip()
-        if not normalized or normalized in seen_codes:
-            return
-        seen_codes.add(normalized)
-        ordered_codes.append(normalized)
-
-    for code in sequence_from_history:
-        add_code(code)
-
-    add_code(current_status)
     for to_status in outgoing_by_status.get(current_status, []):
-        add_code(to_status)
+        normalized = str(to_status or "").strip()
+        if not normalized:
+            continue
+        route_steps.append(
+            {
+                "code": normalized,
+                "edge_from": current_status or None,
+                "changed_at": None,
+                "source": "outgoing",
+            }
+        )
 
-    changed_at_by_status: dict[str, str] = {}
-    for row in history_rows:
-        to_code = str(row.to_status or "").strip()
-        if to_code and row.created_at:
-            changed_at_by_status[to_code] = row.created_at.isoformat()
-
-    visited_codes = {code for code in sequence_from_history if code}
-    current_index = ordered_codes.index(current_status) if current_status in ordered_codes else -1
+    current_index = -1
+    if current_status:
+        for idx in range(len(route_steps) - 1, -1, -1):
+            code = str(route_steps[idx].get("code") or "").strip()
+            source = str(route_steps[idx].get("source") or "").strip()
+            if code != current_status:
+                continue
+            if source == "outgoing":
+                continue
+            current_index = idx
+            break
+    if current_index < 0 and route_steps:
+        current_index = len(route_steps) - 1
 
     def status_name(code: str) -> str:
         meta = statuses_map.get(code) or {}
         return str(meta.get("name") or code)
 
     nodes: list[dict[str, str | int | None]] = []
-    for index, code in enumerate(ordered_codes):
+    for index, step in enumerate(route_steps):
+        code = str(step.get("code") or "").strip()
+        if not code:
+            continue
         meta = statuses_map.get(code) or {}
         state = "pending"
-        if code == current_status:
+        if index == current_index:
             state = "current"
-        elif code in visited_codes or (current_index >= 0 and index < current_index):
+        elif current_index >= 0 and index < current_index:
             state = "completed"
 
         note_parts: list[str] = []
@@ -358,10 +395,10 @@ def get_request_status_route_service(
                 "name": status_name(code),
                 "kind": kind,
                 "state": state,
-                "changed_at": changed_at_by_status.get(code),
+                "changed_at": str(step.get("changed_at") or "").strip() or None,
                 "sla_hours": (
-                    transition_sla_by_edge.get((ordered_codes[index - 1], code))
-                    if index > 0
+                    transition_sla_by_edge.get((str(step.get("edge_from") or "").strip(), code))
+                    if str(step.get("edge_from") or "").strip()
                     else None
                 )
                 or incoming_sla_by_status.get(code),

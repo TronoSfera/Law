@@ -11,6 +11,7 @@
   const requestForm = document.getElementById("request-form");
   const requestStatus = document.getElementById("form-status");
   const topicSelect = document.getElementById("topic");
+  const requestPhoneInput = document.getElementById("phone");
 
   const accessForm = document.getElementById("access-form");
   const accessPhoneInput = document.getElementById("access-phone");
@@ -63,6 +64,62 @@
 
   function normalizeEmail(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function extractRuPhoneLocalDigits(raw) {
+    const text = String(raw || "");
+    const trimmed = text.trim();
+    const startsWithPlus7 = trimmed.startsWith("+7");
+    const startsWith8 = trimmed.startsWith("8");
+    let digits = text.replace(/\D+/g, "");
+    if (startsWithPlus7 && digits.startsWith("7")) {
+      digits = digits.slice(1);
+    } else if (startsWith8 && digits.startsWith("8")) {
+      digits = digits.slice(1);
+    } else if (digits.length === 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
+      digits = digits.slice(1);
+    }
+    return digits.slice(0, 10);
+  }
+
+  function formatRuPhone(raw) {
+    const digits = extractRuPhoneLocalDigits(raw);
+    if (!digits) return "+7";
+    const part1 = digits.slice(0, 3);
+    const part2 = digits.slice(3, 6);
+    const part3 = digits.slice(6, 8);
+    const part4 = digits.slice(8, 10);
+    let out = "+7";
+    if (part1) out += " (" + part1;
+    if (part1.length === 3) out += ")";
+    if (part2) out += " " + part2;
+    if (part3) out += "-" + part3;
+    if (part4) out += "-" + part4;
+    return out;
+  }
+
+  function normalizeRuPhone(raw) {
+    const digits = extractRuPhoneLocalDigits(raw);
+    if (digits.length !== 10) return "";
+    return "+7" + digits;
+  }
+
+  function isValidRuPhone(phone) {
+    return /^\+7\d{10}$/.test(String(phone || ""));
+  }
+
+  function bindRuPhoneMask(input) {
+    if (!input) return;
+    input.addEventListener("focus", () => {
+      if (!String(input.value || "").trim()) input.value = "+7";
+    });
+    input.addEventListener("input", () => {
+      input.value = formatRuPhone(input.value);
+    });
+    input.addEventListener("blur", () => {
+      const digits = extractRuPhoneLocalDigits(input.value);
+      if (!digits.length) input.value = "";
+    });
   }
 
   function currentAuthMode() {
@@ -408,7 +465,8 @@
   }
 
   accessSendOtpButton.addEventListener("click", async () => {
-    const phone = String(accessPhoneInput.value || "").trim();
+    const phone = normalizeRuPhone(accessPhoneInput?.value);
+    if (accessPhoneInput && phone) accessPhoneInput.value = formatRuPhone(phone);
     const email = normalizeEmail(accessEmailInput?.value);
     const hpField = String(accessHpInput?.value || "").trim();
     const channel = preferredChannel({ phone, email });
@@ -422,6 +480,10 @@
     }
     if (channel === "SMS" && !phone) {
       setStatus(accessStatus, "Введите номер телефона.", "error");
+      return;
+    }
+    if (channel === "SMS" && !isValidRuPhone(phone)) {
+      setStatus(accessStatus, "Введите корректный номер телефона РФ в формате +7XXXXXXXXXX.", "error");
       return;
     }
 
@@ -454,7 +516,8 @@
 
   accessForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const phone = String(accessPhoneInput.value || "").trim();
+    const phone = normalizeRuPhone(accessPhoneInput?.value);
+    if (accessPhoneInput && phone) accessPhoneInput.value = formatRuPhone(phone);
     const email = normalizeEmail(accessEmailInput?.value);
     const code = String(accessCodeInput.value || "").trim();
     const channel = preferredChannel({ phone, email });
@@ -464,6 +527,10 @@
     }
     if (channel === "SMS" && (!phone || !code)) {
       setStatus(accessStatus, "Введите телефон и OTP-код.", "error");
+      return;
+    }
+    if (channel === "SMS" && !isValidRuPhone(phone)) {
+      setStatus(accessStatus, "Введите корректный номер телефона РФ в формате +7XXXXXXXXXX.", "error");
       return;
     }
 
@@ -495,7 +562,7 @@
 
     const payload = {
       client_name: String(document.getElementById("name").value || "").trim(),
-      client_phone: String(document.getElementById("phone").value || "").trim(),
+      client_phone: normalizeRuPhone(requestPhoneInput?.value),
       client_email: normalizeEmail(requestEmailInput?.value),
       pdn_consent: Boolean(document.getElementById("pdn-consent")?.checked),
       hp_field: String(requestHpInput?.value || "").trim(),
@@ -513,6 +580,11 @@
       setStatus(requestStatus, "Введите телефон для получения OTP.", "error");
       return;
     }
+    if (!isValidRuPhone(payload.client_phone)) {
+      setStatus(requestStatus, "Введите корректный номер телефона РФ в формате +7XXXXXXXXXX.", "error");
+      return;
+    }
+    if (requestPhoneInput && payload.client_phone) requestPhoneInput.value = formatRuPhone(payload.client_phone);
     if (!payload.client_name || !payload.topic_code) {
       setStatus(requestStatus, "Заполните имя и тему обращения.", "error");
       return;
@@ -587,6 +659,8 @@
   });
 
   loadAuthConfig();
+  bindRuPhoneMask(requestPhoneInput);
+  bindRuPhoneMask(accessPhoneInput);
   loadTopics();
   loadQuotes();
   loadFeaturedStaff();

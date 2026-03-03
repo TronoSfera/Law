@@ -70,14 +70,26 @@ export function DashboardSection({
     setLawyerModal({ open: false, loading: false, error: "", lawyer: null, rows: [], totals: { amount: 0, salary: 0 } });
   };
 
+  const isLawyerScope = dashboardData?.scope === "LAWYER";
   const lawyerCards = Array.isArray(dashboardData?.lawyerLoads) ? dashboardData.lawyerLoads : [];
+  const currentLawyer = lawyerCards[0] || null;
+  const lawyerMetrics = currentLawyer
+    ? [
+        { label: "В работе", value: String(currentLawyer.active_load ?? 0) },
+        { label: "Новые", value: String(currentLawyer.monthly_assigned_count ?? 0) },
+        { label: "Закрыто", value: String(currentLawyer.monthly_completed_count ?? 0) },
+        { label: "ЗП, тыс.", value: fmtThousandsCompact(currentLawyer.monthly_salary) },
+      ]
+    : [];
 
   return (
     <>
       <div className="section-head">
         <div>
           <h2>Обзор метрик</h2>
-          <p className="muted">Состояние заявок, финансы месяца и загрузка юристов.</p>
+          <p className="muted">
+            {isLawyerScope ? "Состояние заявок и персональная загрузка." : "Состояние заявок, финансы месяца и загрузка юристов."}
+          </p>
         </div>
       </div>
 
@@ -109,48 +121,63 @@ export function DashboardSection({
         </div>
       ) : null}
 
-      {dashboardData?.scope === "LAWYER" ? (
-        <div className="json" style={{ marginTop: "0.5rem" }}>
-          {JSON.stringify(dashboardData?.myUnreadByEvent || {}, null, 2)}
+      {isLawyerScope ? (
+        <div style={{ marginTop: "0.9rem" }}>
+          <h3 style={{ margin: "0 0 0.55rem" }}>Моя загрузка</h3>
+          <div className="cards">
+            {lawyerMetrics.length ? (
+              lawyerMetrics.map((metric) => (
+                <div className="card" key={"lawyer-metric-" + metric.label}>
+                  <p>{metric.label}</p>
+                  <b>{metric.value}</b>
+                </div>
+              ))
+            ) : (
+              <div className="card">
+                <p>Моя загрузка</p>
+                <b>Нет данных</b>
+              </div>
+            )}
+          </div>
         </div>
-      ) : null}
-
-      <div style={{ marginTop: "0.9rem" }}>
-        <h3 style={{ margin: "0 0 0.55rem" }}>Загрузка юристов</h3>
-        <div className="lawyer-dashboard-grid">
-          {lawyerCards.length ? (
-            lawyerCards.map((row) => (
-              <button
-                key={row.lawyer_id}
-                type="button"
-                className="lawyer-dashboard-card"
-                onClick={() => openLawyerModal(row)}
-                title="Открыть детали юриста"
-              >
-                <div className="lawyer-dashboard-left">
-                  <div className="lawyer-dashboard-avatar">
-                    <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={72} />
+      ) : (
+        <div style={{ marginTop: "0.9rem" }}>
+          <h3 style={{ margin: "0 0 0.55rem" }}>Загрузка юристов</h3>
+          <div className="lawyer-dashboard-grid">
+            {lawyerCards.length ? (
+              lawyerCards.map((row) => (
+                <button
+                  key={row.lawyer_id}
+                  type="button"
+                  className="lawyer-dashboard-card"
+                  onClick={() => openLawyerModal(row)}
+                  title="Открыть детали юриста"
+                >
+                  <div className="lawyer-dashboard-left">
+                    <div className="lawyer-dashboard-avatar">
+                      <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={72} />
+                    </div>
+                    <b className="lawyer-dashboard-name">{row.name || row.email || "-"}</b>
+                    <span className="lawyer-dashboard-topic">{row.primary_topic_code || "Тема не указана"}</span>
                   </div>
-                  <b className="lawyer-dashboard-name">{row.name || row.email || "-"}</b>
-                  <span className="lawyer-dashboard-topic">{row.primary_topic_code || "Тема не указана"}</span>
-                </div>
-                <div className="lawyer-dashboard-right">
-                  <div className="lawyer-metric-pair"><span>В работе</span><b>{String(row.active_load ?? 0)}</b></div>
-                  <div className="lawyer-metric-pair"><span>Новые</span><b>{String(row.monthly_assigned_count ?? 0)}</b></div>
-                  <div className="lawyer-metric-pair"><span>Закрыто</span><b>{String(row.monthly_completed_count ?? 0)}</b></div>
-                  <div className="lawyer-metric-pair"><span>Сумма, тыс.</span><b>{fmtThousandsCompact(row.monthly_paid_gross)}</b></div>
-                  <div className="lawyer-metric-pair"><span>ЗП, тыс.</span><b>{fmtThousandsCompact(row.monthly_salary)}</b></div>
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="card">
-              <p>Юристы</p>
-              <b>Нет данных</b>
-            </div>
-          )}
+                  <div className="lawyer-dashboard-right">
+                    <div className="lawyer-metric-pair"><span>В работе</span><b>{String(row.active_load ?? 0)}</b></div>
+                    <div className="lawyer-metric-pair"><span>Новые</span><b>{String(row.monthly_assigned_count ?? 0)}</b></div>
+                    <div className="lawyer-metric-pair"><span>Закрыто</span><b>{String(row.monthly_completed_count ?? 0)}</b></div>
+                    <div className="lawyer-metric-pair"><span>Сумма, тыс.</span><b>{fmtThousandsCompact(row.monthly_paid_gross)}</b></div>
+                    <div className="lawyer-metric-pair"><span>ЗП, тыс.</span><b>{fmtThousandsCompact(row.monthly_salary)}</b></div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="card">
+                <p>Юристы</p>
+                <b>Нет данных</b>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <StatusLine status={status} />
 

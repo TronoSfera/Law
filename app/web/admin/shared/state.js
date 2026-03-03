@@ -16,6 +16,7 @@ export function createRequestModalState() {
     trackNumber: "",
     requestData: null,
     financeSummary: null,
+    invoices: [],
     statusRouteNodes: [],
     statusHistory: [],
     availableStatuses: [],

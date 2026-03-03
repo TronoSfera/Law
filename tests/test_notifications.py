@@ -20,9 +20,11 @@ os.environ.setdefault("S3_BUCKET", "test")
 from app.core.config import settings
 from app.core.security import create_jwt
 from app.db.session import get_db
-from app.main import app
+from app.chat_main import app as chat_app
+from app.main import app as main_app
 from app.models.admin_user import AdminUser
 from app.models.attachment import Attachment
+from app.models.audit_log import AuditLog
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.request import Request
@@ -58,6 +60,7 @@ class NotificationFlowTests(unittest.TestCase):
         )
         cls.SessionLocal = sessionmaker(bind=cls.engine, autocommit=False, autoflush=False)
         AdminUser.__table__.create(bind=cls.engine)
+        AuditLog.__table__.create(bind=cls.engine)
         Request.__table__.create(bind=cls.engine)
         Message.__table__.create(bind=cls.engine)
         Attachment.__table__.create(bind=cls.engine)
@@ -73,6 +76,7 @@ class NotificationFlowTests(unittest.TestCase):
         Attachment.__table__.drop(bind=cls.engine)
         Message.__table__.drop(bind=cls.engine)
         Request.__table__.drop(bind=cls.engine)
+        AuditLog.__table__.drop(bind=cls.engine)
         AdminUser.__table__.drop(bind=cls.engine)
         cls.engine.dispose()
 
@@ -84,6 +88,7 @@ class NotificationFlowTests(unittest.TestCase):
             db.execute(delete(Attachment))
             db.execute(delete(Message))
             db.execute(delete(Request))
+            db.execute(delete(AuditLog))
             db.execute(delete(AdminUser))
             db.commit()
 
@@ -94,12 +99,16 @@ class NotificationFlowTests(unittest.TestCase):
             finally:
                 db.close()
 
-        app.dependency_overrides[get_db] = override_get_db
-        self.client = TestClient(app)
+        main_app.dependency_overrides[get_db] = override_get_db
+        chat_app.dependency_overrides[get_db] = override_get_db
+        self.client = TestClient(main_app)
+        self.chat_client = TestClient(chat_app)
 
     def tearDown(self):
+        self.chat_client.close()
         self.client.close()
-        app.dependency_overrides.clear()
+        chat_app.dependency_overrides.clear()
+        main_app.dependency_overrides.clear()
 
     @staticmethod
     def _admin_headers(sub: str, role: str, email: str) -> dict[str, str]:
@@ -140,8 +149,8 @@ class NotificationFlowTests(unittest.TestCase):
             db.commit()
             lawyer_id = str(lawyer.id)
 
-        created = self.client.post(
-            "/api/public/requests/TRK-NOTIF-MSG/messages",
+        created = self.chat_client.post(
+            "/api/public/chat/requests/TRK-NOTIF-MSG/messages",
             cookies=self._public_cookies("TRK-NOTIF-MSG"),
             json={"body": "Есть новое сообщение"},
         )

@@ -56,7 +56,10 @@ TABLE_ROLE_ACTIONS: dict[str, dict[str, set[str]]] = {
     "audit_log": {"ADMIN": {"query", "read"}},
     "security_audit_log": {"ADMIN": {"query", "read"}},
     "otp_sessions": {"ADMIN": {"query", "read"}},
-    "admin_users": {"ADMIN": set(CRUD_ACTIONS)},
+    "admin_users": {
+        "ADMIN": set(CRUD_ACTIONS),
+        "LAWYER": {"read", "update"},
+    },
     "admin_user_topics": {"ADMIN": set(CRUD_ACTIONS)},
     "landing_featured_staff": {"ADMIN": set(CRUD_ACTIONS)},
     "topic_status_transitions": {"ADMIN": set(CRUD_ACTIONS)},

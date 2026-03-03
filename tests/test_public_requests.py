@@ -213,7 +213,7 @@ class PublicRequestCreateTests(unittest.TestCase):
         self.assertEqual(ok.json()["track_number"], track_number)
 
         denied_other_track = self.client.get("/api/public/requests/TRK-OTHER")
-        self.assertEqual(denied_other_track.status_code, 403)
+        self.assertEqual(denied_other_track.status_code, 404)
 
     def test_otp_send_rejects_honeypot_field(self):
         response = self.client.post(
@@ -321,7 +321,7 @@ class PublicRequestCreateTests(unittest.TestCase):
         self.assertEqual(opened.json()["track_number"], "TRK-MULTI-2")
 
         denied = self.client.get("/api/public/requests/TRK-FOREIGN-1")
-        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.status_code, 404)
 
     def test_email_auth_mode_allows_create_flow_via_email_otp(self):
         phone = self._unique_phone()

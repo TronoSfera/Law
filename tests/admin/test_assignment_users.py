@@ -484,3 +484,63 @@ class AdminAssignmentAndUsersTests(AdminUniversalCrudBase):
 
         deleted = self.client.delete(f"/api/admin/crud/admin_users/{user_id}", headers=headers)
         self.assertEqual(deleted.status_code, 200)
+
+    def test_lawyer_can_manage_only_own_profile(self):
+        with self.SessionLocal() as db:
+            self_lawyer = AdminUser(
+                role="LAWYER",
+                name="Свои Данные",
+                email="self-lawyer@example.com",
+                password_hash="hash",
+                is_active=True,
+                phone="+79990001122",
+            )
+            other_lawyer = AdminUser(
+                role="LAWYER",
+                name="Чужие Данные",
+                email="other-lawyer@example.com",
+                password_hash="hash",
+                is_active=True,
+                phone="+79990001123",
+            )
+            db.add_all([self_lawyer, other_lawyer])
+            db.commit()
+            self_id = str(self_lawyer.id)
+            other_id = str(other_lawyer.id)
+
+        headers = self._auth_headers("LAWYER", email="self-lawyer@example.com", sub=self_id)
+
+        own_get = self.client.get(f"/api/admin/crud/admin_users/{self_id}", headers=headers)
+        self.assertEqual(own_get.status_code, 200)
+        self.assertEqual(own_get.json().get("email"), "self-lawyer@example.com")
+
+        own_update = self.client.patch(
+            f"/api/admin/crud/admin_users/{self_id}",
+            headers=headers,
+            json={"name": "Обновленное имя", "phone": "+79991234567", "password": "LawyerPass-123"},
+        )
+        self.assertEqual(own_update.status_code, 200)
+        self.assertEqual(own_update.json().get("name"), "Обновленное имя")
+        self.assertEqual(own_update.json().get("phone"), "+79991234567")
+
+        with self.SessionLocal() as db:
+            row = db.get(AdminUser, UUID(self_id))
+            self.assertIsNotNone(row)
+            self.assertTrue(verify_password("LawyerPass-123", row.password_hash))
+
+        foreign_get = self.client.get(f"/api/admin/crud/admin_users/{other_id}", headers=headers)
+        self.assertEqual(foreign_get.status_code, 403)
+
+        foreign_update = self.client.patch(
+            f"/api/admin/crud/admin_users/{other_id}",
+            headers=headers,
+            json={"name": "Попытка изменить чужой профиль"},
+        )
+        self.assertEqual(foreign_update.status_code, 403)
+
+        forbidden_field_update = self.client.patch(
+            f"/api/admin/crud/admin_users/{self_id}",
+            headers=headers,
+            json={"role": "ADMIN"},
+        )
+        self.assertEqual(forbidden_field_update.status_code, 403)

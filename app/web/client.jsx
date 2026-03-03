@@ -566,6 +566,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
           statusHistory: Array.isArray(statusRouteData?.history) ? statusRouteData.history : [],
           availableStatuses: [],
           currentImportantDateAt: String(statusRouteData?.current_important_date_at || requestData?.important_date_at || ""),
+          invoices,
           messages: Array.isArray(messagesData) ? messagesData : [],
           attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
           fileUploading: false,
@@ -592,6 +593,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
             requestData: null,
             trackNumber: "",
             financeSummary: null,
+            invoices: [],
             statusRouteNodes: [],
             statusHistory: [],
             messages: [],
@@ -688,6 +690,45 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     const clearFiles = useCallback(() => {
       setRequestModal((prev) => ({ ...prev, selectedFiles: [] }));
     }, []);
+
+    const downloadPublicInvoicePdf = useCallback(
+      async (row) => {
+        const url = String(row?.download_url || "").trim();
+        if (!url) {
+          setPageStatus("Ссылка на PDF счета недоступна.", "error");
+          return;
+        }
+        try {
+          setPageStatus("Скачиваем PDF...", "");
+          const response = await fetch(url, { credentials: "same-origin" });
+          if (!response.ok) {
+            const text = await response.text();
+            let payload = {};
+            try {
+              payload = text ? JSON.parse(text) : {};
+            } catch (_) {
+              payload = { raw: text };
+            }
+            const message = payload.detail || payload.error || payload.raw || ("HTTP " + response.status);
+            throw new Error(String(message));
+          }
+          const blob = await response.blob();
+          const fileName = String(row?.invoice_number || "invoice") + ".pdf";
+          const fileUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = fileUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(fileUrl);
+          setPageStatus("PDF скачан", "ok");
+        } catch (error) {
+          setPageStatus("Ошибка скачивания: " + (error?.message || "неизвестная ошибка"), "error");
+        }
+      },
+      [setPageStatus]
+    );
 
     const submitMessage = useCallback(
       async (event) => {
@@ -909,6 +950,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     }, [loadMyRequests, setPageStatus]);
 
     const summary = requestModal.requestData || null;
+    const summaryStatusName = String(summary?.status_name || statusLabel(summary?.status_code) || "-");
     const viewerFullName = useMemo(() => {
       const fullName = String(requestModal.requestData?.client_name || "").trim();
       return fullName || "Клиент";
@@ -974,7 +1016,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
               <div className="client-summary-row">
                 <div className="client-summary-chips">
                   <span className="client-summary-chip client-summary-chip-status">
-                    Статус: <span id="cabinet-request-status">{summary ? statusLabel(summary.status_code) : "-"}</span>
+                    Статус: <span id="cabinet-request-status">{summary ? summaryStatusName : "-"}</span>
                   </span>
                   <span className="client-summary-chip client-summary-chip-topic">
                     Тема: <span id="cabinet-request-topic">{summary ? String(summary.topic_name || summary.topic_code || "-") : "-"}</span>
@@ -998,6 +1040,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
               trackNumber={requestModal.trackNumber}
               requestData={requestModal.requestData}
               financeSummary={requestModal.financeSummary}
+              invoices={requestModal.invoices || []}
               statusRouteNodes={requestModal.statusRouteNodes || []}
               statusHistory={requestModal.statusHistory || []}
               availableStatuses={[]}
@@ -1018,6 +1061,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
               onSaveRequestDataValues={saveRequestDataValues}
               onUploadRequestAttachment={uploadPublicRequestAttachment}
               onChangeStatus={() => Promise.resolve(null)}
+              onDownloadInvoicePdf={downloadPublicInvoicePdf}
               onLiveProbe={probeLiveState}
               onTypingSignal={setTypingSignal}
               AttachmentPreviewModalComponent={AttachmentPreviewModal}

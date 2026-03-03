@@ -96,7 +96,9 @@ class DashboardFinanceTests(unittest.TestCase):
 
     def test_admin_dashboard_contains_lawyer_financial_metrics(self):
         now = datetime.now(timezone.utc)
-        current_month_event = now - timedelta(days=2)
+        month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        current_month_event = month_start + timedelta(hours=12)
+        previous_month_event = month_start - timedelta(hours=12)
         with self.SessionLocal() as db:
             db.add_all(
                 [
@@ -190,8 +192,8 @@ class DashboardFinanceTests(unittest.TestCase):
                         from_status="INVOICE",
                         to_status="PAID",
                         changed_by_admin_id=None,
-                        created_at=now - timedelta(days=40),
-                        updated_at=now - timedelta(days=40),
+                        created_at=previous_month_event,
+                        updated_at=previous_month_event,
                     ),
                     StatusHistory(
                         request_id=req_a_closed.id,
@@ -264,6 +266,7 @@ class DashboardFinanceTests(unittest.TestCase):
 
     def test_admin_can_get_lawyer_active_requests_dashboard_detail(self):
         now = datetime.now(timezone.utc)
+        month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
         with self.SessionLocal() as db:
             db.add_all(
                 [
@@ -312,8 +315,8 @@ class DashboardFinanceTests(unittest.TestCase):
                     from_status="INVOICE",
                     to_status="PAID",
                     changed_by_admin_id=None,
-                    created_at=now - timedelta(days=1),
-                    updated_at=now - timedelta(days=1),
+                    created_at=month_start + timedelta(hours=6),
+                    updated_at=month_start + timedelta(hours=6),
                 )
             )
             db.commit()

@@ -28,7 +28,6 @@ from app.models.status_history import StatusHistory
 from app.models.topic import Topic
 from app.services.invoice_crypto import decrypt_requisites
 from app.services.invoice_pdf import build_invoice_pdf_bytes
-from app.services.chat_secure_service import create_client_message, list_messages_for_request
 from app.services.origin_guard import enforce_public_origin_or_403
 from app.services.notifications import (
     get_client_notification,
@@ -44,8 +43,6 @@ from app.services.security_audit import extract_client_ip, record_pii_access_eve
 from app.api.admin.requests_modules.status_flow import get_request_status_route_service
 from app.schemas.public import (
     PublicAttachmentRead,
-    PublicMessageCreate,
-    PublicMessageRead,
     PublicRequestCreate,
     PublicRequestCreated,
     PublicServiceRequestCreate,
@@ -427,6 +424,14 @@ def get_request_by_track(
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, session, track_number)
+    status_name = str(req.status_code or "")
+    if str(req.status_code or "").strip():
+        try:
+            status_row = db.query(Status).filter(Status.code == req.status_code).first()
+        except SQLAlchemyError:
+            status_row = None
+        if status_row is not None:
+            status_name = str(status_row.name or req.status_code or "")
     topic_name = None
     if str(req.topic_code or "").strip():
         try:
@@ -478,15 +483,13 @@ def get_request_by_track(
         "topic_code": req.topic_code,
         "topic_name": topic_name,
         "status_code": req.status_code,
+        "status_name": status_name,
         "important_date_at": _to_iso(req.important_date_at),
         "description": req.description,
         "extra_fields": req.extra_fields,
         "assigned_lawyer_id": req.assigned_lawyer_id,
         "assigned_lawyer_name": lawyer_name or req.assigned_lawyer_id,
         "assigned_lawyer_phone": lawyer_phone,
-        "request_cost": float(req.request_cost) if req.request_cost is not None else None,
-        "effective_rate": float(req.effective_rate) if req.effective_rate is not None else None,
-        "paid_at": _to_iso(req.paid_at),
         "client_has_unread_updates": req.client_has_unread_updates,
         "client_unread_event_type": req.client_unread_event_type,
         "lawyer_has_unread_updates": req.lawyer_has_unread_updates,
@@ -587,62 +590,6 @@ def get_status_route_by_track(
             details={"track_number": req.track_number, "fallback": True},
         )
         return payload
-
-
-@router.get("/{track_number}/messages", response_model=list[PublicMessageRead])
-def list_messages_by_track(
-    track_number: str,
-    request: FastapiRequest,
-    db: Session = Depends(get_db),
-    session: dict = Depends(get_public_session),
-):
-    req = _request_for_track_or_404(db, session, track_number)
-    rows = list_messages_for_request(db, req.id)
-    payload = [
-        PublicMessageRead(
-            id=row.id,
-            request_id=row.request_id,
-            author_type=row.author_type,
-            author_name=row.author_name,
-            body=row.body,
-            created_at=_to_iso(row.created_at),
-            updated_at=_to_iso(row.updated_at),
-        )
-        for row in rows
-    ]
-    _record_public_read_audit(
-        db,
-        session=session,
-        http_request=request,
-        action="READ_CHAT_MESSAGES",
-        scope="CHAT",
-        request_id=req.id,
-        details={"rows": len(rows)},
-    )
-    return payload
-
-
-@router.post("/{track_number}/messages", response_model=PublicMessageRead, status_code=201)
-def create_message_by_track(
-    track_number: str,
-    payload: PublicMessageCreate,
-    request: FastapiRequest,
-    db: Session = Depends(get_db),
-    session: dict = Depends(get_public_session),
-):
-    enforce_public_origin_or_403(request, endpoint="/api/public/requests/{track_number}/messages")
-    req = _request_for_track_or_404(db, session, track_number)
-    row = create_client_message(db, request=req, body=payload.body)
-
-    return PublicMessageRead(
-        id=row.id,
-        request_id=row.request_id,
-        author_type=row.author_type,
-        author_name=row.author_name,
-        body=row.body,
-        created_at=_to_iso(row.created_at),
-        updated_at=_to_iso(row.updated_at),
-    )
 
 
 @router.get("/{track_number}/attachments", response_model=list[PublicAttachmentRead])

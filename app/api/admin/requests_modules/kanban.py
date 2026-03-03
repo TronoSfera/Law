@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.admin_user import AdminUser
+from app.models.notification import Notification
 from app.models.request import Request
 from app.models.status import Status
 from app.models.status_group import StatusGroup
@@ -20,8 +21,18 @@ from app.services.universal_query import apply_universal_query
 
 from .common import parse_datetime_safe
 
-ALLOWED_KANBAN_FILTER_FIELDS = {"assigned_lawyer_id", "client_name", "status_code", "created_at", "topic_code", "overdue"}
+ALLOWED_KANBAN_FILTER_FIELDS = {
+    "assigned_lawyer_id",
+    "client_name",
+    "status_code",
+    "created_at",
+    "topic_code",
+    "overdue",
+    "has_unread_updates",
+    "deadline_alert",
+}
 ALLOWED_KANBAN_SORT_MODES = {"created_newest", "lawyer", "deadline"}
+BOOLEAN_KANBAN_FILTER_FIELDS = {"overdue", "has_unread_updates", "deadline_alert"}
 FALLBACK_KANBAN_GROUPS = [
     ("fallback_new", "Новые", 10),
     ("fallback_in_progress", "В работе", 20),
@@ -86,7 +97,7 @@ def extract_case_deadline(extra_fields: object) -> datetime | None:
     return None
 
 
-def coerce_kanban_bool(value: object) -> bool:
+def coerce_kanban_bool(value: object, field_name: str) -> bool:
     if isinstance(value, bool):
         return value
     text = str(value or "").strip().lower()
@@ -94,10 +105,10 @@ def coerce_kanban_bool(value: object) -> bool:
         return True
     if text in {"0", "false", "no", "n", "off"}:
         return False
-    raise HTTPException(status_code=400, detail='Поле "overdue" должно быть boolean')
+    raise HTTPException(status_code=400, detail=f'Поле "{field_name}" должно быть boolean')
 
 
-def parse_kanban_filters_or_400(raw_filters: str | None) -> tuple[list[FilterClause], list[tuple[str, bool]]]:
+def parse_kanban_filters_or_400(raw_filters: str | None) -> tuple[list[FilterClause], list[tuple[str, str, bool]]]:
     if not raw_filters:
         return [], []
     try:
@@ -108,7 +119,7 @@ def parse_kanban_filters_or_400(raw_filters: str | None) -> tuple[list[FilterCla
         raise HTTPException(status_code=400, detail="Фильтры канбана должны быть массивом")
 
     universal_filters: list[FilterClause] = []
-    overdue_filters: list[tuple[str, bool]] = []
+    boolean_filters: list[tuple[str, str, bool]] = []
     for index, item in enumerate(parsed):
         if not isinstance(item, dict):
             raise HTTPException(status_code=400, detail=f"Фильтр #{index + 1} должен быть объектом")
@@ -119,30 +130,40 @@ def parse_kanban_filters_or_400(raw_filters: str | None) -> tuple[list[FilterCla
             raise HTTPException(status_code=400, detail=f'Недоступное поле фильтра: "{field}"')
         if op not in {"=", "!=", ">", "<", ">=", "<=", "~"}:
             raise HTTPException(status_code=400, detail=f'Недопустимый оператор фильтра: "{op}"')
-        if field == "overdue":
+        if field in BOOLEAN_KANBAN_FILTER_FIELDS:
             if op not in {"=", "!="}:
-                raise HTTPException(status_code=400, detail='Для поля "overdue" доступны только операторы "=" и "!="')
-            overdue_filters.append((op, coerce_kanban_bool(value)))
+                raise HTTPException(status_code=400, detail=f'Для поля "{field}" доступны только операторы "=" и "!="')
+            boolean_filters.append((field, op, coerce_kanban_bool(value, field)))
             continue
         universal_filters.append(FilterClause(field=field, op=op, value=value))
-    return universal_filters, overdue_filters
+    return universal_filters, boolean_filters
 
 
-def apply_overdue_filters(items: list[dict[str, object]], overdue_filters: list[tuple[str, bool]]) -> list[dict[str, object]]:
-    if not overdue_filters:
+def apply_boolean_kanban_filters(
+    items: list[dict[str, object]],
+    boolean_filters: list[tuple[str, str, bool]],
+) -> list[dict[str, object]]:
+    if not boolean_filters:
         return items
     now = datetime.now(timezone.utc)
     out: list[dict[str, object]] = []
     for item in items:
-        raw_deadline = item.get("sla_deadline_at") or item.get("case_deadline_at")
-        deadline_at = parse_datetime_safe(raw_deadline)
-        is_overdue = bool(deadline_at and deadline_at <= now)
         ok = True
-        for op, expected in overdue_filters:
+        for field, op, expected in boolean_filters:
+            if field == "overdue":
+                raw_deadline = item.get("sla_deadline_at") or item.get("case_deadline_at")
+                deadline_at = parse_datetime_safe(raw_deadline)
+                actual = bool(deadline_at and deadline_at <= now)
+            elif field == "has_unread_updates":
+                actual = bool(item.get("has_unread_updates"))
+            elif field == "deadline_alert":
+                actual = bool(item.get("deadline_alert"))
+            else:
+                actual = False
             if op == "=":
-                ok = ok and (is_overdue == expected)
+                ok = ok and (actual == expected)
             elif op == "!=":
-                ok = ok and (is_overdue != expected)
+                ok = ok and (actual != expected)
             if not ok:
                 break
         if ok:
@@ -204,7 +225,7 @@ def get_requests_kanban_service(
         )
 
     normalized_sort_mode = sort_mode if sort_mode in ALLOWED_KANBAN_SORT_MODES else "created_newest"
-    query_filters, overdue_filters = parse_kanban_filters_or_400(filters)
+    query_filters, boolean_filters = parse_kanban_filters_or_400(filters)
     if query_filters:
         base_query = apply_universal_query(
             base_query,
@@ -220,7 +241,33 @@ def get_requests_kanban_service(
 
     request_id_to_row = {str(row.id): row for row in request_rows}
     request_ids = [row.id for row in request_rows]
+    unread_notification_request_ids: set[str] = set()
+    actor_uuid = None
+    if actor:
+        try:
+            actor_uuid = UUID(actor)
+        except ValueError:
+            actor_uuid = None
+    if actor_uuid is not None and request_ids:
+        unread_notification_rows = (
+            db.query(Notification.request_id)
+            .filter(
+                Notification.recipient_type == "ADMIN_USER",
+                Notification.recipient_admin_user_id == actor_uuid,
+                Notification.is_read.is_(False),
+                Notification.request_id.is_not(None),
+                Notification.request_id.in_(request_ids),
+            )
+            .all()
+        )
+        unread_notification_request_ids = {
+            str(notification_request_id)
+            for (notification_request_id,) in unread_notification_rows
+            if notification_request_id is not None
+        }
     status_codes = {str(row.status_code or "").strip() for row in request_rows if str(row.status_code or "").strip()}
+    now_utc = datetime.now(timezone.utc)
+    next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
 
     status_meta_map: dict[str, dict[str, object]] = {}
     if status_codes:
@@ -448,9 +495,21 @@ def get_requests_kanban_service(
             sla_deadline = entered_at + timedelta(hours=int(transition_rule.sla_hours))
 
         assigned_id = str(row.assigned_lawyer_id or "").strip() or None
+        request_id = str(row.id)
+        status_is_terminal = bool(status_meta.get("is_terminal"))
+        has_actor_unread_notification = request_id in unread_notification_request_ids
+        has_unread_updates = bool(row.lawyer_has_unread_updates)
+        if role != "LAWYER":
+            has_unread_updates = bool(row.lawyer_has_unread_updates or row.client_has_unread_updates)
+        if has_actor_unread_notification:
+            has_unread_updates = True
+        important_date_at = parse_datetime_safe(row.important_date_at)
+        deadline_alert = bool(important_date_at and important_date_at < next_day_start and not status_is_terminal)
+        if role == "LAWYER":
+            deadline_alert = deadline_alert and bool(assigned_id) and assigned_id == actor
         items.append(
             {
-                "id": str(row.id),
+                "id": request_id,
                 "track_number": row.track_number,
                 "client_name": row.client_name,
                 "client_phone": row.client_phone,
@@ -470,13 +529,15 @@ def get_requests_kanban_service(
                 "lawyer_unread_event_type": row.lawyer_unread_event_type,
                 "client_has_unread_updates": bool(row.client_has_unread_updates),
                 "client_unread_event_type": row.client_unread_event_type,
+                "has_unread_updates": has_unread_updates,
+                "deadline_alert": deadline_alert,
                 "case_deadline_at": case_deadline.isoformat() if case_deadline else None,
                 "sla_deadline_at": sla_deadline.isoformat() if sla_deadline is not None else None,
                 "available_transitions": available_transitions,
             }
         )
 
-    items = apply_overdue_filters(items, overdue_filters)
+    items = apply_boolean_kanban_filters(items, boolean_filters)
     items = sort_kanban_items(items, normalized_sort_mode)
     total = len(items)
     if total > limit:

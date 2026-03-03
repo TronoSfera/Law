@@ -2,6 +2,7 @@ import os
 import unittest
 from datetime import timedelta
 from uuid import UUID, uuid4
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete
@@ -27,7 +28,13 @@ from app.models.notification import Notification
 from app.models.request import Request
 from app.models.status import Status
 from app.models.status_history import StatusHistory
+from app.models.topic_status_transition import TopicStatusTransition
 from app.services.invoice_crypto import decrypt_requisites
+
+
+class _FakeS3Storage:
+    def __init__(self):
+        self.objects = {}
 
 
 class BillingFlowTests(unittest.TestCase):
@@ -48,10 +55,12 @@ class BillingFlowTests(unittest.TestCase):
         StatusHistory.__table__.create(bind=cls.engine)
         Notification.__table__.create(bind=cls.engine)
         Invoice.__table__.create(bind=cls.engine)
+        TopicStatusTransition.__table__.create(bind=cls.engine)
 
     @classmethod
     def tearDownClass(cls):
         Invoice.__table__.drop(bind=cls.engine)
+        TopicStatusTransition.__table__.drop(bind=cls.engine)
         Notification.__table__.drop(bind=cls.engine)
         StatusHistory.__table__.drop(bind=cls.engine)
         Attachment.__table__.drop(bind=cls.engine)
@@ -66,6 +75,7 @@ class BillingFlowTests(unittest.TestCase):
             db.execute(delete(Invoice))
             db.execute(delete(Notification))
             db.execute(delete(StatusHistory))
+            db.execute(delete(TopicStatusTransition))
             db.execute(delete(Attachment))
             db.execute(delete(Message))
             db.execute(delete(Request))
@@ -82,9 +92,13 @@ class BillingFlowTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
+        self.fake_s3 = _FakeS3Storage()
+        self.s3_patch = patch("app.services.invoice_chat.get_s3_storage", return_value=self.fake_s3)
+        self.s3_patch.start()
 
     def tearDown(self):
         self.client.close()
+        self.s3_patch.stop()
         app.dependency_overrides.clear()
 
     @staticmethod
@@ -157,6 +171,76 @@ class BillingFlowTests(unittest.TestCase):
             rendered = str((details or {}).get("template_rendered") or "")
             self.assertIn("TRK-BILL-1", rendered)
             self.assertIn("ООО Клиент", rendered)
+
+    def test_workflow_billing_invoice_contains_autofilled_requisites(self):
+        self._seed_statuses()
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-BILL-AUTO",
+                client_name="ООО Авто",
+                client_phone="+79990000111",
+                status_code="NEW",
+                topic_code="consulting",
+                description="auto requisites",
+                extra_fields={},
+                invoice_amount=12500.5,
+            )
+            db.add(req)
+            db.commit()
+            request_id = str(req.id)
+
+        admin_headers = self._auth_headers("ADMIN", "root@example.com")
+        changed = self.client.patch(
+            f"/api/admin/requests/{request_id}",
+            headers=admin_headers,
+            json={"status_code": "BILLING"},
+        )
+        self.assertEqual(changed.status_code, 200)
+
+        with self.SessionLocal() as db:
+            req = db.get(Request, UUID(request_id))
+            self.assertIsNotNone(req)
+            invoice = (
+                db.query(Invoice)
+                .filter(Invoice.request_id == req.id)
+                .order_by(Invoice.issued_at.desc(), Invoice.created_at.desc(), Invoice.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(invoice)
+            details = decrypt_requisites(invoice.payer_details_encrypted)
+            self.assertEqual(details.get("request_track_number"), "TRK-BILL-AUTO")
+            self.assertEqual(details.get("topic_code"), "consulting")
+            rendered = str(details.get("template_rendered") or "")
+            self.assertTrue(rendered)
+            self.assertIn("TRK-BILL-AUTO", rendered)
+            self.assertIn("ООО Авто", rendered)
+            message = None
+            message_rows = (
+                db.query(Message)
+                .filter(Message.request_id == req.id)
+                .order_by(Message.created_at.desc(), Message.id.desc())
+                .all()
+            )
+            for item in message_rows:
+                if str(item.body or "").strip() == "Счет на оплату":
+                    message = item
+                    break
+            self.assertIsNotNone(message)
+            attachment = (
+                db.query(Attachment)
+                .filter(Attachment.request_id == req.id, Attachment.message_id == message.id)
+                .order_by(Attachment.created_at.desc(), Attachment.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(attachment)
+            self.assertEqual(attachment.mime_type, "application/pdf")
+            self.assertIn(str(invoice.invoice_number), str(attachment.file_name))
+            self.assertGreater(int(req.total_attachments_bytes or 0), 0)
+
+            stored = self.fake_s3.objects.get(str(attachment.s3_key))
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.get("mime"), "application/pdf")
+            self.assertTrue(bytes(stored.get("content") or b"").startswith(b"%PDF"))
 
     def test_paid_status_requires_admin_and_marks_waiting_invoice_paid(self):
         self._seed_statuses()

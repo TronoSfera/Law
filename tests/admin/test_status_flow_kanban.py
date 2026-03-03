@@ -523,6 +523,105 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
         outsider_forbidden = self.client.get(f"/api/admin/requests/{request_id}/status-route", headers=outsider_headers)
         self.assertEqual(outsider_forbidden.status_code, 403)
 
+    def test_request_status_route_preserves_repeated_statuses_in_path(self):
+        with self.SessionLocal() as db:
+            db.add_all(
+                [
+                    Status(code="NEW", name="Новая", enabled=True, sort_order=1, kind="DEFAULT"),
+                    Status(code="IN_PROGRESS", name="В работе", enabled=True, sort_order=2, kind="DEFAULT"),
+                    Status(code="WAITING_CLIENT", name="Ожидание клиента", enabled=True, sort_order=3, kind="DEFAULT"),
+                ]
+            )
+            db.add_all(
+                [
+                    TopicStatusTransition(
+                        topic_code="civil-loop",
+                        from_status="NEW",
+                        to_status="IN_PROGRESS",
+                        enabled=True,
+                        sla_hours=24,
+                        sort_order=1,
+                    ),
+                    TopicStatusTransition(
+                        topic_code="civil-loop",
+                        from_status="IN_PROGRESS",
+                        to_status="WAITING_CLIENT",
+                        enabled=True,
+                        sla_hours=72,
+                        sort_order=2,
+                    ),
+                    TopicStatusTransition(
+                        topic_code="civil-loop",
+                        from_status="WAITING_CLIENT",
+                        to_status="IN_PROGRESS",
+                        enabled=True,
+                        sla_hours=12,
+                        sort_order=3,
+                    ),
+                ]
+            )
+            req = Request(
+                track_number="TRK-ROUTE-LOOP",
+                client_name="Клиент",
+                client_phone="+79990002233",
+                topic_code="civil-loop",
+                status_code="IN_PROGRESS",
+                description="route loop check",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            started_at = datetime.now(timezone.utc) - timedelta(hours=9)
+            db.add_all(
+                [
+                    StatusHistory(
+                        request_id=req.id,
+                        from_status="NEW",
+                        to_status="IN_PROGRESS",
+                        comment="started",
+                        changed_by_admin_id=None,
+                        created_at=started_at,
+                    ),
+                    StatusHistory(
+                        request_id=req.id,
+                        from_status="IN_PROGRESS",
+                        to_status="WAITING_CLIENT",
+                        comment="waiting docs",
+                        changed_by_admin_id=None,
+                        created_at=started_at + timedelta(hours=2),
+                    ),
+                    StatusHistory(
+                        request_id=req.id,
+                        from_status="WAITING_CLIENT",
+                        to_status="IN_PROGRESS",
+                        comment="docs received",
+                        changed_by_admin_id=None,
+                        created_at=started_at + timedelta(hours=5),
+                    ),
+                ]
+            )
+            db.commit()
+            request_id = str(req.id)
+
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+        response = self.client.get(f"/api/admin/requests/{request_id}/status-route", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        nodes = payload.get("nodes") or []
+        self.assertEqual(
+            [item["code"] for item in nodes],
+            ["NEW", "IN_PROGRESS", "WAITING_CLIENT", "IN_PROGRESS", "WAITING_CLIENT"],
+        )
+        self.assertEqual([item["state"] for item in nodes], ["completed", "completed", "completed", "current", "pending"])
+        self.assertEqual(nodes[1]["sla_hours"], 24)
+        self.assertEqual(nodes[2]["sla_hours"], 72)
+        self.assertEqual(nodes[3]["sla_hours"], 12)
+        self.assertEqual(nodes[4]["sla_hours"], 72)
+
+        history = payload.get("history") or []
+        self.assertEqual([item.get("to_status") for item in history], ["IN_PROGRESS", "WAITING_CLIENT", "IN_PROGRESS"])
+
     def test_requests_kanban_returns_grouped_cards_and_role_scope(self):
         with self.SessionLocal() as db:
             group_new = StatusGroup(name="Новые", sort_order=10)
@@ -637,6 +736,8 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
                 description="Заявка в работе",
                 extra_fields={"deadline_at": "2031-01-01T10:00:00+00:00"},
                 assigned_lawyer_id=str(lawyer_main.id),
+                lawyer_has_unread_updates=True,
+                lawyer_unread_event_type="MESSAGE",
             )
             request_waiting = Request(
                 track_number="TRK-KANBAN-WAITING",
@@ -657,6 +758,7 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
                 description="Просроченная заявка",
                 extra_fields={},
                 assigned_lawyer_id=str(lawyer_main.id),
+                important_date_at=datetime.now(timezone.utc) - timedelta(hours=1),
             )
             db.add_all([request_new, request_progress, request_waiting, request_overdue])
             db.flush()
@@ -681,6 +783,17 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
                     changed_by_admin_id=None,
                     comment="overdue",
                     created_at=entered_overdue_at,
+                )
+            )
+            db.add(
+                Notification(
+                    request_id=request_new.id,
+                    recipient_type="ADMIN_USER",
+                    recipient_admin_user_id=lawyer_main.id,
+                    event_type="MESSAGE",
+                    title="Новое сообщение",
+                    payload={},
+                    is_read=False,
                 )
             )
             db.commit()
@@ -750,6 +863,30 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
         overdue_rows = {item["id"] for item in (filtered_overdue.json().get("rows") or [])}
         self.assertEqual(overdue_rows, {request_overdue_id})
 
+        filtered_unread_lawyer = self.client.get(
+            "/api/admin/requests/kanban",
+            headers=lawyer_headers,
+            params={
+                "limit": 100,
+                "filters": json.dumps([{"field": "has_unread_updates", "op": "=", "value": True}]),
+            },
+        )
+        self.assertEqual(filtered_unread_lawyer.status_code, 200)
+        unread_rows = {item["id"] for item in (filtered_unread_lawyer.json().get("rows") or [])}
+        self.assertEqual(unread_rows, {request_new_id, request_progress_id})
+
+        filtered_deadline_alert_lawyer = self.client.get(
+            "/api/admin/requests/kanban",
+            headers=lawyer_headers,
+            params={
+                "limit": 100,
+                "filters": json.dumps([{"field": "deadline_alert", "op": "=", "value": True}]),
+            },
+        )
+        self.assertEqual(filtered_deadline_alert_lawyer.status_code, 200)
+        deadline_rows = {item["id"] for item in (filtered_deadline_alert_lawyer.json().get("rows") or [])}
+        self.assertEqual(deadline_rows, {request_overdue_id})
+
         sorted_by_deadline = self.client.get(
             "/api/admin/requests/kanban",
             headers=admin_headers,
@@ -759,4 +896,3 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
         sorted_rows = sorted_by_deadline.json().get("rows") or []
         self.assertTrue(sorted_rows)
         self.assertEqual(sorted_rows[0]["id"], request_overdue_id)
-

@@ -953,9 +953,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       }
       if (field.type === "reference" || field.type === "enum") {
         const extraOptions = Array.isArray(field.extraOptions) ? field.extraOptions : [];
+        const hasCurrentValue =
+          String(value || "").trim() !== "" &&
+          [...extraOptions, ...options].some((option) => String(option?.value || "") === String(value));
         return (
           <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)} disabled={disabled}>
             {field.optional ? <option value="">-</option> : null}
+            {!hasCurrentValue && String(value || "").trim() !== "" ? <option value={String(value)}>{String(value)}</option> : null}
             {extraOptions.map((option) => (
               <option value={String(option.value)} key={String(option.value)}>
                 {option.label}
@@ -1275,6 +1279,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       loadRequestDataTemplateDetails,
       saveRequestDataTemplate,
       saveRequestDataBatch,
+      issueRequestInvoice,
     } = useRequestWorkspace({
       api,
       setStatus,
@@ -1288,21 +1293,21 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     const getStatusOptions = useCallback(() => {
       return (dictionaries.statuses || [])
         .filter((item) => item && item.code)
-        .map((item) => ({ value: item.code, label: (item.name || statusLabel(item.code)) + " (" + item.code + ")" }));
+        .map((item) => ({ value: item.code, label: String(item.name || "").trim() || humanizeKey(item.code) }));
     }, [dictionaries.statuses]);
 
     const getInvoiceStatusOptions = useCallback(() => {
-      return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name + " (" + code + ")" }));
+      return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
     }, []);
 
     const getStatusKindOptions = useCallback(() => {
-      return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name + " (" + code + ")" }));
+      return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name }));
     }, []);
 
     const getTopicOptions = useCallback(() => {
       return (dictionaries.topics || [])
         .filter((item) => item && item.code)
-        .map((item) => ({ value: item.code, label: (item.name || item.code) + " (" + item.code + ")" }));
+        .map((item) => ({ value: item.code, label: String(item.name || "").trim() || humanizeKey(item.code) }));
     }, [dictionaries.topics]);
 
     const getLawyerOptions = useCallback(() => {
@@ -1320,22 +1325,22 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const getRequestDataValueTypeOptions = useCallback(() => {
       return [
-        { value: "string", label: "Строка (string)" },
-        { value: "date", label: "Дата (date)" },
-        { value: "number", label: "Число (number)" },
-        { value: "file", label: "Файл (file)" },
-        { value: "text", label: "Текст (text)" },
+        { value: "string", label: "Строка" },
+        { value: "date", label: "Дата" },
+        { value: "number", label: "Число" },
+        { value: "file", label: "Файл" },
+        { value: "text", label: "Текст" },
       ];
     }, []);
 
     const getFormFieldKeyOptions = useCallback(() => {
       return (dictionaries.formFieldKeys || [])
         .filter((item) => item && item.key)
-        .map((item) => ({ value: item.key, label: (item.label || item.key) + " (" + item.key + ")" }));
+        .map((item) => ({ value: item.key, label: String(item.label || "").trim() || humanizeKey(item.key) }));
     }, [dictionaries.formFieldKeys]);
 
     const getRoleOptions = useCallback(() => {
-      return Object.entries(ROLE_LABELS).map(([code, label]) => ({ value: code, label: label + " (" + code + ")" }));
+      return Object.entries(ROLE_LABELS).map(([code, label]) => ({ value: code, label }));
     }, []);
 
     const tableCatalogMap = useMemo(() => {
@@ -1387,6 +1392,54 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     const getClientOptions = useCallback(() => {
       return getReferenceOptions({ table: "clients", value_field: "id", label_field: "full_name" });
     }, [getReferenceOptions]);
+
+    const getInvoiceRequestRows = useCallback(() => {
+      const fromReferences = Array.isArray(referenceRowsMap.requests) ? referenceRowsMap.requests : [];
+      const fromTable = Array.isArray(tables.requests?.rows) ? tables.requests.rows : [];
+      const byTrack = new Map();
+      [...fromReferences, ...fromTable].forEach((row) => {
+        const track = String(row?.track_number || "").trim().toUpperCase();
+        if (!track) return;
+        if (!byTrack.has(track)) byTrack.set(track, row);
+      });
+      return Array.from(byTrack.values());
+    }, [referenceRowsMap.requests, tables.requests?.rows]);
+
+    const getInvoiceRequestTrackOptions = useCallback(() => {
+      const rows = getInvoiceRequestRows();
+      return rows
+        .map((row) => {
+          const track = String(row?.track_number || "").trim().toUpperCase();
+          if (!track) return null;
+          const clientName = String(row?.client_name || "").trim();
+          const clientPhone = String(row?.client_phone || "").trim();
+          const parts = [track];
+          if (clientName) parts.push(clientName);
+          if (clientPhone) parts.push(clientPhone);
+          return { value: track, label: parts.join(" • ") };
+        })
+        .filter(Boolean)
+        .sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
+    }, [getInvoiceRequestRows]);
+
+    const getInvoicePayerOptions = useCallback(() => {
+      const map = new Map();
+      const addPayer = (nameRaw, phoneRaw) => {
+        const name = String(nameRaw || "").trim();
+        if (!name) return;
+        const phone = String(phoneRaw || "").trim();
+        if (map.has(name)) return;
+        map.set(name, phone ? `${name} (${phone})` : name);
+      };
+
+      const clientRows = Array.isArray(referenceRowsMap.clients) ? referenceRowsMap.clients : [];
+      clientRows.forEach((row) => addPayer(row?.full_name || row?.client_name, row?.phone || row?.client_phone));
+      getInvoiceRequestRows().forEach((row) => addPayer(row?.client_name, row?.client_phone));
+
+      return Array.from(map.entries())
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
+    }, [getInvoiceRequestRows, referenceRowsMap.clients]);
 
     const dictionaryTableItems = useMemo(() => {
       return (tableCatalog || [])
@@ -1440,6 +1493,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             { field: "status_code", label: "Статус", type: "reference", options: getStatusOptions },
             { field: "created_at", label: "Дата", type: "date" },
             { field: "topic_code", label: "Тема", type: "reference", options: getTopicOptions },
+            { field: "has_unread_updates", label: "Есть оповещения", type: "boolean" },
+            { field: "deadline_alert", label: "Горящие дедлайны", type: "boolean" },
             { field: "overdue", label: "Просрочен", type: "boolean" },
           ];
         }
@@ -1761,12 +1816,12 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         }
         if (tableKey === "invoices") {
           return [
-            { key: "request_track_number", label: "Номер заявки", type: "text", required: true, createOnly: true },
+            { key: "request_track_number", label: "Номер заявки", type: "reference", required: true, createOnly: true, options: getInvoiceRequestTrackOptions },
             { key: "invoice_number", label: "Номер счета", type: "text", optional: true, placeholder: "Оставьте пустым для автогенерации" },
             { key: "status", label: "Статус", type: "enum", required: true, options: getInvoiceStatusOptions, defaultValue: "WAITING_PAYMENT" },
             { key: "amount", label: "Сумма", type: "number", required: true },
             { key: "currency", label: "Валюта", type: "text", optional: true, defaultValue: "RUB" },
-            { key: "payer_display_name", label: "Плательщик (ФИО / компания)", type: "text", required: true },
+            { key: "payer_display_name", label: "Плательщик (ФИО / компания)", type: "reference", required: true, options: getInvoicePayerOptions },
             { key: "payer_details", label: "Реквизиты (JSON, шифруется)", type: "json", optional: true, omitIfEmpty: true, placeholder: "{\"inn\":\"...\"}" },
           ];
         }
@@ -1910,6 +1965,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         getFormFieldKeyOptions,
         getFormFieldTypeOptions,
         getInvoiceStatusOptions,
+        getInvoicePayerOptions,
+        getInvoiceRequestTrackOptions,
         getClientOptions,
         getLawyerOptions,
         getRoleOptions,
@@ -2147,9 +2204,9 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         if (!(tokenOverride !== undefined ? tokenOverride : token)) return;
         if (section === "dashboard") return loadDashboard(tokenOverride);
         if (section === "kanban") return loadKanban(tokenOverride);
-        if (section === "requests") return loadTable("requests", {}, tokenOverride);
-        if (section === "serviceRequests") return loadTable("serviceRequests", {}, tokenOverride);
-        if (section === "invoices") return loadTable("invoices", {}, tokenOverride);
+        if (section === "requests" && canAccessSection(role, "requests")) return loadTable("requests", {}, tokenOverride);
+        if (section === "serviceRequests" && canAccessSection(role, "serviceRequests")) return loadTable("serviceRequests", {}, tokenOverride);
+        if (section === "invoices" && canAccessSection(role, "invoices")) return loadTable("invoices", {}, tokenOverride);
         if (section === "quotes" && canAccessSection(role, "quotes")) return loadTable("quotes", {}, tokenOverride);
         if (section === "config" && canAccessSection(role, "config")) return loadCurrentConfigTable(false, tokenOverride);
         if (section === "availableTables" && canAccessSection(role, "availableTables")) return loadAvailableTables(tokenOverride);
@@ -2352,10 +2409,22 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
               }
             }
           }
+          if (prev.tableKey === "invoices" && field === "request_track_number") {
+            const selectedTrack = String(value || "").trim().toUpperCase();
+            if (selectedTrack) {
+              const rows = getInvoiceRequestRows();
+              const found = rows.find((row) => String(row?.track_number || "").trim().toUpperCase() === selectedTrack);
+              if (found) {
+                nextForm.request_track_number = String(found.track_number || selectedTrack).trim().toUpperCase();
+                const autoPayer = String(found.client_name || "").trim();
+                if (autoPayer) nextForm.payer_display_name = autoPayer;
+              }
+            }
+          }
           return { ...prev, form: nextForm };
         });
       },
-      [referenceRowsMap.clients]
+      [getInvoiceRequestRows, referenceRowsMap.clients]
     );
 
     const uploadRecordFieldFile = useCallback(
@@ -2521,13 +2590,16 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           await api("/api/admin/requests/" + requestId + "/claim", { method: "POST" });
           setStatus("requests", "Заявка взята в работу", "ok");
           setStatus("kanban", "Заявка взята в работу", "ok");
-          await Promise.all([loadTable("requests", { resetOffset: true }), loadKanban()]);
+          const refreshRequests = canAccessSection(role, "requests")
+            ? loadTable("requests", { resetOffset: true })
+            : Promise.resolve();
+          await Promise.all([refreshRequests, loadKanban()]);
         } catch (error) {
           setStatus("requests", "Ошибка назначения: " + error.message, "error");
           setStatus("kanban", "Ошибка назначения: " + error.message, "error");
         }
       },
-      [api, loadKanban, loadTable, setStatus]
+      [api, loadKanban, loadTable, role, setStatus]
     );
 
     const openInvoiceRequest = useCallback(
@@ -2588,7 +2660,10 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           setStatus("kanban", "Переводим заявку...", "");
           await submitRequestStatusChange({ requestId, statusCode: targetStatus });
           setStatus("kanban", "Статус заявки обновлен", "ok");
-          await Promise.all([loadKanban(), loadTable("requests", { resetOffset: true })]);
+          const refreshRequests = canAccessSection(role, "requests")
+            ? loadTable("requests", { resetOffset: true })
+            : Promise.resolve();
+          await Promise.all([loadKanban(), refreshRequests]);
         } catch (error) {
           setStatus("kanban", "Ошибка перехода: " + error.message, "error");
         }
@@ -2597,10 +2672,10 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
 
     const downloadInvoicePdf = useCallback(
-      async (row) => {
+      async (row, statusKey = "invoices") => {
         if (!row || !row.id || !token) return;
         try {
-          setStatus("invoices", "Формируем PDF...", "");
+          setStatus(statusKey, "Формируем PDF...", "");
           const response = await fetch("/api/admin/invoices/" + row.id + "/pdf", {
             headers: { Authorization: "Bearer " + token },
           });
@@ -2625,12 +2700,19 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           link.click();
           link.remove();
           URL.revokeObjectURL(url);
-          setStatus("invoices", "PDF скачан", "ok");
+          setStatus(statusKey, "PDF скачан", "ok");
         } catch (error) {
-          setStatus("invoices", "Ошибка скачивания: " + error.message, "error");
+          setStatus(statusKey, "Ошибка скачивания: " + error.message, "error");
         }
       },
       [setStatus, token]
+    );
+
+    const downloadRequestInvoicePdf = useCallback(
+      async (row) => {
+        await downloadInvoicePdf(row, "requestModal");
+      },
+      [downloadInvoicePdf]
     );
 
     const resetAdminRoute = useCallback(() => {
@@ -2641,10 +2723,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     }, []);
 
     const goBackFromRequestWorkspace = useCallback(() => {
+      const targetSection = canAccessSection(role, "requests") ? "requests" : "kanban";
       resetAdminRoute();
-      setActiveSection("requests");
-      refreshSection("requests");
-    }, [refreshSection, resetAdminRoute]);
+      setActiveSection(targetSection);
+      refreshSection(targetSection);
+    }, [refreshSection, resetAdminRoute, role]);
 
     const openReassignModal = useCallback(
       (row) => {
@@ -2827,6 +2910,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const applyRequestsQuickFilterPreset = useCallback(
       async (filters, statusMessage) => {
+        if (!canAccessSection(role, "requests")) return;
         const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
         resetAdminRoute();
         setActiveSection("requests");
@@ -2840,7 +2924,25 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         if (statusMessage) setStatus("requests", statusMessage, "");
         await loadTable("requests", { resetOffset: true, filtersOverride: nextFilters });
       },
-      [loadTable, resetAdminRoute, setStatus, setTableState, tablesRef]
+      [loadTable, resetAdminRoute, role, setStatus, setTableState, tablesRef]
+    );
+
+    const applyKanbanQuickFilterPreset = useCallback(
+      async (filters, statusMessage) => {
+        const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
+        resetAdminRoute();
+        setActiveSection("kanban");
+        const currentState = tablesRef.current.kanban || createTableState();
+        setTableState("kanban", {
+          ...currentState,
+          filters: nextFilters,
+          offset: 0,
+          showAll: false,
+        });
+        if (statusMessage) setStatus("kanban", statusMessage, "");
+        await loadKanban(undefined, { filtersOverride: nextFilters });
+      },
+      [loadKanban, resetAdminRoute, setStatus, setTableState, tablesRef]
     );
 
     const openRequestsWithUnreadAlerts = useCallback(async () => {
@@ -2850,6 +2952,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     const openRequestsWithDeadlineAlerts = useCallback(async () => {
       await applyRequestsQuickFilterPreset([{ field: "deadline_alert", op: "=", value: true }], "Показаны заявки с горящими дедлайнами");
     }, [applyRequestsQuickFilterPreset]);
+
+    const openKanbanWithUnreadAlerts = useCallback(async () => {
+      await applyKanbanQuickFilterPreset([{ field: "has_unread_updates", op: "=", value: true }], "Показаны заявки с новыми оповещениями");
+    }, [applyKanbanQuickFilterPreset]);
+
+    const openKanbanWithDeadlineAlerts = useCallback(async () => {
+      await applyKanbanQuickFilterPreset([{ field: "deadline_alert", op: "=", value: true }], "Показаны заявки с горящими дедлайнами");
+    }, [applyKanbanQuickFilterPreset]);
 
     const applyServiceRequestsQuickFilterPreset = useCallback(
       async (filters, statusMessage) => {
@@ -2891,13 +3001,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           setStatus("serviceRequests", "Отмечаем как прочитанный...", "");
           await api("/api/admin/requests/service-requests/" + encodeURIComponent(rowId) + "/read", { method: "POST" });
           await Promise.all([loadTable("serviceRequests", { resetOffset: true }), loadDashboard()]);
-          await loadTable("requests", { resetOffset: true });
+          if (canAccessSection(role, "requests")) await loadTable("requests", { resetOffset: true });
           setStatus("serviceRequests", "Запрос отмечен как прочитанный", "ok");
         } catch (error) {
           setStatus("serviceRequests", "Ошибка: " + error.message, "error");
         }
       },
-      [api, loadDashboard, loadTable, setStatus]
+      [api, loadDashboard, loadTable, role, setStatus]
     );
 
     const loadTotpStatus = useCallback(
@@ -3399,14 +3509,15 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     }, [closeAccountModal, closeKanbanSortModal, closeTotpSetupModal]);
 
     const menuItems = useMemo(() => {
-      return [
+      const baseItems = [
         { key: "dashboard", label: "Обзор" },
         { key: "kanban", label: "Канбан" },
         { key: "requests", label: "Заявки" },
         { key: "serviceRequests", label: "Запросы" },
         { key: "invoices", label: "Счета" },
       ];
-    }, []);
+      return baseItems.filter((item) => canAccessSection(role, item.key));
+    }, [role]);
 
     const topbarUnreadCount = useMemo(() => {
       const roleCode = String(role || "").toUpperCase();
@@ -3421,6 +3532,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       () => Number(dashboardData.serviceRequestUnreadTotal || 0),
       [dashboardData.serviceRequestUnreadTotal]
     );
+    const topbarRoleCode = String(role || "").toUpperCase();
+    const canUseRequestsAlerts = topbarRoleCode === "ADMIN";
+    const canUseKanbanAlerts = topbarRoleCode === "LAWYER";
+    const showRequestAlertIcons = canUseRequestsAlerts || canUseKanbanAlerts;
+    const showServiceRequestIcon = canAccessSection(role, "serviceRequests");
 
     const activeFilterFields = useMemo(() => {
       if (!filterModal.tableKey) return [];
@@ -3515,11 +3631,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 </>
               ) : null}
             </nav>
-            <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button className="btn secondary" type="button" onClick={refreshAll}>
-                Обновить
-              </button>
-            </div>
+            {role !== "LAWYER" ? (
+              <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button className="btn secondary" type="button" onClick={refreshAll}>
+                  Обновить
+                </button>
+              </div>
+            ) : null}
           </aside>
 
           <main className="main">
@@ -3529,69 +3647,75 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 <p className="muted">UniversalQuery, RBAC и аудит действий по ключевым сущностям системы.</p>
               </div>
               <div className="topbar-actions" aria-label="Быстрые уведомления и профиль">
-                <button
-                  type="button"
-                  className={
-                    "icon-btn topbar-alert-btn" + (topbarServiceRequestUnreadCount > 0 ? " has-alert alert-danger" : "")
-                  }
-                  data-tooltip={
-                    topbarServiceRequestUnreadCount > 0
-                      ? "Новые клиентские запросы: " + String(topbarServiceRequestUnreadCount)
-                      : "Новых клиентских запросов нет"
-                  }
-                  aria-label="Показать непрочитанные запросы клиента"
-                  onClick={openServiceRequestsWithUnreadAlerts}
-                >
-                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
-                    <path
-                      d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.8a1.5 1.5 0 0 1-1.5 1.5H9.1l-3.7 3.1c-.98.82-2.4.13-2.4-1.14V6a1.5 1.5 0 0 1 1.5-1.5zm1.7 4.2a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm5.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm5.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <span className="topbar-alert-dot" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className={
-                    "icon-btn topbar-alert-btn" + (topbarDeadlineAlertCount > 0 ? " has-alert alert-danger" : "")
-                  }
-                  data-tooltip={
-                    topbarDeadlineAlertCount > 0
-                      ? "Горящие дедлайны: " + String(topbarDeadlineAlertCount)
-                      : "Горящих дедлайнов нет"
-                  }
-                  aria-label="Показать заявки с горящими дедлайнами"
-                  onClick={openRequestsWithDeadlineAlerts}
-                >
-                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
-                    <path
-                      d="M12 3a1.6 1.6 0 0 1 1.42.86l7.14 13.7A1.6 1.6 0 0 1 19.14 20H4.86a1.6 1.6 0 0 1-1.42-2.44l7.14-13.7A1.6 1.6 0 0 1 12 3zm0 4.2a1 1 0 0 0-1 1v5.2a1 1 0 1 0 2 0V8.2a1 1 0 0 0-1-1zm0 9.4a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <span className="topbar-alert-dot" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className={
-                    "icon-btn topbar-alert-btn" + (topbarUnreadCount > 0 ? " has-alert alert-success" : "")
-                  }
-                  data-tooltip={
-                    topbarUnreadCount > 0
-                      ? "Новые оповещения по заявкам: " + String(topbarUnreadCount)
-                      : "Новых оповещений нет"
-                  }
-                  aria-label="Показать заявки с новыми оповещениями"
-                  onClick={openRequestsWithUnreadAlerts}
-                >
-                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
-                    <path
-                      d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11zm2 .5v.32l6 4.44 6-4.44V7a.5.5 0 0 0-.5-.5h-11A.5.5 0 0 0 6 7zm12 2.8-5.4 4a1 1 0 0 1-1.2 0L6 9.8v7.7c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V9.8z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <span className="topbar-alert-dot" aria-hidden="true" />
-                </button>
+                {showServiceRequestIcon ? (
+                  <button
+                    type="button"
+                    className={
+                      "icon-btn topbar-alert-btn" + (topbarServiceRequestUnreadCount > 0 ? " has-alert alert-danger" : "")
+                    }
+                    data-tooltip={
+                      topbarServiceRequestUnreadCount > 0
+                        ? "Новые клиентские запросы: " + String(topbarServiceRequestUnreadCount)
+                        : "Новых клиентских запросов нет"
+                    }
+                    aria-label="Показать непрочитанные запросы клиента"
+                    onClick={openServiceRequestsWithUnreadAlerts}
+                  >
+                    <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                      <path
+                        d="M4.5 4.5h15a1.5 1.5 0 0 1 1.5 1.5v9.8a1.5 1.5 0 0 1-1.5 1.5H9.1l-3.7 3.1c-.98.82-2.4.13-2.4-1.14V6a1.5 1.5 0 0 1 1.5-1.5zm1.7 4.2a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm5.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm5.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    <span className="topbar-alert-dot" aria-hidden="true" />
+                  </button>
+                ) : null}
+                {showRequestAlertIcons ? (
+                  <>
+                    <button
+                      type="button"
+                      className={
+                        "icon-btn topbar-alert-btn" + (topbarDeadlineAlertCount > 0 ? " has-alert alert-danger" : "")
+                      }
+                      data-tooltip={
+                        topbarDeadlineAlertCount > 0
+                          ? "Горящие дедлайны: " + String(topbarDeadlineAlertCount)
+                          : "Горящих дедлайнов нет"
+                      }
+                      aria-label="Показать заявки с горящими дедлайнами"
+                      onClick={canUseRequestsAlerts ? openRequestsWithDeadlineAlerts : openKanbanWithDeadlineAlerts}
+                    >
+                      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                        <path
+                          d="M12 3a1.6 1.6 0 0 1 1.42.86l7.14 13.7A1.6 1.6 0 0 1 19.14 20H4.86a1.6 1.6 0 0 1-1.42-2.44l7.14-13.7A1.6 1.6 0 0 1 12 3zm0 4.2a1 1 0 0 0-1 1v5.2a1 1 0 1 0 2 0V8.2a1 1 0 0 0-1-1zm0 9.4a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                      <span className="topbar-alert-dot" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        "icon-btn topbar-alert-btn" + (topbarUnreadCount > 0 ? " has-alert alert-success" : "")
+                      }
+                      data-tooltip={
+                        topbarUnreadCount > 0
+                          ? "Новые оповещения по заявкам: " + String(topbarUnreadCount)
+                          : "Новых оповещений нет"
+                      }
+                      aria-label="Показать заявки с новыми оповещениями"
+                      onClick={canUseRequestsAlerts ? openRequestsWithUnreadAlerts : openKanbanWithUnreadAlerts}
+                    >
+                      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+                        <path
+                          d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11zm2 .5v.32l6 4.44 6-4.44V7a.5.5 0 0 0-.5-.5h-11A.5.5 0 0 0 6 7zm12 2.8-5.4 4a1 1 0 0 1-1.2 0L6 9.8v7.7c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V9.8z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                      <span className="topbar-alert-dot" aria-hidden="true" />
+                    </button>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   className="icon-btn topbar-alert-btn"
@@ -3649,35 +3773,37 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
               />
             </Section>
 
-            <Section active={activeSection === "requests"} id="section-requests">
-              <RequestsSection
-                role={role}
-                tables={tables}
-                status={getStatus("requests")}
-                getFieldDef={getFieldDef}
-                getFilterValuePreview={getFilterValuePreview}
-                resolveReferenceLabel={resolveReferenceLabel}
-                onRefresh={() => loadTable("requests", { resetOffset: true })}
-                onCreate={() => openCreateRecordModal("requests")}
-                onOpenFilter={() => openFilterModal("requests")}
-                onRemoveFilter={(index) => removeFilterChip("requests", index)}
-                onEditFilter={(index) => openFilterEditModal("requests", index)}
-                onSort={(field) => toggleTableSort("requests", field)}
-                onPrev={() => loadPrevPage("requests")}
-                onNext={() => loadNextPage("requests")}
-                onLoadAll={() => loadAllRows("requests")}
-                onClaimRequest={claimRequest}
-                onOpenReassign={openReassignModal}
-                onOpenRequest={openRequestDetails}
-                onEditRecord={(row) => openEditRecordModal("requests", row)}
-                onDeleteRecord={(id) => deleteRecord("requests", id)}
-                FilterToolbarComponent={FilterToolbar}
-                DataTableComponent={DataTable}
-                TablePagerComponent={TablePager}
-                StatusLineComponent={StatusLine}
-                IconButtonComponent={IconButton}
-              />
-            </Section>
+            {canAccessSection(role, "requests") ? (
+              <Section active={activeSection === "requests"} id="section-requests">
+                <RequestsSection
+                  role={role}
+                  tables={tables}
+                  status={getStatus("requests")}
+                  getFieldDef={getFieldDef}
+                  getFilterValuePreview={getFilterValuePreview}
+                  resolveReferenceLabel={resolveReferenceLabel}
+                  onRefresh={() => loadTable("requests", { resetOffset: true })}
+                  onCreate={() => openCreateRecordModal("requests")}
+                  onOpenFilter={() => openFilterModal("requests")}
+                  onRemoveFilter={(index) => removeFilterChip("requests", index)}
+                  onEditFilter={(index) => openFilterEditModal("requests", index)}
+                  onSort={(field) => toggleTableSort("requests", field)}
+                  onPrev={() => loadPrevPage("requests")}
+                  onNext={() => loadNextPage("requests")}
+                  onLoadAll={() => loadAllRows("requests")}
+                  onClaimRequest={claimRequest}
+                  onOpenReassign={openReassignModal}
+                  onOpenRequest={openRequestDetails}
+                  onEditRecord={(row) => openEditRecordModal("requests", row)}
+                  onDeleteRecord={(id) => deleteRecord("requests", id)}
+                  FilterToolbarComponent={FilterToolbar}
+                  DataTableComponent={DataTable}
+                  TablePagerComponent={TablePager}
+                  StatusLineComponent={StatusLine}
+                  IconButtonComponent={IconButton}
+                />
+              </Section>
+            ) : null}
 
             <Section active={activeSection === "serviceRequests"} id="section-service-requests">
               <ServiceRequestsSection
@@ -3734,6 +3860,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 trackNumber={requestModal.trackNumber}
                 requestData={requestModal.requestData}
                 financeSummary={requestModal.financeSummary}
+                invoices={requestModal.invoices || []}
                 statusRouteNodes={requestModal.statusRouteNodes}
                 statusHistory={requestModal.statusHistory || []}
                 availableStatuses={requestModal.availableStatuses || []}
@@ -3755,6 +3882,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 onLoadRequestDataTemplateDetails={loadRequestDataTemplateDetails}
                 onSaveRequestDataTemplate={saveRequestDataTemplate}
                 onSaveRequestDataBatch={saveRequestDataBatch}
+                onIssueInvoice={issueRequestInvoice}
+                onDownloadInvoicePdf={downloadRequestInvoicePdf}
                 onChangeStatus={submitRequestStatusChange}
                 onConsumePendingStatusChangePreset={clearPendingStatusChangePreset}
                 onLiveProbe={probeRequestLive}

@@ -1,4 +1,16 @@
 import { createRequestModalState } from "../shared/state.js";
+import { fmtShortDateTime } from "../shared/utils.js";
+
+const DEFAULT_INVOICE_REQUISITES = Object.freeze({
+  issuer_name: 'ООО "Аудиторы корпоративной безопасности"',
+  issuer_inn: "7604226740",
+  issuer_kpp: "760401001",
+  issuer_address: "г. Ярославль, ул. Богдановича, 6А",
+  bank_name: 'АО "АЛЬФА-БАНК"',
+  bank_bik: "044525593",
+  bank_account: "40702810501860000582",
+  bank_corr_account: "30101810200000000593",
+});
 
 async function buildStorageUploadError(response, fallbackMessage) {
   const base = String(fallbackMessage || "Не удалось загрузить файл в хранилище");
@@ -86,6 +98,7 @@ export function useRequestWorkspace(options) {
           requestId,
           requestData: null,
           financeSummary: null,
+          invoices: [],
           statusRouteNodes: [],
         }));
       }
@@ -102,7 +115,7 @@ export function useRequestWorkspace(options) {
           api("/api/admin/requests/" + requestId + "/status-route").catch(() => ({ nodes: [] })),
           api("/api/admin/invoices/query", {
             method: "POST",
-            body: buildUniversalQuery(requestFilter, [{ field: "paid_at", dir: "desc" }], 500, 0),
+            body: buildUniversalQuery(requestFilter, [{ field: "issued_at", dir: "desc" }], 500, 0),
           }).catch(() => ({ rows: [] })),
         ]);
         const usersById = new Map(users.filter((user) => user && user.id).map((user) => [String(user.id), user]));
@@ -134,7 +147,8 @@ export function useRequestWorkspace(options) {
           }
           return item;
         });
-        const paidInvoices = (invoicesData?.rows || []).filter(
+        const invoices = Array.isArray(invoicesData?.rows) ? invoicesData.rows : [];
+        const paidInvoices = invoices.filter(
           (item) => String(item?.status || "").toUpperCase() === "PAID"
         );
         const paidTotal = paidInvoices.reduce((acc, item) => {
@@ -161,6 +175,7 @@ export function useRequestWorkspace(options) {
             paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
             last_paid_at: latestPaidAt || rowData?.paid_at || null,
           },
+          invoices,
           statusRouteNodes: Array.isArray(statusRouteData?.nodes) ? statusRouteData.nodes : [],
           statusHistory: Array.isArray(statusRouteData?.history) ? statusRouteData.history : [],
           availableStatuses: Array.isArray(statusRouteData?.available_statuses) ? statusRouteData.available_statuses : [],
@@ -178,6 +193,7 @@ export function useRequestWorkspace(options) {
           requestId,
           requestData: null,
           financeSummary: null,
+          invoices: [],
           statusRouteNodes: [],
           statusHistory: [],
           availableStatuses: [],
@@ -402,55 +418,108 @@ export function useRequestWorkspace(options) {
 
       const attachedFiles = Array.isArray(files) ? files.filter(Boolean) : [];
       const commentText = String(comment || "").trim();
-      if (commentText || attachedFiles.length) {
-        let messageId = null;
-        const statusLine = "Смена статуса: " + String(result?.from_status || "—") + " -> " + String(result?.to_status || nextStatus);
-        const messageBody = [statusLine, commentText].filter(Boolean).join("\n");
-        if (messageBody) {
-          const message = await api("/api/admin/chat/requests/" + targetRequestId + "/messages", {
-            method: "POST",
-            body: { body: messageBody },
-          });
-          messageId = String(message?.id || "").trim() || null;
-        }
-        for (const file of attachedFiles) {
-          const mimeType = String(file.type || "application/octet-stream");
-          const init = await api("/api/admin/uploads/init", {
-            method: "POST",
-            body: {
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "REQUEST_ATTACHMENT",
-              request_id: targetRequestId,
-            },
-          });
-          const putResp = await fetch(init.presigned_url, {
-            method: "PUT",
-            headers: { "Content-Type": mimeType },
-            body: file,
-          });
-          if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
-          await api("/api/admin/uploads/complete", {
-            method: "POST",
-            body: {
-              key: init.key,
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "REQUEST_ATTACHMENT",
-              request_id: targetRequestId,
-              message_id: messageId,
-            },
-          });
-        }
+      const availableStatuses = Array.isArray(requestModal.availableStatuses) ? requestModal.availableStatuses : [];
+      const statusName = availableStatuses.find((item) => String(item?.code || "").trim() === String(result?.to_status || nextStatus).trim())?.name;
+      const nextStatusLabel = String(statusName || result?.to_status || nextStatus).trim() || nextStatus;
+      const importantDateRaw = String(result?.important_date_at || importantDateAt || "").trim();
+      const importantDateLabel = importantDateRaw ? fmtShortDateTime(importantDateRaw) : "";
+      const serviceLines = [`Изменился статус: "${nextStatusLabel}"`];
+      if (importantDateRaw) {
+        serviceLines.push("Важная дата: " + (importantDateLabel && importantDateLabel !== "-" ? importantDateLabel : importantDateRaw));
+      }
+      if (commentText) serviceLines.push(commentText);
+
+      let messageId = null;
+      const serviceMessageBody = serviceLines.filter(Boolean).join("\n").trim();
+      if (serviceMessageBody) {
+        const message = await api("/api/admin/chat/requests/" + targetRequestId + "/messages", {
+          method: "POST",
+          body: { body: serviceMessageBody },
+        });
+        messageId = String(message?.id || "").trim() || null;
+      }
+      for (const file of attachedFiles) {
+        const mimeType = String(file.type || "application/octet-stream");
+        const init = await api("/api/admin/uploads/init", {
+          method: "POST",
+          body: {
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "REQUEST_ATTACHMENT",
+            request_id: targetRequestId,
+          },
+        });
+        const putResp = await fetch(init.presigned_url, {
+          method: "PUT",
+          headers: { "Content-Type": mimeType },
+          body: file,
+        });
+        if (!putResp.ok) throw new Error(await buildStorageUploadError(putResp, "Не удалось загрузить файл в хранилище"));
+        await api("/api/admin/uploads/complete", {
+          method: "POST",
+          body: {
+            key: init.key,
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "REQUEST_ATTACHMENT",
+            request_id: targetRequestId,
+            message_id: messageId,
+          },
+        });
       }
 
       if (typeof setStatus === "function") setStatus("requestModal", "Статус заявки обновлен", "ok");
       await loadRequestModalData(targetRequestId, { showLoading: false });
       return result;
     },
-    [api, loadRequestModalData, requestModal.requestId, setStatus]
+    [api, loadRequestModalData, requestModal.availableStatuses, requestModal.requestId, setStatus]
+  );
+
+  const issueRequestInvoice = useCallback(
+    async ({ requestId, amount, serviceDescription, payerDisplayName } = {}) => {
+      if (!api) throw new Error("API недоступен");
+      const targetRequestId = String(requestId || requestModal.requestId || "").trim();
+      if (!targetRequestId) throw new Error("Не выбрана заявка");
+
+      const parsedAmount = Number(amount);
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        throw new Error("Сумма счета должна быть больше нуля");
+      }
+      const roundedAmount = Math.round((parsedAmount + Number.EPSILON) * 100) / 100;
+
+      const rowData = requestModal.requestData && typeof requestModal.requestData === "object" ? requestModal.requestData : null;
+      const payerName = String(payerDisplayName || rowData?.client_name || "").trim() || "Клиент";
+      const serviceLabel = String(serviceDescription || "").trim() || "Юридические услуги";
+      const trackNumber = String(rowData?.track_number || requestModal.trackNumber || "").trim();
+      const topicLabel = String(rowData?.topic_name || rowData?.topic_code || "").trim();
+
+      if (typeof setStatus === "function") setStatus("requestModal", "Выставляем счет...", "");
+      const created = await api("/api/admin/invoices", {
+        method: "POST",
+        body: {
+          request_id: targetRequestId,
+          status: "WAITING_PAYMENT",
+          amount: roundedAmount,
+          currency: "RUB",
+          payer_display_name: payerName,
+          payer_details: {
+            ...DEFAULT_INVOICE_REQUISITES,
+            request_track_number: trackNumber,
+            service_description: serviceLabel,
+            topic_name: topicLabel,
+          },
+        },
+      });
+      await loadRequestModalData(targetRequestId, { showLoading: false });
+      if (typeof setStatus === "function") {
+        const invoiceNumber = String(created?.invoice_number || "").trim();
+        setStatus("requestModal", invoiceNumber ? "Счет выставлен: " + invoiceNumber : "Счет выставлен", "ok");
+      }
+      return created;
+    },
+    [api, loadRequestModalData, requestModal.requestData, requestModal.requestId, requestModal.trackNumber, setStatus]
   );
 
   return {
@@ -475,6 +544,7 @@ export function useRequestWorkspace(options) {
     loadRequestDataTemplateDetails,
     saveRequestDataTemplate,
     saveRequestDataBatch,
+    issueRequestInvoice,
   };
 }
 
