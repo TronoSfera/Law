@@ -2553,7 +2553,7 @@
       "availableTables"
     ]);
     if (!allowed.has(section)) return false;
-    if (section === "requests") return roleCode === "ADMIN";
+    if (section === "requests") return roleCode === "ADMIN" || roleCode === "LAWYER";
     if (section === "serviceRequests") return roleCode === "ADMIN" || roleCode === "CURATOR";
     if (section === "quotes" || section === "config" || section === "availableTables") return roleCode === "ADMIN";
     return true;

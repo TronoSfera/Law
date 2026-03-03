@@ -13,6 +13,27 @@ Swagger: http://localhost:8002/docs
 Chat service health (via nginx): http://localhost:8081/chat-health
 Email service health (via nginx): http://localhost:8081/email-health
 
+## Testing (containers only)
+Rule: backend tests must be executed only inside Docker containers. Do not run tests from host Python environment.
+
+Start local stack (if not started):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+Run full backend suite via `unittest` (default project mode):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec -T backend \
+  python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+Run target tests via `pytest` inside one-off backend container:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm --no-deps backend \
+  sh -lc 'pip install --no-cache-dir pytest >/tmp/pip_pytest.log && python -m pytest -q tests/test_public_requests.py tests/test_public_cabinet.py'
+```
+Use this command when targeted `pytest` checks are required and `pytest` is not preinstalled in the backend image.
+
 ## Production (ruakb.ru + ruakb.online, 80/443, TLS via Nginx + Certbot)
 Production stack uses dedicated edge nginx (`docker-compose.prod.nginx.yml`).
 
