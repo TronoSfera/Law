@@ -99,6 +99,26 @@ export function ConfigSection(props) {
                   ) : null}
                 </div>
                 <div className="config-head-actions">
+                  <button
+                    className="btn secondary table-control-btn"
+                    type="button"
+                    onClick={() => openCreateRecordModal(configActiveKey)}
+                    disabled={!canCreateRecord}
+                    title="Добавить"
+                    aria-label="Добавить"
+                  >
+                    <AddIcon />
+                  </button>
+                  <button
+                    className="btn secondary table-control-btn"
+                    type="button"
+                    onClick={() => openFilterModal(configActiveKey)}
+                    disabled={!configActiveKey}
+                    title="Фильтр"
+                    aria-label="Фильтр"
+                  >
+                    <FilterIcon />
+                  </button>
                   {configActiveKey === "otp_sessions" ? (
                     <button className="btn secondary" type="button" onClick={onRefreshSmsProviderHealth}>
                       Баланс
@@ -109,28 +129,6 @@ export function ConfigSection(props) {
               <div className="config-layout">
                 <div className="config-panel config-panel-flat">
                   <div className="config-content">
-                    <div className="config-floating-actions">
-                      <button
-                        className="btn secondary table-control-btn"
-                        type="button"
-                        onClick={() => openCreateRecordModal(configActiveKey)}
-                        disabled={!canCreateRecord}
-                        title="Добавить"
-                        aria-label="Добавить"
-                      >
-                        <AddIcon />
-                      </button>
-                      <button
-                        className="btn secondary table-control-btn"
-                        type="button"
-                        onClick={() => openFilterModal(configActiveKey)}
-                        disabled={!configActiveKey}
-                        title="Фильтр"
-                        aria-label="Фильтр"
-                      >
-                        <FilterIcon />
-                      </button>
-                    </div>
                     <FilterToolbar
                       filters={activeConfigTableState.filters}
                       onOpen={() => openFilterModal(configActiveKey)}
@@ -151,21 +149,17 @@ export function ConfigSection(props) {
                     {configActiveKey === "topics" ? (
                       <DataTable
                         headers={[
-                          { key: "code", label: "Код", sortable: true, field: "code" },
                           { key: "name", label: "Название", sortable: true, field: "name" },
                           { key: "enabled", label: "Активна", sortable: true, field: "enabled" },
                           { key: "sort_order", label: "Порядок", sortable: true, field: "sort_order" },
                           { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.topics.rows}
-                        emptyColspan={5}
+                        emptyColspan={4}
                         onSort={(field) => toggleTableSort("topics", field)}
                         sortClause={(tables.topics.sort && tables.topics.sort[0]) || TABLE_SERVER_CONFIG.topics.sort[0]}
                         renderRow={(row) => (
                           <tr key={row.id}>
-                            <td>
-                              <code>{row.code || "-"}</code>
-                            </td>
                             <td>{row.name || "-"}</td>
                             <td>{boolLabel(row.enabled)}</td>
                             <td>{String(row.sort_order ?? 0)}</td>
@@ -215,7 +209,6 @@ export function ConfigSection(props) {
                     {configActiveKey === "statuses" ? (
                       <DataTable
                         headers={[
-                          { key: "code", label: "Код", sortable: true, field: "code" },
                           { key: "name", label: "Название", sortable: true, field: "name" },
                           { key: "status_group_id", label: "Группа", sortable: true, field: "status_group_id" },
                           { key: "kind", label: "Тип", sortable: true, field: "kind" },
@@ -226,14 +219,11 @@ export function ConfigSection(props) {
                           { key: "actions", label: "Действия" },
                         ]}
                         rows={tables.statuses.rows}
-                        emptyColspan={9}
+                        emptyColspan={8}
                         onSort={(field) => toggleTableSort("statuses", field)}
                         sortClause={(tables.statuses.sort && tables.statuses.sort[0]) || TABLE_SERVER_CONFIG.statuses.sort[0]}
                         renderRow={(row) => (
                           <tr key={row.id}>
-                            <td>
-                              <code>{row.code || "-"}</code>
-                            </td>
                             <td>{row.name || "-"}</td>
                             <td>{resolveReferenceLabel({ table: "status_groups", value_field: "id", label_field: "name" }, row.status_group_id)}</td>
                             <td>{statusKindLabel(row.kind)}</td>
@@ -586,7 +576,7 @@ export function ConfigSection(props) {
                         }
                         renderRow={(row) => (
                           <tr key={row.id || JSON.stringify(row)}>
-                            {(activeConfigMeta?.columns || []).map((column) => {
+                            {(activeConfigMeta?.columns || []).filter((column) => String(column?.name || "") !== "id").map((column) => {
                               const key = String(column.name || "");
                               const value = row[key];
                               if (column.kind === "boolean") return <td key={key}>{boolLabel(Boolean(value))}</td>;

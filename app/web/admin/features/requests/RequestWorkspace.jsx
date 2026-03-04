@@ -1280,6 +1280,44 @@ export function RequestWorkspace({
   const AttachmentPreviewModal = AttachmentPreviewModalComponent;
   const StatusLine = StatusLineComponent;
 
+  const resolveMessageReceiptState = (payload) => {
+    const authorType = String(payload?.author_type || "").trim().toUpperCase();
+    const isClientAuthor = authorType === "CLIENT";
+    const deliveredAt = isClientAuthor ? payload?.delivered_to_staff_at : payload?.delivered_to_client_at;
+    const readAt = isClientAuthor ? payload?.read_by_staff_at : payload?.read_by_client_at;
+    if (readAt) return { state: "read", label: "Прочитано" };
+    if (deliveredAt) return { state: "delivered", label: "Доставлено" };
+    return { state: "sent", label: "Отправлено" };
+  };
+
+  const isOutgoingForViewer = (payload) => {
+    const authorType = String(payload?.author_type || "").trim().toUpperCase();
+    if (!authorType) return false;
+    if (viewerRoleCode === "CLIENT") return authorType === "CLIENT";
+    return authorType !== "CLIENT";
+  };
+
+  const renderMessageMeta = (payload) => {
+    const timeLabel = fmtTimeOnly(payload?.created_at);
+    if (!isOutgoingForViewer(payload)) return <div className="chat-message-time">{timeLabel}</div>;
+    const receipt = resolveMessageReceiptState(payload);
+    return (
+      <div className="chat-message-meta">
+        <div className="chat-message-time">{timeLabel}</div>
+        <span className={"chat-message-status " + receipt.state} title={receipt.label} aria-label={receipt.label}>
+          <span className="chat-message-status-check first" aria-hidden="true">
+            ✓
+          </span>
+          {receipt.state !== "sent" ? (
+            <span className="chat-message-status-check second" aria-hidden="true">
+              ✓
+            </span>
+          ) : null}
+        </span>
+      </div>
+    );
+  };
+
   const renderRequestDataMessageItems = (payload) => {
     const items = Array.isArray(payload?.request_data_items) ? payload.request_data_items : [];
     const allFilled = Boolean(payload?.request_data_all_filled);
@@ -1332,13 +1370,40 @@ export function RequestWorkspace({
         text: withTail(detail),
       };
     }
-    if (firstLine.startsWith("Назначен юрист:") || firstLine.startsWith("Переназначено:")) {
-      const detail = firstLine.startsWith("Назначен юрист:")
-        ? firstLine.slice("Назначен юрист:".length)
-        : firstLine.slice("Переназначено:".length);
+    if (firstLine.startsWith("Назначен юрист:")) {
       return {
         title: "Назначен юрист",
-        text: withTail(detail),
+        text: withTail(firstLine.slice("Назначен юрист:".length)),
+      };
+    }
+    if (firstLine.startsWith("Переназначено:")) {
+      return {
+        title: "Смена юриста",
+        text: withTail(firstLine.slice("Переназначено:".length)),
+      };
+    }
+    if (firstLine.startsWith("Смена юриста:")) {
+      return {
+        title: "Смена юриста",
+        text: withTail(firstLine.slice("Смена юриста:".length)),
+      };
+    }
+    if (firstLine.startsWith("Назначение юриста:")) {
+      return {
+        title: "Назначен юрист",
+        text: withTail(firstLine.slice("Назначение юриста:".length)),
+      };
+    }
+    if (firstLine.startsWith("Назначение:")) {
+      return {
+        title: "Назначен юрист",
+        text: withTail(firstLine.slice("Назначение:".length)),
+      };
+    }
+    if (firstLine.startsWith("Переназначение:")) {
+      return {
+        title: "Смена юриста",
+        text: withTail(firstLine.slice("Переназначение:".length)),
       };
     }
     return null;
@@ -1710,7 +1775,7 @@ export function RequestWorkspace({
                               </div>
                             );
                           })()}
-                          <div className="chat-message-time">{fmtTimeOnly(entry.payload?.created_at)}</div>
+                          {renderMessageMeta(entry.payload)}
                         </div>
                           </li>
                         );
@@ -2134,11 +2199,6 @@ export function RequestWorkspace({
                             <span>{"Важная дата: " + fmtShortDateTime(item?.important_date_at)}</span>
                             <span>{"Длительность: " + formatDuration(item?.duration_seconds)}</span>
                           </div>
-                          {item?.from_status ? (
-                            <div className="request-status-history-meta">
-                              <span>{"Из: " + resolveStatusDisplayName(item.from_status, "")}</span>
-                            </div>
-                          ) : null}
                           {String(item?.comment || "").trim() ? (
                             <div className="request-status-history-comment">{String(item.comment)}</div>
                           ) : null}
@@ -2395,6 +2455,8 @@ export function RequestWorkspace({
                 <div className="request-data-combobox">
                   <input
                     id="request-data-request-template-select"
+                    name="request_template_search_nohistory"
+                    type="text"
                     value={dataRequestModal.requestTemplateQuery}
                     onChange={(event) =>
                       setDataRequestModal((prev) => ({
@@ -2405,14 +2467,24 @@ export function RequestWorkspace({
                         error: "",
                       }))
                     }
-                    onFocus={() => setRequestTemplateSuggestOpen(true)}
-                    onBlur={() => window.setTimeout(() => setRequestTemplateSuggestOpen(false), 120)}
+                    onFocus={(event) => {
+                      event.currentTarget.removeAttribute("readonly");
+                      setRequestTemplateSuggestOpen(true);
+                    }}
+                    onBlur={(event) => {
+                      event.currentTarget.setAttribute("readonly", "readonly");
+                      window.setTimeout(() => setRequestTemplateSuggestOpen(false), 120);
+                    }}
                     disabled={dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate}
                     placeholder="Введите название шаблона"
+                    readOnly
                     autoComplete="new-password"
                     autoCorrect="off"
                     autoCapitalize="none"
                     spellCheck={false}
+                    aria-autocomplete="list"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
                   />
                   {requestTemplateBadge ? (
                     <span className={"request-data-template-badge " + requestTemplateBadge.kind}>{requestTemplateBadge.label}</span>
@@ -2484,6 +2556,8 @@ export function RequestWorkspace({
                 <div className="request-data-combobox">
                   <input
                     id="request-data-template-select"
+                    name="request_field_search_nohistory"
+                    type="text"
                     value={dataRequestModal.catalogFieldQuery}
                     onChange={(event) =>
                       setDataRequestModal((prev) => ({
@@ -2494,14 +2568,24 @@ export function RequestWorkspace({
                         error: "",
                       }))
                     }
-                    onFocus={() => setCatalogFieldSuggestOpen(true)}
-                    onBlur={() => window.setTimeout(() => setCatalogFieldSuggestOpen(false), 120)}
+                    onFocus={(event) => {
+                      event.currentTarget.removeAttribute("readonly");
+                      setCatalogFieldSuggestOpen(true);
+                    }}
+                    onBlur={(event) => {
+                      event.currentTarget.setAttribute("readonly", "readonly");
+                      window.setTimeout(() => setCatalogFieldSuggestOpen(false), 120);
+                    }}
                     disabled={dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate}
                     placeholder="Начните вводить наименование поля"
+                    readOnly
                     autoComplete="new-password"
                     autoCorrect="off"
                     autoCapitalize="none"
                     spellCheck={false}
+                    aria-autocomplete="list"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
                   />
                   {catalogFieldSuggestOpen && filteredCatalogFields.length ? (
                     <div className="request-data-suggest-list" role="listbox" aria-label="Поля данных">

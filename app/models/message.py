@@ -1,5 +1,7 @@
 import uuid
-from sqlalchemy import String, Boolean
+from datetime import datetime
+
+from sqlalchemy import String, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.session import Base
@@ -13,3 +15,7 @@ class Message(Base, UUIDMixin, TimestampMixin):
     author_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     body: Mapped[str | None] = mapped_column(EncryptedChatText(), nullable=True)
     immutable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    delivered_to_client_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_to_staff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    read_by_client_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    read_by_staff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -18,6 +18,8 @@ from app.services.chat_secure_service import (
     create_client_message,
     get_chat_activity_summary,
     list_messages_for_request,
+    mark_messages_delivered_for_client,
+    mark_messages_read_for_client,
     serialize_message,
     serialize_messages_for_request,
 )
@@ -165,6 +167,7 @@ def list_messages_by_track(
 ):
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
+    mark_messages_read_for_client(db, request_id=req.id)
     rows = list_messages_for_request(db, req.id)
     payload = serialize_messages_for_request(db, req.id, rows)
     _audit_public_chat_read(
@@ -203,6 +206,7 @@ def get_live_chat_state_by_track(
 ):
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
+    mark_messages_delivered_for_client(db, request_id=req.id)
     summary = get_chat_activity_summary(db, req.id)
     latest_activity_at = _as_utc_datetime(summary.get("latest_activity_at"))
     latest_activity_iso = _iso_or_none(latest_activity_at)

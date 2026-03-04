@@ -539,6 +539,64 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         typing_rows = own_live_with_typing.json().get("typing") or []
         self.assertTrue(any(str(item.get("actor_role")) == "ADMIN" for item in typing_rows))
 
+    def test_admin_chat_marks_delivery_and_read_receipts_for_client_messages(self):
+        with self.SessionLocal() as db:
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Receipt",
+                email="lawyer.receipt@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add(lawyer_self)
+            db.flush()
+            self_id = str(lawyer_self.id)
+
+            own = Request(
+                track_number="TRK-CHAT-RECEIPTS-STAFF",
+                client_name="Клиент Receipt",
+                client_phone="+79995550777",
+                status_code="IN_PROGRESS",
+                description="staff receipts",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            db.add(own)
+            db.flush()
+            msg = Message(
+                request_id=own.id,
+                author_type="CLIENT",
+                author_name="Клиент",
+                body="Сообщение клиента",
+            )
+            db.add(msg)
+            db.commit()
+            own_id = str(own.id)
+            message_id = msg.id
+
+        lawyer_headers = self._auth_headers("LAWYER", email="lawyer.receipt@example.com", sub=self_id)
+
+        live = self.chat_client.get(f"/api/admin/chat/requests/{own_id}/live", headers=lawyer_headers)
+        self.assertEqual(live.status_code, 200)
+
+        with self.SessionLocal() as db:
+            delivered_row = db.get(Message, message_id)
+            self.assertIsNotNone(delivered_row)
+            self.assertIsNotNone(delivered_row.delivered_to_staff_at)
+            self.assertIsNone(delivered_row.read_by_staff_at)
+
+        listed = self.chat_client.get(f"/api/admin/chat/requests/{own_id}/messages", headers=lawyer_headers)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(int(listed.json().get("total") or 0), 1)
+        first = (listed.json().get("rows") or [{}])[0]
+        self.assertTrue(bool(first.get("delivered_to_staff_at")))
+        self.assertTrue(bool(first.get("read_by_staff_at")))
+
+        with self.SessionLocal() as db:
+            read_row = db.get(Message, message_id)
+            self.assertIsNotNone(read_row)
+            self.assertIsNotNone(read_row.read_by_staff_at)
+
     def test_admin_live_detects_client_filled_request_data_updates(self):
         with self.SessionLocal() as db:
             now = datetime.now(timezone.utc)

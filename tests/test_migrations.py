@@ -114,7 +114,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0032_email_cols_fix")
+        self.assertEqual(version, "0033_message_receipts")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -275,6 +275,13 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("document_name", columns)
         self.assertIn("value_text", columns)
         self.assertIn("sort_order", columns)
+
+    def test_messages_contains_delivery_and_read_receipt_columns(self):
+        columns = {column["name"] for column in self.inspector.get_columns("messages")}
+        self.assertIn("delivered_to_client_at", columns)
+        self.assertIn("delivered_to_staff_at", columns)
+        self.assertIn("read_by_client_at", columns)
+        self.assertIn("read_by_staff_at", columns)
 
     def test_request_data_template_tables_contain_core_columns(self):
         templates = {column["name"] for column in self.inspector.get_columns("request_data_templates")}

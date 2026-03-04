@@ -1588,7 +1588,6 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         }
         if (tableKey === "topics") {
           return [
-            { field: "code", label: "Код", type: "text" },
             { field: "name", label: "Название", type: "text" },
             { field: "enabled", label: "Активна", type: "boolean" },
             { field: "sort_order", label: "Порядок", type: "number" },
@@ -1596,7 +1595,6 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         }
         if (tableKey === "statuses") {
           return [
-            { field: "code", label: "Код", type: "text" },
             { field: "name", label: "Название", type: "text" },
             { field: "status_group_id", label: "Группа", type: "reference", options: getStatusGroupOptions },
             { field: "kind", label: "Тип", type: "enum", options: getStatusKindOptions },
@@ -1672,7 +1670,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         const meta = tableCatalogMap[tableKey];
         if (!meta || !Array.isArray(meta.columns)) return [];
         return (meta.columns || [])
-          .filter((column) => column && column.name && column.filterable !== false)
+          .filter((column) => column && column.name && column.filterable !== false && String(column.name) !== "id")
           .map((column) => {
             const name = String(column.name);
             const label = String(column.label || humanizeKey(name));
@@ -3655,7 +3653,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     const genericConfigHeaders = useMemo(() => {
       if (!activeConfigMeta || !Array.isArray(activeConfigMeta.columns)) return [];
       const headers = (activeConfigMeta.columns || [])
-        .filter((column) => column && column.name)
+        .filter((column) => column && column.name && String(column.name) !== "id")
         .map((column) => {
           const name = String(column.name);
           return {

@@ -22,6 +22,8 @@ from app.services.chat_secure_service import (
     create_admin_or_lawyer_message,
     get_chat_activity_summary,
     list_messages_for_request,
+    mark_messages_delivered_for_staff,
+    mark_messages_read_for_staff,
     serialize_message,
     serialize_messages_for_request,
 )
@@ -253,6 +255,7 @@ def list_request_messages(
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_view_request_or_403(admin, req)
+    mark_messages_read_for_staff(db, request_id=req.id)
     rows = list_messages_for_request(db, req.id)
     payload = {"rows": serialize_messages_for_request(db, req.id, rows), "total": len(rows)}
     _audit_admin_chat_read(
@@ -309,6 +312,7 @@ def get_request_live_state(
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_view_request_or_403(admin, req)
+    mark_messages_delivered_for_staff(db, request_id=req.id)
     summary = get_chat_activity_summary(db, req.id)
     latest_activity_at = _as_utc_datetime(summary.get("latest_activity_at"))
     latest_activity_iso = _iso_or_none(latest_activity_at)

@@ -36,10 +36,50 @@
   const featuredTeamNext = document.getElementById("featured-team-next");
   const requestEmailInput = document.getElementById("email");
   const requestHpInput = document.getElementById("request-hp-field");
+  const topbar = document.querySelector(".topbar");
+  const topbarNav = document.querySelector(".nav");
+  const navToggle = document.querySelector("[data-nav-toggle]");
+  const mobileNavMql = window.matchMedia("(max-width: 740px)");
   let otpModalResolver = null;
   let lastAccessOtpChannel = "SMS";
   let lastCreateOtpChannel = "SMS";
   let authConfig = { public_auth_mode: "sms", available_channels: ["SMS"] };
+
+  function setTopbarNavOpen(open) {
+    if (!topbar || !navToggle) return;
+    topbar.classList.toggle("nav-open", Boolean(open));
+    navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    navToggle.setAttribute("aria-label", open ? "Закрыть навигацию" : "Открыть навигацию");
+  }
+
+  function closeTopbarNav() {
+    setTopbarNavOpen(false);
+  }
+
+  function initTopbarNav() {
+    if (!topbar || !topbarNav || !navToggle) return;
+    navToggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setTopbarNavOpen(!topbar.classList.contains("nav-open"));
+    });
+
+    topbarNav.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) return;
+      const action = event.target.closest("a, button");
+      if (!action) return;
+      if (mobileNavMql.matches) closeTopbarNav();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!mobileNavMql.matches || !topbar.classList.contains("nav-open")) return;
+      if (topbar.contains(event.target)) return;
+      closeTopbarNav();
+    });
+
+    window.addEventListener("resize", () => {
+      if (!mobileNavMql.matches) closeTopbarNav();
+    });
+  }
 
   function setStatus(el, message, kind) {
     if (!el) return;
@@ -60,6 +100,71 @@
   function apiErrorDetail(data, fallbackMessage) {
     if (data && typeof data.detail === "string" && data.detail.trim()) return data.detail;
     return fallbackMessage;
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function markdownInlineToHtml(escapedText) {
+    const tokens = [];
+    const makeToken = (html) => {
+      const id = tokens.length;
+      tokens.push(html);
+      return "\u0001" + String(id) + "\u0001";
+    };
+    let out = String(escapedText || "");
+    out = out.replace(/`([^`\n]+)`/g, (_, code) => makeToken("<code>" + code + "</code>"));
+    out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, (_, label, url) =>
+      makeToken('<a href="' + url + '" target="_blank" rel="noreferrer noopener">' + label + "</a>")
+    );
+    out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+    out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?;:]|$)/g, "$1<em>$2</em>");
+    out = out.replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?;:]|$)/g, "$1<em>$2</em>");
+    return out.replace(/\u0001(\d+)\u0001/g, (_, indexRaw) => {
+      const index = Number(indexRaw);
+      return Number.isInteger(index) && tokens[index] ? tokens[index] : "";
+    });
+  }
+
+  function markdownToHtml(value) {
+    const normalized = String(value || "").replace(/\r\n?/g, "\n").trim();
+    if (!normalized) return "";
+    const blocks = [];
+    const listItems = [];
+    const flushList = () => {
+      if (!listItems.length) return;
+      blocks.push("<ul>" + listItems.map((item) => "<li>" + item + "</li>").join("") + "</ul>");
+      listItems.length = 0;
+    };
+    normalized.split("\n").forEach((lineRaw) => {
+      const line = String(lineRaw || "").trim();
+      if (!line) {
+        flushList();
+        return;
+      }
+      const listMatch = line.match(/^[-*]\s+(.+)$/);
+      if (listMatch) {
+        listItems.push(markdownInlineToHtml(escapeHtml(listMatch[1])));
+        return;
+      }
+      flushList();
+      const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+      if (headingMatch) {
+        const level = Math.min(3, headingMatch[1].length);
+        blocks.push("<h" + String(level) + ">" + markdownInlineToHtml(escapeHtml(headingMatch[2])) + "</h" + String(level) + ">");
+        return;
+      }
+      blocks.push("<p>" + markdownInlineToHtml(escapeHtml(line)) + "</p>");
+    });
+    flushList();
+    return blocks.join("");
   }
 
   function normalizeEmail(value) {
@@ -278,6 +383,7 @@
     closeModal(otpModal);
     closeModal(requestModal);
     closeModal(accessModal);
+    closeTopbarNav();
   });
 
   async function loadTopics() {
@@ -443,14 +549,18 @@
         }
         body.appendChild(top);
 
-        const meta = document.createElement("p");
-        meta.className = "featured-meta";
-        meta.textContent = [item.role_label, item.primary_topic_name].filter(Boolean).join(" • ");
-        body.appendChild(meta);
+        const metaText = String(item.primary_topic_name || "").trim();
+        if (metaText) {
+          const meta = document.createElement("p");
+          meta.className = "featured-meta";
+          meta.textContent = metaText;
+          body.appendChild(meta);
+        }
 
-        const caption = document.createElement("p");
+        const caption = document.createElement("div");
         caption.className = "featured-caption";
-        caption.textContent = String(item.caption || "Практический опыт в сложных юридических делах и сопровождении споров.");
+        const captionText = String(item.caption || "").trim() || "Практический опыт в сложных юридических делах и сопровождении споров.";
+        caption.innerHTML = markdownToHtml(captionText);
         body.appendChild(caption);
 
         card.appendChild(body);
@@ -664,4 +774,5 @@
   loadTopics();
   loadQuotes();
   loadFeaturedStaff();
+  initTopbarNav();
 })();

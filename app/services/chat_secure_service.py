@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -36,6 +37,87 @@ def list_messages_for_request(db: Session, request_id: Any) -> list[Message]:
     )
 
 
+def _iso_or_none(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc).isoformat()
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _mark_counterparty_delivery(
+    db: Session,
+    *,
+    request_id: Any,
+    recipient: str,
+    mark_read: bool,
+) -> bool:
+    side = str(recipient or "").strip().upper()
+    if side not in {"CLIENT", "STAFF"}:
+        return False
+
+    now = datetime.now(timezone.utc)
+    changed = False
+    if side == "CLIENT":
+        sender_filter = Message.author_type != "CLIENT"
+        delivered_column = Message.delivered_to_client_at
+        read_column = Message.read_by_client_at
+    else:
+        sender_filter = Message.author_type == "CLIENT"
+        delivered_column = Message.delivered_to_staff_at
+        read_column = Message.read_by_staff_at
+
+    delivered_count = (
+        db.query(Message)
+        .filter(Message.request_id == request_id, sender_filter, delivered_column.is_(None))
+        .update(
+            {
+                delivered_column: now,
+                Message.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+    )
+    if delivered_count:
+        changed = True
+
+    if mark_read:
+        read_count = (
+            db.query(Message)
+            .filter(Message.request_id == request_id, sender_filter, read_column.is_(None))
+            .update(
+                {
+                    read_column: now,
+                    delivered_column: func.coalesce(delivered_column, now),
+                    Message.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
+        if read_count:
+            changed = True
+
+    if changed:
+        db.commit()
+    return changed
+
+
+def mark_messages_delivered_for_client(db: Session, *, request_id: Any) -> bool:
+    return _mark_counterparty_delivery(db, request_id=request_id, recipient="CLIENT", mark_read=False)
+
+
+def mark_messages_read_for_client(db: Session, *, request_id: Any) -> bool:
+    return _mark_counterparty_delivery(db, request_id=request_id, recipient="CLIENT", mark_read=True)
+
+
+def mark_messages_delivered_for_staff(db: Session, *, request_id: Any) -> bool:
+    return _mark_counterparty_delivery(db, request_id=request_id, recipient="STAFF", mark_read=False)
+
+
+def mark_messages_read_for_staff(db: Session, *, request_id: Any) -> bool:
+    return _mark_counterparty_delivery(db, request_id=request_id, recipient="STAFF", mark_read=True)
+
+
 def serialize_message(row: Message) -> dict[str, Any]:
     return {
         "id": str(row.id),
@@ -46,8 +128,12 @@ def serialize_message(row: Message) -> dict[str, Any]:
         "message_kind": "TEXT",
         "request_data_items": [],
         "request_data_all_filled": False,
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "created_at": _iso_or_none(row.created_at),
+        "updated_at": _iso_or_none(row.updated_at),
+        "delivered_to_client_at": _iso_or_none(row.delivered_to_client_at),
+        "delivered_to_staff_at": _iso_or_none(row.delivered_to_staff_at),
+        "read_by_client_at": _iso_or_none(row.read_by_client_at),
+        "read_by_staff_at": _iso_or_none(row.read_by_staff_at),
     }
 
 

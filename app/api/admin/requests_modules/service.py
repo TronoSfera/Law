@@ -18,19 +18,15 @@ from app.schemas.admin import RequestAdminCreate, RequestAdminPatch
 from app.schemas.universal import UniversalQuery
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.notifications import (
-    EVENT_ASSIGNMENT as NOTIFICATION_EVENT_ASSIGNMENT,
-    EVENT_REASSIGNMENT as NOTIFICATION_EVENT_REASSIGNMENT,
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     mark_admin_notifications_read,
     notify_request_event,
 )
+from app.services.request_assignment_events import apply_assignment_change
 from app.services.request_read_markers import (
-    EVENT_ASSIGNMENT,
-    EVENT_REASSIGNMENT,
     EVENT_STATUS,
     clear_unread_for_lawyer,
     mark_unread_for_client,
-    mark_unread_for_lawyer,
 )
 from app.services.request_deadline import initial_important_date_at
 from app.services.request_status import apply_status_change_effects
@@ -212,6 +208,20 @@ def create_request_service(payload: RequestAdminCreate, db: Session, admin: dict
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Заявка с таким номером уже существует") from exc
+    if assigned_lawyer_id:
+        apply_assignment_change(
+            db,
+            request=row,
+            old_lawyer_id=None,
+            new_lawyer_id=assigned_lawyer_id,
+            actor_role=str(admin.get("role") or "").upper() or "ADMIN",
+            actor_admin_user_id=admin.get("sub"),
+            responsible=responsible,
+            actor_name=str(admin.get("email") or "").strip() or "Администратор системы",
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
     return {"id": str(row.id), "track_number": row.track_number}
 
 
@@ -310,22 +320,15 @@ def update_request_service(request_id: str, payload: RequestAdminPatch, db: Sess
             responsible=responsible,
         )
     if actor_role == "ADMIN" and assigned_changed and new_assigned_lawyer_id:
-        assignment_event_type = NOTIFICATION_EVENT_REASSIGNMENT if old_assigned_lawyer_id else NOTIFICATION_EVENT_ASSIGNMENT
-        marker_event_type = EVENT_REASSIGNMENT if old_assigned_lawyer_id else EVENT_ASSIGNMENT
-        mark_unread_for_client(row, marker_event_type)
-        mark_unread_for_lawyer(row, marker_event_type)
-        notify_request_event(
+        apply_assignment_change(
             db,
             request=row,
-            event_type=assignment_event_type,
+            old_lawyer_id=old_assigned_lawyer_id,
+            new_lawyer_id=new_assigned_lawyer_id,
             actor_role="ADMIN",
             actor_admin_user_id=admin.get("sub"),
-            body=(
-                f"Назначен юрист: {new_assigned_lawyer_id}"
-                if not old_assigned_lawyer_id
-                else f"Переназначено: {old_assigned_lawyer_id} -> {new_assigned_lawyer_id}"
-            ),
             responsible=responsible,
+            actor_name=str(admin.get("email") or "").strip() or "Администратор системы",
         )
     try:
         db.add(row)
@@ -455,15 +458,15 @@ def claim_request_service(request_id: str, db: Session, admin: dict) -> dict[str
     if row is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
 
-    mark_unread_for_client(row, EVENT_ASSIGNMENT)
-    notify_request_event(
+    apply_assignment_change(
         db,
         request=row,
-        event_type=NOTIFICATION_EVENT_ASSIGNMENT,
+        old_lawyer_id=None,
+        new_lawyer_id=str(lawyer_uuid),
         actor_role="LAWYER",
         actor_admin_user_id=str(lawyer_uuid),
-        body=f"Юрист {str(lawyer.email or lawyer.name or lawyer_uuid)} взял заявку в работу",
         responsible=responsible,
+        actor_name=str(lawyer.name or lawyer.email or lawyer_uuid),
     )
     db.add(row)
     db.commit()
@@ -543,16 +546,15 @@ def reassign_request_service(request_id: str, lawyer_id: str, db: Session, admin
     if row is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
 
-    mark_unread_for_client(row, EVENT_REASSIGNMENT)
-    mark_unread_for_lawyer(row, EVENT_REASSIGNMENT)
-    notify_request_event(
+    apply_assignment_change(
         db,
         request=row,
-        event_type=NOTIFICATION_EVENT_REASSIGNMENT,
+        old_lawyer_id=old_assigned,
+        new_lawyer_id=str(lawyer_uuid),
         actor_role="ADMIN",
         actor_admin_user_id=admin.get("sub"),
-        body=f"Переназначено: {old_assigned} -> {str(lawyer_uuid)}",
         responsible=responsible,
+        actor_name=str(admin.get("email") or "").strip() or "Администратор системы",
     )
     db.add(row)
     db.commit()

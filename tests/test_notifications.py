@@ -353,6 +353,16 @@ class NotificationFlowTests(unittest.TestCase):
             self.assertEqual(str(req.client_unread_event_type or "").upper(), "REASSIGNMENT")
             self.assertTrue(bool(req.lawyer_has_unread_updates))
             self.assertEqual(str(req.lawyer_unread_event_type or "").upper(), "REASSIGNMENT")
+            messages = (
+                db.query(Message)
+                .filter(Message.request_id == UUID(request_id))
+                .order_by(Message.created_at.asc(), Message.id.asc())
+                .all()
+            )
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(str(messages[0].author_type or "").upper(), "SYSTEM")
+            self.assertTrue(bool(messages[0].immutable))
+            self.assertIn("Переназначено:", str(messages[0].body or ""))
 
     def test_request_data_event_from_client_notifies_lawyer_and_admin(self):
         with self.SessionLocal() as db:

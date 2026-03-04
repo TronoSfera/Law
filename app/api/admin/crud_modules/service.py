@@ -18,19 +18,16 @@ from app.models.table_availability import TableAvailability
 from app.schemas.universal import UniversalQuery
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.notifications import (
-    EVENT_ASSIGNMENT as NOTIFICATION_EVENT_ASSIGNMENT,
     EVENT_ATTACHMENT as NOTIFICATION_EVENT_ATTACHMENT,
     EVENT_MESSAGE as NOTIFICATION_EVENT_MESSAGE,
-    EVENT_REASSIGNMENT as NOTIFICATION_EVENT_REASSIGNMENT,
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     mark_admin_notifications_read,
     notify_request_event,
 )
+from app.services.request_assignment_events import apply_assignment_change
 from app.services.request_read_markers import (
-    EVENT_ASSIGNMENT,
     EVENT_ATTACHMENT,
     EVENT_MESSAGE,
-    EVENT_REASSIGNMENT,
     EVENT_STATUS,
     clear_unread_for_lawyer,
     mark_unread_for_client,
@@ -138,26 +135,6 @@ def _apply_create_side_effects(db: Session, *, table_name: str, row: Any, admin:
             responsible=responsible,
         )
         return
-
-    if table_name == "requests" and isinstance(row, Request):
-        assigned = str(row.assigned_lawyer_id or "").strip()
-        if not assigned:
-            return
-        mark_unread_for_client(row, EVENT_ASSIGNMENT)
-        mark_unread_for_lawyer(row, EVENT_ASSIGNMENT)
-        responsible = _resolve_responsible(admin)
-        row.responsible = responsible
-        db.add(row)
-        notify_request_event(
-            db,
-            request=row,
-            event_type=NOTIFICATION_EVENT_ASSIGNMENT,
-            actor_role=_actor_role(admin),
-            actor_admin_user_id=admin.get("sub"),
-            body=f"Назначен юрист: {assigned}",
-            responsible=responsible,
-        )
-
 
 def list_tables_meta_service(db: Session, admin: dict) -> dict[str, Any]:
     role = str(admin.get("role") or "").upper()
@@ -412,6 +389,23 @@ def create_row_service(table_name: str, payload: dict[str, Any], db: Session, ad
         db.rollback()
         raise _integrity_error()
 
+    if normalized == "requests" and isinstance(row, Request):
+        assigned_lawyer_id = str(row.assigned_lawyer_id or "").strip()
+        if assigned_lawyer_id:
+            apply_assignment_change(
+                db,
+                request=row,
+                old_lawyer_id=None,
+                new_lawyer_id=assigned_lawyer_id,
+                actor_role=_actor_role(admin),
+                actor_admin_user_id=admin.get("sub"),
+                responsible=responsible,
+                actor_name=str(admin.get("email") or "").strip() or "Администратор системы",
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+
     return _strip_hidden_fields(normalized, _row_to_dict(row))
 
 
@@ -556,34 +550,26 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
                 ),
                 responsible=responsible,
             )
-    assignment_event_type = None
-    assignment_marker_type = None
-    assignment_event_body = None
+    assignment_old_lawyer_id = ""
+    assignment_new_lawyer_id = ""
     if normalized == "requests" and not _is_lawyer(admin):
         after_assigned_candidate = clean_payload.get("assigned_lawyer_id", before_assigned_lawyer_id or None)
         after_assigned_lawyer_id = str(after_assigned_candidate or "").strip()
         if after_assigned_lawyer_id and after_assigned_lawyer_id != before_assigned_lawyer_id:
-            if before_assigned_lawyer_id:
-                assignment_event_type = NOTIFICATION_EVENT_REASSIGNMENT
-                assignment_marker_type = EVENT_REASSIGNMENT
-                assignment_event_body = f"Переназначено: {before_assigned_lawyer_id} -> {after_assigned_lawyer_id}"
-            else:
-                assignment_event_type = NOTIFICATION_EVENT_ASSIGNMENT
-                assignment_marker_type = EVENT_ASSIGNMENT
-                assignment_event_body = f"Назначен юрист: {after_assigned_lawyer_id}"
+            assignment_old_lawyer_id = before_assigned_lawyer_id
+            assignment_new_lawyer_id = after_assigned_lawyer_id
     for key, value in clean_payload.items():
         setattr(row, key, value)
-    if assignment_event_type and assignment_marker_type and isinstance(row, Request):
-        mark_unread_for_client(row, assignment_marker_type)
-        mark_unread_for_lawyer(row, assignment_marker_type)
-        notify_request_event(
+    if assignment_new_lawyer_id and isinstance(row, Request):
+        apply_assignment_change(
             db,
             request=row,
-            event_type=assignment_event_type,
+            old_lawyer_id=assignment_old_lawyer_id,
+            new_lawyer_id=assignment_new_lawyer_id,
             actor_role=_actor_role(admin),
             actor_admin_user_id=admin.get("sub"),
-            body=assignment_event_body,
             responsible=responsible,
+            actor_name=str(admin.get("email") or "").strip() or "Администратор системы",
         )
 
     try:

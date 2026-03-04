@@ -280,6 +280,50 @@ class PublicCabinetTests(unittest.TestCase):
         denied = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
         self.assertEqual(denied.status_code, 404)
 
+    def test_public_chat_marks_delivery_and_read_receipts_for_staff_messages(self):
+        with self.SessionLocal() as db:
+            req = Request(
+                track_number="TRK-CHAT-RECEIPTS-CLIENT",
+                client_name="Клиент Чат Receipt",
+                client_phone="+79997774411",
+                topic_code="consulting",
+                status_code="IN_PROGRESS",
+                description="Проверка delivered/read для клиента",
+                extra_fields={},
+            )
+            db.add(req)
+            db.flush()
+            msg = Message(
+                request_id=req.id,
+                author_type="LAWYER",
+                author_name="Юрист",
+                body="Проверка receipt",
+            )
+            db.add(msg)
+            db.commit()
+            message_id = msg.id
+
+        cookies = self._public_cookies("TRK-CHAT-RECEIPTS-CLIENT")
+        live = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-RECEIPTS-CLIENT/live", cookies=cookies)
+        self.assertEqual(live.status_code, 200)
+
+        with self.SessionLocal() as db:
+            delivered_row = db.get(Message, message_id)
+            self.assertIsNotNone(delivered_row)
+            self.assertIsNotNone(delivered_row.delivered_to_client_at)
+            self.assertIsNone(delivered_row.read_by_client_at)
+
+        listed = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-RECEIPTS-CLIENT/messages", cookies=cookies)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(len(listed.json()), 1)
+        self.assertTrue(bool(listed.json()[0].get("delivered_to_client_at")))
+        self.assertTrue(bool(listed.json()[0].get("read_by_client_at")))
+
+        with self.SessionLocal() as db:
+            read_row = db.get(Message, message_id)
+            self.assertIsNotNone(read_row)
+            self.assertIsNotNone(read_row.read_by_client_at)
+
     def test_chat_message_is_encrypted_at_rest(self):
         with self.SessionLocal() as db:
             req = Request(

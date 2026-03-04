@@ -1340,6 +1340,27 @@
     }, [routeNodes]);
     const AttachmentPreviewModal = AttachmentPreviewModalComponent;
     const StatusLine = StatusLineComponent;
+    const resolveMessageReceiptState = (payload) => {
+      const authorType = String((payload == null ? void 0 : payload.author_type) || "").trim().toUpperCase();
+      const isClientAuthor = authorType === "CLIENT";
+      const deliveredAt = isClientAuthor ? payload == null ? void 0 : payload.delivered_to_staff_at : payload == null ? void 0 : payload.delivered_to_client_at;
+      const readAt = isClientAuthor ? payload == null ? void 0 : payload.read_by_staff_at : payload == null ? void 0 : payload.read_by_client_at;
+      if (readAt) return { state: "read", label: "\u041F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E" };
+      if (deliveredAt) return { state: "delivered", label: "\u0414\u043E\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043E" };
+      return { state: "sent", label: "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E" };
+    };
+    const isOutgoingForViewer = (payload) => {
+      const authorType = String((payload == null ? void 0 : payload.author_type) || "").trim().toUpperCase();
+      if (!authorType) return false;
+      if (viewerRoleCode === "CLIENT") return authorType === "CLIENT";
+      return authorType !== "CLIENT";
+    };
+    const renderMessageMeta = (payload) => {
+      const timeLabel = fmtTimeOnly(payload == null ? void 0 : payload.created_at);
+      if (!isOutgoingForViewer(payload)) return /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, timeLabel);
+      const receipt = resolveMessageReceiptState(payload);
+      return /* @__PURE__ */ React.createElement("div", { className: "chat-message-meta" }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, timeLabel), /* @__PURE__ */ React.createElement("span", { className: "chat-message-status " + receipt.state, title: receipt.label, "aria-label": receipt.label }, /* @__PURE__ */ React.createElement("span", { className: "chat-message-status-check first", "aria-hidden": "true" }, "\u2713"), receipt.state !== "sent" ? /* @__PURE__ */ React.createElement("span", { className: "chat-message-status-check second", "aria-hidden": "true" }, "\u2713") : null));
+    };
     const renderRequestDataMessageItems = (payload) => {
       var _a2;
       const items = Array.isArray(payload == null ? void 0 : payload.request_data_items) ? payload.request_data_items : [];
@@ -1377,11 +1398,40 @@
           text: withTail(detail)
         };
       }
-      if (firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:") || firstLine.startsWith("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E:")) {
-        const detail = firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:") ? firstLine.slice("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:".length) : firstLine.slice("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E:".length);
+      if (firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:")) {
         return {
           title: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442",
-          text: withTail(detail)
+          text: withTail(firstLine.slice("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442:".length))
+        };
+      }
+      if (firstLine.startsWith("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E:")) {
+        return {
+          title: "\u0421\u043C\u0435\u043D\u0430 \u044E\u0440\u0438\u0441\u0442\u0430",
+          text: withTail(firstLine.slice("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043E:".length))
+        };
+      }
+      if (firstLine.startsWith("\u0421\u043C\u0435\u043D\u0430 \u044E\u0440\u0438\u0441\u0442\u0430:")) {
+        return {
+          title: "\u0421\u043C\u0435\u043D\u0430 \u044E\u0440\u0438\u0441\u0442\u0430",
+          text: withTail(firstLine.slice("\u0421\u043C\u0435\u043D\u0430 \u044E\u0440\u0438\u0441\u0442\u0430:".length))
+        };
+      }
+      if (firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435 \u044E\u0440\u0438\u0441\u0442\u0430:")) {
+        return {
+          title: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442",
+          text: withTail(firstLine.slice("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435 \u044E\u0440\u0438\u0441\u0442\u0430:".length))
+        };
+      }
+      if (firstLine.startsWith("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435:")) {
+        return {
+          title: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u044E\u0440\u0438\u0441\u0442",
+          text: withTail(firstLine.slice("\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435:".length))
+        };
+      }
+      if (firstLine.startsWith("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435:")) {
+        return {
+          title: "\u0421\u043C\u0435\u043D\u0430 \u044E\u0440\u0438\u0441\u0442\u0430",
+          text: withTail(firstLine.slice("\u041F\u0435\u0440\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435:".length))
         };
       }
       return null;
@@ -1553,7 +1603,7 @@
             /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(((_d = entry.payload) == null ? void 0 : _d.file_name) || "\u0424\u0430\u0439\u043B"))
           )), /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, fmtTimeOnly((_e = entry.payload) == null ? void 0 : _e.created_at)))
         ) : (() => {
-          var _a3, _b3, _c3, _d2, _e2, _f, _g, _h, _i;
+          var _a3, _b3, _c3, _d2, _e2, _f, _g, _h;
           const messageKind = String(((_a3 = entry.payload) == null ? void 0 : _a3.message_kind) || "");
           const isRequestDataMessage = messageKind === "REQUEST_DATA";
           const serviceMessageContent = resolveServiceMessageContent(entry.payload);
@@ -1600,7 +1650,7 @@
                 /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(file.file_name || "\u0424\u0430\u0439\u043B"))
               )));
             })(),
-            /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, fmtTimeOnly((_i = entry.payload) == null ? void 0 : _i.created_at))
+            renderMessageMeta(entry.payload)
           ));
         })();
       }
@@ -1876,7 +1926,7 @@
         const statusCode = String((item == null ? void 0 : item.to_status) || "");
         const statusMeta = statusByCode.get(statusCode);
         const itemClass = "route-item request-status-history-route-item " + (index === 0 ? "current" : "completed");
-        return /* @__PURE__ */ React.createElement("li", { key: String((item == null ? void 0 : item.id) || index), className: itemClass }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-row" }, /* @__PURE__ */ React.createElement("b", null, resolveStatusDisplayName(statusCode, (item == null ? void 0 : item.to_status_name) || (statusMeta == null ? void 0 : statusMeta.name) || "")), (statusMeta == null ? void 0 : statusMeta.isTerminal) ? /* @__PURE__ */ React.createElement("span", { className: "request-status-history-chip" }, "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439") : null), /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, fmtShortDateTime(item == null ? void 0 : item.changed_at)), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430: " + fmtShortDateTime(item == null ? void 0 : item.important_date_at)), /* @__PURE__ */ React.createElement("span", null, "\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C: " + formatDuration(item == null ? void 0 : item.duration_seconds))), (item == null ? void 0 : item.from_status) ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0418\u0437: " + resolveStatusDisplayName(item.from_status, ""))) : null, String((item == null ? void 0 : item.comment) || "").trim() ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-comment" }, String(item.comment)) : null));
+        return /* @__PURE__ */ React.createElement("li", { key: String((item == null ? void 0 : item.id) || index), className: itemClass }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-row" }, /* @__PURE__ */ React.createElement("b", null, resolveStatusDisplayName(statusCode, (item == null ? void 0 : item.to_status_name) || (statusMeta == null ? void 0 : statusMeta.name) || "")), (statusMeta == null ? void 0 : statusMeta.isTerminal) ? /* @__PURE__ */ React.createElement("span", { className: "request-status-history-chip" }, "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439") : null), /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, fmtShortDateTime(item == null ? void 0 : item.changed_at)), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430: " + fmtShortDateTime(item == null ? void 0 : item.important_date_at)), /* @__PURE__ */ React.createElement("span", null, "\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C: " + formatDuration(item == null ? void 0 : item.duration_seconds))), String((item == null ? void 0 : item.comment) || "").trim() ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-comment" }, String(item.comment)) : null));
       }) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432 \u043F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u0430\u044F"))), statusChangeModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, statusChangeModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
         "button",
         {
@@ -1979,6 +2029,8 @@
         "input",
         {
           id: "request-data-request-template-select",
+          name: "request_template_search_nohistory",
+          type: "text",
           value: dataRequestModal.requestTemplateQuery,
           onChange: (event) => setDataRequestModal((prev) => ({
             ...prev,
@@ -1987,10 +2039,24 @@
             templateStatus: "",
             error: ""
           })),
-          onFocus: () => setRequestTemplateSuggestOpen(true),
-          onBlur: () => window.setTimeout(() => setRequestTemplateSuggestOpen(false), 120),
+          onFocus: (event) => {
+            event.currentTarget.removeAttribute("readonly");
+            setRequestTemplateSuggestOpen(true);
+          },
+          onBlur: (event) => {
+            event.currentTarget.setAttribute("readonly", "readonly");
+            window.setTimeout(() => setRequestTemplateSuggestOpen(false), 120);
+          },
           disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate,
-          placeholder: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0448\u0430\u0431\u043B\u043E\u043D\u0430"
+          placeholder: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0448\u0430\u0431\u043B\u043E\u043D\u0430",
+          readOnly: true,
+          autoComplete: "new-password",
+          autoCorrect: "off",
+          autoCapitalize: "none",
+          spellCheck: false,
+          "aria-autocomplete": "list",
+          "data-1p-ignore": "true",
+          "data-lpignore": "true"
         }
       ), requestTemplateBadge ? /* @__PURE__ */ React.createElement("span", { className: "request-data-template-badge " + requestTemplateBadge.kind }, requestTemplateBadge.label) : null, requestTemplateSuggestOpen && filteredRequestTemplates.length ? /* @__PURE__ */ React.createElement("div", { className: "request-data-suggest-list", role: "listbox", "aria-label": "\u0428\u0430\u0431\u043B\u043E\u043D\u044B \u0437\u0430\u043F\u0440\u043E\u0441\u0430" }, filteredRequestTemplates.map((tpl) => /* @__PURE__ */ React.createElement(
         "button",
@@ -2026,6 +2092,8 @@
         "input",
         {
           id: "request-data-template-select",
+          name: "request_field_search_nohistory",
+          type: "text",
           value: dataRequestModal.catalogFieldQuery,
           onChange: (event) => setDataRequestModal((prev) => ({
             ...prev,
@@ -2034,11 +2102,24 @@
             templateStatus: "",
             error: ""
           })),
-          onFocus: () => setCatalogFieldSuggestOpen(true),
-          onBlur: () => window.setTimeout(() => setCatalogFieldSuggestOpen(false), 120),
+          onFocus: (event) => {
+            event.currentTarget.removeAttribute("readonly");
+            setCatalogFieldSuggestOpen(true);
+          },
+          onBlur: (event) => {
+            event.currentTarget.setAttribute("readonly", "readonly");
+            window.setTimeout(() => setCatalogFieldSuggestOpen(false), 120);
+          },
           disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate,
           placeholder: "\u041D\u0430\u0447\u043D\u0438\u0442\u0435 \u0432\u0432\u043E\u0434\u0438\u0442\u044C \u043D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u043E\u043B\u044F",
-          autoComplete: "off"
+          readOnly: true,
+          autoComplete: "new-password",
+          autoCorrect: "off",
+          autoCapitalize: "none",
+          spellCheck: false,
+          "aria-autocomplete": "list",
+          "data-1p-ignore": "true",
+          "data-lpignore": "true"
         }
       ), catalogFieldSuggestOpen && filteredCatalogFields.length ? /* @__PURE__ */ React.createElement("div", { className: "request-data-suggest-list", role: "listbox", "aria-label": "\u041F\u043E\u043B\u044F \u0434\u0430\u043D\u043D\u044B\u0445" }, filteredCatalogFields.map((tpl) => /* @__PURE__ */ React.createElement(
         "button",
