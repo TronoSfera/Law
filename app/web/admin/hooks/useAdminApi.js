@@ -1,3 +1,4 @@
+import { ADMIN_AUTH_REDIRECT_REASON_KEY, LS_TOKEN } from "../shared/constants.js";
 import { translateApiError } from "../shared/utils.js";
 
 export function useAdminApi(token) {
@@ -30,6 +31,22 @@ export function useAdminApi(token) {
 
       if (!response.ok) {
         const message = (payload && (payload.detail || payload.error || payload.raw)) || "HTTP " + response.status;
+        if (response.status === 401 && opts.auth !== false) {
+          try {
+            localStorage.removeItem(LS_TOKEN);
+            sessionStorage.setItem(ADMIN_AUTH_REDIRECT_REASON_KEY, "expired");
+          } catch (_) {
+            // noop
+          }
+          if (typeof window !== "undefined") {
+            const target = "/admin.html";
+            if (window.location.pathname !== target || window.location.search) {
+              window.location.replace(target);
+            } else {
+              window.location.reload();
+            }
+          }
+        }
         const error = new Error(translateApiError(String(message)));
         error.httpStatus = Number(response.status || 0);
         throw error;

@@ -1,4 +1,5 @@
 export const LS_TOKEN = "admin_access_token";
+export const ADMIN_AUTH_REDIRECT_REASON_KEY = "admin_auth_redirect_reason";
 export const PAGE_SIZE = 50;
 export const DEFAULT_FORM_FIELD_TYPES = ["string", "text", "number", "boolean", "date"];
 export const ALL_OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "~"];

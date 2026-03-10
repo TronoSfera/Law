@@ -1,5 +1,6 @@
 import {
   DEFAULT_FORM_FIELD_TYPES,
+  ADMIN_AUTH_REDIRECT_REASON_KEY,
   INVOICE_STATUS_LABELS,
   LS_TOKEN,
   OPERATOR_LABELS,
@@ -1263,6 +1264,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     }, []);
 
     const getStatus = useCallback((key) => statusMap[key] || { message: "", kind: "" }, [statusMap]);
+    const isAdminTokenExpired = useCallback((rawToken) => {
+      const payload = decodeJwtPayload(rawToken || "");
+      const exp = Number(payload?.exp || 0);
+      if (!payload || !payload.role || !payload.email) return true;
+      if (!Number.isFinite(exp) || exp <= 0) return true;
+      return exp * 1000 <= Date.now();
+    }, []);
 
     const api = useAdminApi(token);
 
@@ -3465,6 +3473,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           const payload = decodeJwtPayload(nextToken || "");
           if (!payload || !payload.role || !payload.email) throw new Error("Не удалось прочитать данные токена");
 
+          sessionStorage.removeItem(ADMIN_AUTH_REDIRECT_REASON_KEY);
           localStorage.setItem(LS_TOKEN, nextToken);
           setToken(nextToken);
           setRole(payload.role);
@@ -3485,18 +3494,30 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
 
     useEffect(() => {
+      const authRedirectReason = sessionStorage.getItem(ADMIN_AUTH_REDIRECT_REASON_KEY) || "";
+      if (authRedirectReason === "expired") {
+        setStatus("login", "Сессия истекла. Войдите снова.", "error");
+        sessionStorage.removeItem(ADMIN_AUTH_REDIRECT_REASON_KEY);
+      }
+
       const saved = localStorage.getItem(LS_TOKEN) || "";
       if (!saved) return;
+      if (isAdminTokenExpired(saved)) {
+        localStorage.removeItem(LS_TOKEN);
+        setStatus("login", "Сессия истекла. Войдите снова.", "error");
+        return;
+      }
       const payload = decodeJwtPayload(saved);
       if (!payload || !payload.role || !payload.email) {
         localStorage.removeItem(LS_TOKEN);
+        setStatus("login", "Сессия истекла. Войдите снова.", "error");
         return;
       }
       setToken(saved);
       setRole(payload.role);
       setEmail(payload.email);
       setUserId(String(payload.sub || ""));
-    }, []);
+    }, [isAdminTokenExpired, setStatus]);
 
     useEffect(() => {
       if (!token || !role) return;
