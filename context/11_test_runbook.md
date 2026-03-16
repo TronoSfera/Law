@@ -58,6 +58,11 @@ curl -fsS http://localhost:8081/chat-health
 ./scripts/ops/check_chat_health.sh
 echo $?  # 0=OK, >0=ALERT
 ```
+10. Снятие baseline по производительности admin workspace:
+```bash
+./scripts/ops/perf_baseline.sh http://localhost:8081
+```
+Отчет сохраняется в `reports/perf/perf-baseline-<timestamp>.md`. Скрипт логинится под `admin@example.com / admin123`, берет первую заявку из канбана и замеряет `kanban`, `request detail`, `chat messages/live`, `status-route`, `attachments`, `invoices`.
 
 ## Матрица проверок по задачам
 | ID | Что проверяем | Где тесты | Как запускать |

@@ -22,7 +22,7 @@ class Request(Base, UUIDMixin, TimestampMixin):
     important_date_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_fields: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    assigned_lawyer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assigned_lawyer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     effective_rate: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     request_cost: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     invoice_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)

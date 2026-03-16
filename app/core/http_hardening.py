@@ -58,6 +58,23 @@ _FRAMEABLE_PATH_PATTERNS = (
     re.compile(r"^/api/admin/invoices/[^/]+/pdf$"),
 )
 
+_PERF_PATH_PATTERNS = (
+    ("admin_kanban", re.compile(r"^/api/admin/requests/kanban$")),
+    ("admin_request_detail", re.compile(r"^/api/admin/crud/requests/[^/]+$")),
+    ("admin_chat_messages", re.compile(r"^/api/admin/chat/requests/[^/]+/messages$")),
+    ("admin_chat_live", re.compile(r"^/api/admin/chat/requests/[^/]+/live$")),
+    ("admin_request_status_route", re.compile(r"^/api/admin/requests/[^/]+/status-route$")),
+    ("admin_request_attachments_query", re.compile(r"^/api/admin/crud/attachments/query$")),
+    ("admin_request_invoices_query", re.compile(r"^/api/admin/invoices/query$")),
+    ("public_request_detail", re.compile(r"^/api/public/requests/[^/]+$")),
+    ("public_chat_messages", re.compile(r"^/api/public/chat/requests/[^/]+/messages$")),
+    ("public_chat_live", re.compile(r"^/api/public/chat/requests/[^/]+/live$")),
+    ("public_request_attachments", re.compile(r"^/api/public/requests/[^/]+/attachments$")),
+    ("public_request_invoices", re.compile(r"^/api/public/requests/[^/]+/invoices$")),
+    ("public_request_status_route", re.compile(r"^/api/public/requests/[^/]+/status-route$")),
+    ("public_request_service_requests", re.compile(r"^/api/public/requests/[^/]+/service-requests$")),
+)
+
 
 def _request_id_from_header(raw: str | None) -> str:
     value = str(raw or "").strip()
@@ -74,6 +91,17 @@ def _response_security_headers(request: Request) -> dict[str, str]:
     if method in {"GET", "HEAD"} and any(pattern.search(path) for pattern in _FRAMEABLE_PATH_PATTERNS):
         return FRAMEABLE_FILE_SECURITY_HEADERS
     return SECURITY_HEADERS
+
+
+def _performance_label(request: Request) -> str | None:
+    method = str(request.method or "").upper()
+    if method not in {"GET", "POST"}:
+        return None
+    path = str(request.url.path or "")
+    for label, pattern in _PERF_PATH_PATTERNS:
+        if pattern.search(path):
+            return label
+    return None
 
 
 def install_http_hardening(app: FastAPI) -> None:
@@ -95,12 +123,18 @@ def install_http_hardening(app: FastAPI) -> None:
         response.headers[REQUEST_ID_HEADER] = request_id
 
         duration_ms = (perf_counter() - started_at) * 1000.0
+        perf_label = _performance_label(request)
+        if perf_label:
+            response.headers["Server-Timing"] = f'app;desc="{perf_label}";dur={duration_ms:.2f}'
+            response.headers["X-Perf-Label"] = perf_label
+            response.headers["X-Perf-Duration-Ms"] = f"{duration_ms:.2f}"
         _LOG.info(
-            "%s %s status=%s duration_ms=%.2f request_id=%s",
+            "%s %s status=%s duration_ms=%.2f request_id=%s perf_label=%s",
             request.method,
             request.url.path,
             response.status_code,
             duration_ms,
             request_id,
+            perf_label or "-",
         )
         return response

@@ -11,7 +11,7 @@ os.environ.setdefault("S3_SECRET_KEY", "test")
 os.environ.setdefault("S3_BUCKET", "test")
 
 from app.main import app
-from app.core.http_hardening import _response_security_headers
+from app.core.http_hardening import _performance_label, _response_security_headers
 from starlette.requests import Request
 
 
@@ -76,6 +76,35 @@ class HttpHardeningTests(unittest.TestCase):
         headers = _response_security_headers(Request(scope))
         self.assertEqual(headers.get("X-Frame-Options"), "SAMEORIGIN")
         self.assertIn("frame-ancestors 'self'", str(headers.get("Content-Security-Policy")))
+
+    def test_target_perf_endpoint_has_observability_headers(self):
+        response = self.client.get("/api/admin/requests/kanban")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers.get("x-perf-label"), "admin_kanban")
+        self.assertTrue(bool(response.headers.get("x-perf-duration-ms")))
+        self.assertIn('desc="admin_kanban"', str(response.headers.get("server-timing")))
+
+    def test_non_target_endpoint_has_no_perf_headers(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.headers.get("x-perf-label"))
+        self.assertIsNone(response.headers.get("x-perf-duration-ms"))
+        self.assertIsNone(response.headers.get("server-timing"))
+
+    def test_performance_label_maps_client_workspace_endpoints(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/public/requests/TRK-1/status-route",
+            "raw_path": b"/api/public/requests/TRK-1/status-route",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        self.assertEqual(_performance_label(Request(scope)), "public_request_status_route")
 
     def test_non_file_paths_keep_deny_framing(self):
         scope = {
