@@ -88,8 +88,27 @@ def compute_sla_snapshot(
     now_utc = _as_utc(now, datetime.now(timezone.utc))
     terminal_codes = _terminal_status_codes(db)
     active_requests = db.query(Request).filter(Request.status_code.notin_(terminal_codes)).all()
+    active_request_ids = [row.id for row in active_requests if row.id is not None]
 
-    status_rows = db.query(StatusHistory).order_by(StatusHistory.request_id.asc(), StatusHistory.created_at.asc()).all()
+    if not active_request_ids:
+        result = {
+            "checked_active_requests": 0,
+            "overdue_total": 0,
+            "overdue_by_status": {},
+            "overdue_by_transition": {},
+            "frt_avg_minutes": None,
+            "avg_time_in_status_hours": {},
+        }
+        if include_overdue_requests:
+            result["overdue_requests"] = []
+        return result
+
+    status_rows = (
+        db.query(StatusHistory)
+        .filter(StatusHistory.request_id.in_(active_request_ids))
+        .order_by(StatusHistory.request_id.asc(), StatusHistory.created_at.asc())
+        .all()
+    )
     rows_by_request: dict[str, list[StatusHistory]] = defaultdict(list)
     for row in status_rows:
         rows_by_request[str(row.request_id)].append(row)
@@ -127,7 +146,10 @@ def compute_sla_snapshot(
 
     first_response_rows = (
         db.query(Message.request_id, Message.created_at)
-        .filter(Message.author_type == "LAWYER")
+        .filter(
+            Message.author_type == "LAWYER",
+            Message.request_id.in_(active_request_ids),
+        )
         .order_by(Message.request_id.asc(), Message.created_at.asc())
         .all()
     )

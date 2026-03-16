@@ -25,6 +25,8 @@ export function RequestWorkspace({
   currentImportantDateAt,
   pendingStatusChangePreset,
   messages,
+  messagesHasMore,
+  messagesLoadingMore,
   attachments,
   messageDraft,
   selectedFiles,
@@ -32,6 +34,7 @@ export function RequestWorkspace({
   status,
   onMessageChange,
   onSendMessage,
+  onLoadOlderMessages,
   onFilesSelect,
   onRemoveSelectedFile,
   onClearSelectedFiles,
@@ -1660,6 +1663,18 @@ export function RequestWorkspace({
 
           {chatTab === "chat" ? (
             <>
+              {messagesHasMore ? (
+                <div className="request-chat-history-actions">
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={onLoadOlderMessages}
+                    disabled={loading || fileUploading || messagesLoadingMore}
+                  >
+                    {messagesLoadingMore ? "Загрузка истории..." : "Показать предыдущие сообщения"}
+                  </button>
+                </div>
+              ) : null}
               <ul className="simple-list request-modal-list request-chat-list" id={idMap.messagesList} ref={chatListRef}>
                 {chatTimelineItems.length ? (
                   chatTimelineItems.map((entry) =>

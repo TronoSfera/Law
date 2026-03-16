@@ -30,6 +30,7 @@ from app.models.client import Client
 from app.models.form_field import FormField
 from app.models.message import Message
 from app.models.notification import Notification
+from app.models.invoice import Invoice
 from app.models.table_availability import TableAvailability
 from app.models.quote import Quote
 from app.models.request import Request
@@ -71,6 +72,7 @@ class AdminUniversalCrudBase(unittest.TestCase):
         TopicStatusTransition.__table__.create(bind=cls.engine)
         AdminUserTopic.__table__.create(bind=cls.engine)
         Notification.__table__.create(bind=cls.engine)
+        Invoice.__table__.create(bind=cls.engine)
         TableAvailability.__table__.create(bind=cls.engine)
         AuditLog.__table__.create(bind=cls.engine)
 
@@ -78,6 +80,7 @@ class AdminUniversalCrudBase(unittest.TestCase):
     def tearDownClass(cls):
         AuditLog.__table__.drop(bind=cls.engine)
         Notification.__table__.drop(bind=cls.engine)
+        Invoice.__table__.drop(bind=cls.engine)
         TableAvailability.__table__.drop(bind=cls.engine)
         AdminUserTopic.__table__.drop(bind=cls.engine)
         RequestDataRequirement.__table__.drop(bind=cls.engine)
@@ -117,6 +120,7 @@ class AdminUniversalCrudBase(unittest.TestCase):
             db.execute(delete(TopicStatusTransition))
             db.execute(delete(AdminUserTopic))
             db.execute(delete(Notification))
+            db.execute(delete(Invoice))
             db.execute(delete(TableAvailability))
             db.execute(delete(Quote))
             db.execute(delete(AdminUser))

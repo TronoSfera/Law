@@ -30,6 +30,7 @@ from .service import (
     create_request_service,
     delete_request_service,
     get_request_service,
+    get_request_workspace_service,
     query_requests_service,
     reassign_request_service,
     update_request_service,
@@ -97,6 +98,30 @@ def get_request(
         scope="REQUEST_CARD",
         request_id=payload.get("id"),
         details={"track_number": payload.get("track_number")},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
+    return payload
+
+
+@router.get("/{request_id}/workspace")
+def get_request_workspace(
+    request_id: str,
+    http_request: FastapiRequest,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    payload = get_request_workspace_service(request_id, db, admin)
+    request_payload = payload.get("request") or {}
+    record_pii_access_event(
+        db,
+        actor_role=str(admin.get("role") or "ADMIN").upper(),
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_REQUEST_WORKSPACE",
+        scope="REQUEST_CARD",
+        request_id=request_payload.get("id"),
+        details={"track_number": request_payload.get("track_number")},
         responsible=str(admin.get("email") or "").strip() or "Администратор системы",
         persist_now=True,
     )

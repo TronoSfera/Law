@@ -77,9 +77,6 @@ print(request_id)
 PY
 )"
 
-ATTACHMENTS_BODY="$(printf '{"filters":[{"field":"request_id","op":"=","value":%s}],"sort":[{"field":"created_at","dir":"asc"}],"page":{"limit":500,"offset":0}}' "$(json_escape "$REQUEST_ID")")"
-INVOICES_BODY="$(printf '{"filters":[{"field":"request_id","op":"=","value":%s}],"sort":[{"field":"issued_at","dir":"desc"}],"page":{"limit":500,"offset":0}}' "$(json_escape "$REQUEST_ID")")"
-
 measure_endpoint() {
   local name="$1"
   local method="$2"
@@ -144,12 +141,10 @@ PY
 : >"$TMP_DIR/raw.tsv"
 
 measure_endpoint "kanban" "GET" "/api/admin/requests/kanban?limit=${KANBAN_LIMIT}&sort_mode=created_newest"
-measure_endpoint "request_detail" "GET" "/api/admin/crud/requests/${REQUEST_ID}"
-measure_endpoint "chat_messages" "GET" "/api/admin/chat/requests/${REQUEST_ID}/messages"
+measure_endpoint "metrics_overview" "GET" "/api/admin/metrics/overview?include_sla=false"
+measure_endpoint "metrics_overview_sla" "GET" "/api/admin/metrics/overview-sla"
+measure_endpoint "request_workspace" "GET" "/api/admin/requests/${REQUEST_ID}/workspace"
 measure_endpoint "chat_live" "GET" "/api/admin/chat/requests/${REQUEST_ID}/live"
-measure_endpoint "status_route" "GET" "/api/admin/requests/${REQUEST_ID}/status-route"
-measure_endpoint "attachments_query" "POST" "/api/admin/crud/attachments/query" "$ATTACHMENTS_BODY"
-measure_endpoint "invoices_query" "POST" "/api/admin/invoices/query" "$INVOICES_BODY"
 
 python3 - "$TMP_DIR/raw.tsv" "$REPORT_FILE" "$TS_HUMAN" "$BASE_URL" "$REQUEST_ID" "$ITERATIONS" <<'PY'
 import csv
@@ -190,12 +185,10 @@ with open(report_path, "w", encoding="utf-8") as out:
     out.write("|---|---|---:|---:|---:|\n")
     for name in [
         "kanban",
-        "request_detail",
-        "chat_messages",
+        "metrics_overview",
+        "metrics_overview_sla",
+        "request_workspace",
         "chat_live",
-        "status_route",
-        "attachments_query",
-        "invoices_query",
     ]:
         items = rows.get(name, [])
         totals = sorted(item["total_ms"] for item in items)

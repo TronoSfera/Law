@@ -259,6 +259,15 @@ class InvoiceApiTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["id"], own_invoice_id)
 
+        listed_by_request = self.client.get(f"/api/admin/invoices/by-request/{self.request_a_id}", headers=lawyer_a_headers)
+        self.assertEqual(listed_by_request.status_code, 200)
+        direct_rows = listed_by_request.json()["rows"]
+        self.assertEqual(len(direct_rows), 1)
+        self.assertEqual(direct_rows[0]["id"], own_invoice_id)
+
+        foreign_by_request = self.client.get(f"/api/admin/invoices/by-request/{self.request_b_id}", headers=lawyer_a_headers)
+        self.assertEqual(foreign_by_request.status_code, 403)
+
         foreign_get = self.client.get(f"/api/admin/invoices/{foreign_invoice_id}", headers=lawyer_a_headers)
         self.assertEqual(foreign_get.status_code, 403)
 

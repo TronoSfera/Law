@@ -93,8 +93,33 @@ def _extract_assigned_lawyer_from_audit(diff: dict | None, action: str | None) -
     return None
 
 
+def _empty_sla_snapshot() -> dict[str, object]:
+    return {
+        "frt_avg_minutes": None,
+        "sla_overdue": 0,
+        "overdue_by_status": {},
+        "overdue_by_transition": {},
+        "avg_time_in_status_hours": {},
+    }
+
+
+def _overview_sla_payload(db: Session) -> dict[str, object]:
+    sla_snapshot = compute_sla_snapshot(db)
+    return {
+        "frt_avg_minutes": sla_snapshot.get("frt_avg_minutes"),
+        "sla_overdue": sla_snapshot.get("overdue_total", 0),
+        "overdue_by_status": sla_snapshot.get("overdue_by_status", {}),
+        "overdue_by_transition": sla_snapshot.get("overdue_by_transition", {}),
+        "avg_time_in_status_hours": sla_snapshot.get("avg_time_in_status_hours", {}),
+    }
+
+
 @router.get("/overview")
-def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR"))):
+def overview(
+    include_sla: bool = True,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
     role = str(admin.get("role") or "").upper()
     actor_id = str(admin.get("sub") or "").strip()
     actor_uuid = _uuid_or_none(actor_id)
@@ -314,7 +339,6 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         my_unread_by_event = dict(my_unread_notifications.get("by_event") or {})
         scoped_lawyer_loads = lawyer_loads
 
-    sla_snapshot = compute_sla_snapshot(db)
     next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
     deadline_alert_query = (
         db.query(func.count(Request.id))
@@ -327,7 +351,7 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
     elif role == "LAWYER":
         deadline_alert_query = deadline_alert_query.filter(Request.id.is_(None))
     deadline_alert_total = int(deadline_alert_query.scalar() or 0)
-    return {
+    payload = {
         "scope": role if role in {"ADMIN", "LAWYER", "CURATOR"} else "ADMIN",
         "new": int(by_status.get("NEW", 0)),
         "by_status": by_status,
@@ -343,11 +367,6 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "month_expenses": round(sum(_to_float(row.get("monthly_salary")) for row in scoped_lawyer_loads), 2)
         if role == "LAWYER"
         else round(sum(_to_float(row.get("monthly_salary")) for row in lawyer_loads), 2),
-        "frt_avg_minutes": sla_snapshot.get("frt_avg_minutes"),
-        "sla_overdue": sla_snapshot.get("overdue_total", 0),
-        "overdue_by_status": sla_snapshot.get("overdue_by_status", {}),
-        "overdue_by_transition": sla_snapshot.get("overdue_by_transition", {}),
-        "avg_time_in_status_hours": sla_snapshot.get("avg_time_in_status_hours", {}),
         "unread_for_clients": int(unread_for_clients),
         "unread_for_lawyers": int(unread_for_lawyers),
         "unread_for_clients_by_event": dict(unread_for_clients_notifications.get("by_event") or {}),
@@ -357,6 +376,14 @@ def overview(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", 
         "service_request_unread_total": int(service_request_unread_total),
         "lawyer_loads": scoped_lawyer_loads,
     }
+    payload.update(_overview_sla_payload(db) if include_sla else _empty_sla_snapshot())
+    return payload
+
+
+@router.get("/overview-sla")
+def overview_sla(db: Session = Depends(get_db), admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR"))):
+    _ = admin
+    return _overview_sla_payload(db)
 
 
 @router.get("/lawyers/{lawyer_id}/active-requests")

@@ -1156,6 +1156,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     const [email, setEmail] = useState("");
     const [userId, setUserId] = useState("");
     const [activeSection, setActiveSection] = useState(initialSection);
+    const dashboardLoadRef = useRef(0);
 
     const [dashboardData, setDashboardData] = useState({
       scope: "",
@@ -1289,6 +1290,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       submitRequestStatusChange,
       submitRequestModalMessage,
       probeRequestLive,
+      loadOlderRequestMessages,
       setRequestTyping,
       loadRequestDataTemplates,
       loadRequestDataBatch,
@@ -2154,37 +2156,39 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const loadDashboard = useCallback(
       async (tokenOverride) => {
+        const loadId = Date.now();
+        dashboardLoadRef.current = loadId;
         setStatus("dashboard", "Загрузка...", "");
         try {
-          const data = await api("/api/admin/metrics/overview", {}, tokenOverride);
-          const scope = String(data.scope || role || "");
-          const cards =
+          const buildDashboardCards = (scope, payload) =>
             scope === "LAWYER"
               ? [
-                  { label: "Мои заявки", value: data.assigned_total ?? 0 },
-                  { label: "Мои активные", value: data.active_assigned_total ?? 0 },
-                  { label: "Неназначенные", value: data.unassigned_total ?? 0 },
-                  { label: "Мои непрочитанные", value: data.my_unread_notifications_total ?? data.my_unread_updates ?? 0 },
-                  { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
+                  { label: "Мои заявки", value: payload.assigned_total ?? 0 },
+                  { label: "Мои активные", value: payload.active_assigned_total ?? 0 },
+                  { label: "Неназначенные", value: payload.unassigned_total ?? 0 },
+                  { label: "Мои непрочитанные", value: payload.my_unread_notifications_total ?? payload.my_unread_updates ?? 0 },
+                  { label: "Просрочено SLA", value: payload.sla_overdue ?? 0 },
                 ]
               : [
-                  { label: "Новые", value: data.new ?? 0 },
-                  { label: "Назначенные", value: data.assigned_total ?? 0 },
-                  { label: "Неназначенные", value: data.unassigned_total ?? 0 },
-                  { label: "Просрочено SLA", value: data.sla_overdue ?? 0 },
-                  { label: "Мои непрочитанные", value: data.my_unread_notifications_total ?? data.my_unread_updates ?? 0 },
-                  { label: "Выручка (мес.)", value: Number(data.month_revenue ?? 0).toFixed(2) },
-                  { label: "Расходы (мес.)", value: Number(data.month_expenses ?? 0).toFixed(2) },
-                  { label: "Непрочитано юристами", value: data.unread_for_lawyers ?? 0 },
-                  { label: "Непрочитано клиентами", value: data.unread_for_clients ?? 0 },
+                  { label: "Новые", value: payload.new ?? 0 },
+                  { label: "Назначенные", value: payload.assigned_total ?? 0 },
+                  { label: "Неназначенные", value: payload.unassigned_total ?? 0 },
+                  { label: "Просрочено SLA", value: payload.sla_overdue ?? 0 },
+                  { label: "Мои непрочитанные", value: payload.my_unread_notifications_total ?? payload.my_unread_updates ?? 0 },
+                  { label: "Выручка (мес.)", value: Number(payload.month_revenue ?? 0).toFixed(2) },
+                  { label: "Расходы (мес.)", value: Number(payload.month_expenses ?? 0).toFixed(2) },
+                  { label: "Непрочитано юристами", value: payload.unread_for_lawyers ?? 0 },
+                  { label: "Непрочитано клиентами", value: payload.unread_for_clients ?? 0 },
                 ];
+          const data = await api("/api/admin/metrics/overview?include_sla=false", {}, tokenOverride);
+          const scope = String(data.scope || role || "");
           const localized = {};
           Object.entries(data.by_status || {}).forEach(([code, count]) => {
             localized[statusLabel(code)] = count;
           });
           setDashboardData({
             scope,
-            cards,
+            cards: buildDashboardCards(scope, data),
             byStatus: localized,
             lawyerLoads: data.lawyer_loads || [],
             myUnreadByEvent: data.my_unread_by_event || {},
@@ -2198,6 +2202,18 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             monthExpenses: Number(data.month_expenses || 0),
           });
           setStatus("dashboard", "Данные обновлены", "ok");
+          void (async () => {
+            try {
+              const slaData = await api("/api/admin/metrics/overview-sla", {}, tokenOverride);
+              if (dashboardLoadRef.current !== loadId) return;
+              setDashboardData((prev) => ({
+                ...prev,
+                cards: buildDashboardCards(String(prev.scope || scope || ""), { ...data, ...slaData }),
+              }));
+            } catch (_) {
+              // Keep fast dashboard payload if SLA snapshot is unavailable.
+            }
+          })();
         } catch (error) {
           setStatus("dashboard", "Ошибка: " + error.message, "error");
         }
@@ -3480,17 +3496,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           setEmail(payload.email);
           setUserId(String(payload.sub || ""));
 
-          await bootstrapReferenceData(nextToken, payload.role);
           setActiveSection("dashboard");
-          await loadDashboard(nextToken);
-          await loadTotpStatus(nextToken);
-
           setStatus("login", "Успешный вход", "ok");
         } catch (error) {
           setStatus("login", "Ошибка входа: " + error.message, "error");
         }
       },
-      [api, bootstrapReferenceData, loadDashboard, loadTotpStatus, setStatus]
+      [api, setStatus]
     );
 
     useEffect(() => {
@@ -3523,14 +3535,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       if (!token || !role) return;
       let cancelled = false;
       (async () => {
-        await bootstrapReferenceData(token, role);
-        if (!cancelled) await loadDashboard(token);
+        bootstrapReferenceData(token, role);
+        if (!cancelled && !isRequestWorkspaceRoute && !routeInfo.section) await loadDashboard(token);
         if (!cancelled) await loadTotpStatus(token);
       })();
       return () => {
         cancelled = true;
       };
-    }, [bootstrapReferenceData, loadDashboard, loadTotpStatus, role, token]);
+    }, [bootstrapReferenceData, isRequestWorkspaceRoute, loadDashboard, loadTotpStatus, role, routeInfo.section, token]);
 
     useEffect(() => {
       if (!token || !role) return;
@@ -3970,6 +3982,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 currentImportantDateAt={requestModal.currentImportantDateAt || ""}
                 pendingStatusChangePreset={requestModal.pendingStatusChangePreset}
                 messages={requestModal.messages || []}
+                messagesHasMore={Boolean(requestModal.messagesHasMore)}
+                messagesLoadingMore={Boolean(requestModal.messagesLoadingMore)}
                 attachments={requestModal.attachments || []}
                 messageDraft={requestModal.messageDraft || ""}
                 selectedFiles={requestModal.selectedFiles || []}
@@ -3977,6 +3991,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 status={getStatus("requestModal")}
                 onMessageChange={updateRequestModalMessageDraft}
                 onSendMessage={submitRequestModalMessage}
+                onLoadOlderMessages={loadOlderRequestMessages}
                 onFilesSelect={appendRequestModalFiles}
                 onRemoveSelectedFile={removeRequestModalFile}
                 onClearSelectedFiles={clearRequestModalFiles}

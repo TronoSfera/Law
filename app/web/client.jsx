@@ -5,6 +5,28 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
 (function () {
   const { useCallback, useEffect, useMemo, useRef, useState } = React;
 
+  function sortRowsByCreatedAt(rows) {
+    return [...rows].sort((left, right) => {
+      const leftTs = new Date(left?.created_at || left?.updated_at || 0).getTime();
+      const rightTs = new Date(right?.created_at || right?.updated_at || 0).getTime();
+      if (Number.isFinite(leftTs) && Number.isFinite(rightTs) && leftTs !== rightTs) return leftTs - rightTs;
+      return String(left?.id || "").localeCompare(String(right?.id || ""), "ru");
+    });
+  }
+
+  function mergeRowsById(existingRows, incomingRows) {
+    const merged = new Map();
+    (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
+      const key = String(row?.id || "").trim();
+      if (key) merged.set(key, row);
+    });
+    (Array.isArray(incomingRows) ? incomingRows : []).forEach((row) => {
+      const key = String(row?.id || "").trim();
+      if (key) merged.set(key, row);
+    });
+    return sortRowsByCreatedAt(Array.from(merged.values()));
+  }
+
   function StatusLine({ status }) {
     return <p className={"status" + (status?.kind ? " " + status.kind : "")}>{status?.message || ""}</p>;
   }
@@ -586,7 +608,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
         }
         const [requestData, messagesData, attachmentsData, invoicesData, statusRouteData, serviceRequestsData] = await Promise.all([
           apiJson("/api/public/requests/" + encodeURIComponent(track), null, "Не удалось открыть заявку"),
-          apiJson("/api/public/chat/requests/" + encodeURIComponent(track) + "/messages", null, "Не удалось загрузить сообщения"),
+          apiJson("/api/public/chat/requests/" + encodeURIComponent(track) + "/messages-window", null, "Не удалось загрузить сообщения"),
           apiJson("/api/public/requests/" + encodeURIComponent(track) + "/attachments", null, "Не удалось загрузить файлы"),
           apiJson("/api/public/requests/" + encodeURIComponent(track) + "/invoices", null, "Не удалось загрузить счета"),
           apiJson("/api/public/requests/" + encodeURIComponent(track) + "/status-route", null, "Не удалось загрузить маршрут статусов"),
@@ -627,13 +649,55 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
           availableStatuses: [],
           currentImportantDateAt: String(statusRouteData?.current_important_date_at || requestData?.important_date_at || ""),
           invoices,
-          messages: Array.isArray(messagesData) ? messagesData : [],
+          messages: Array.isArray(messagesData?.rows) ? messagesData.rows : [],
+          messagesHasMore: Boolean(messagesData?.has_more),
+          messagesLoadingMore: false,
+          messagesLoadedCount: Number(messagesData?.loaded_count || 0),
+          messagesTotal: Number(messagesData?.total || 0),
           attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
           fileUploading: false,
         }));
       },
       [apiJson]
     );
+
+    const loadOlderPublicMessages = useCallback(async () => {
+      const track = String(activeTrack || requestModal.trackNumber || "").trim().toUpperCase();
+      const loadedCount = Number(requestModal.messagesLoadedCount || 0);
+      if (!track || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
+      setRequestModal((prev) => ({ ...prev, messagesLoadingMore: true }));
+      try {
+        const payload = await apiJson(
+          "/api/public/chat/requests/" +
+            encodeURIComponent(track) +
+            "/messages-window?before_count=" +
+            encodeURIComponent(String(loadedCount)),
+          null,
+          "Не удалось загрузить историю сообщений"
+        );
+        setRequestModal((prev) => ({
+          ...prev,
+          messagesLoadingMore: false,
+          messages: mergeRowsById(payload?.rows || [], prev.messages),
+          messagesHasMore: Boolean(payload?.has_more),
+          messagesLoadedCount: Number(payload?.loaded_count || prev.messagesLoadedCount || 0),
+          messagesTotal: Number(payload?.total || prev.messagesTotal || 0),
+        }));
+        return payload || null;
+      } catch (error) {
+        setRequestModal((prev) => ({ ...prev, messagesLoadingMore: false }));
+        setPageStatus(error?.message || "Не удалось загрузить историю сообщений", "error");
+        return null;
+      }
+    }, [
+      activeTrack,
+      apiJson,
+      requestModal.messagesHasMore,
+      requestModal.messagesLoadedCount,
+      requestModal.messagesLoadingMore,
+      requestModal.trackNumber,
+      setPageStatus,
+    ]);
 
     const refreshRequestsList = useCallback(async () => {
       const data = await apiJson("/api/public/requests/my", null, "Не удалось загрузить список заявок");
@@ -657,6 +721,10 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
             statusRouteNodes: [],
             statusHistory: [],
             messages: [],
+            messagesHasMore: false,
+            messagesLoadingMore: false,
+            messagesLoadedCount: 0,
+            messagesTotal: 0,
             attachments: [],
             fileUploading: false,
             selectedFiles: [],
@@ -878,11 +946,26 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
           "Не удалось получить live-обновления чата"
         );
         if (payload && payload.has_updates) {
-          await loadRequestWorkspace(track, false);
+          const nextMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+          const nextAttachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+          if (nextMessages.length || nextAttachments.length) {
+            setRequestModal((prev) => {
+              const mergedMessages = mergeRowsById(prev.messages, nextMessages);
+              const previousCount = Array.isArray(prev.messages) ? prev.messages.length : 0;
+              const addedCount = Math.max(0, mergedMessages.length - previousCount);
+              return {
+                ...prev,
+                messages: mergedMessages,
+                messagesLoadedCount: Number(prev.messagesLoadedCount || previousCount) + addedCount,
+                messagesTotal: Number(prev.messagesTotal || previousCount) + addedCount,
+                attachments: mergeRowsById(prev.attachments, nextAttachments),
+              };
+            });
+          }
         }
         return payload || { has_updates: false, typing: [], cursor: null };
       },
-      [activeTrack, apiJson, loadRequestWorkspace]
+      [activeTrack, apiJson]
     );
 
     const setTypingSignal = useCallback(
@@ -1107,6 +1190,8 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
               currentImportantDateAt={requestModal.currentImportantDateAt || ""}
               pendingStatusChangePreset={null}
               messages={requestModal.messages || []}
+              messagesHasMore={Boolean(requestModal.messagesHasMore)}
+              messagesLoadingMore={Boolean(requestModal.messagesLoadingMore)}
               attachments={requestModal.attachments || []}
               messageDraft={requestModal.messageDraft || ""}
               selectedFiles={requestModal.selectedFiles || []}
@@ -1114,6 +1199,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
               status={status}
               onMessageChange={updateMessageDraft}
               onSendMessage={submitMessage}
+              onLoadOlderMessages={loadOlderPublicMessages}
               onFilesSelect={appendFiles}
               onRemoveSelectedFile={removeFile}
               onClearSelectedFiles={clearFiles}

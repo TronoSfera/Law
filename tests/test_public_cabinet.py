@@ -277,6 +277,26 @@ class PublicCabinetTests(unittest.TestCase):
         self.assertEqual(len(listed.json()), 1)
         self.assertIn("выделенный сервис", listed.json()[0]["body"])
 
+        for index in range(4):
+            created_extra = self.chat_client.post(
+                "/api/public/chat/requests/TRK-CHAT-001/messages",
+                cookies=cookies,
+                json={"body": f"Сообщение {index}"},
+            )
+            self.assertEqual(created_extra.status_code, 201)
+
+        listed_window = self.chat_client.get(
+            "/api/public/chat/requests/TRK-CHAT-001/messages-window",
+            cookies=cookies,
+            params={"limit": 2},
+        )
+        self.assertEqual(listed_window.status_code, 200)
+        window_payload = listed_window.json()
+        self.assertEqual(len(window_payload.get("rows") or []), 2)
+        self.assertTrue(bool(window_payload.get("has_more")))
+        self.assertEqual(int(window_payload.get("loaded_count") or 0), 2)
+        self.assertEqual(int(window_payload.get("total") or 0), 5)
+
         denied = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
         self.assertEqual(denied.status_code, 404)
 
@@ -440,6 +460,39 @@ class PublicCabinetTests(unittest.TestCase):
         )
         self.assertEqual(live_no_delta.status_code, 200)
         self.assertFalse(bool(live_no_delta.json().get("has_updates")))
+
+        with self.SessionLocal() as db:
+            req = db.query(Request).filter(Request.track_number == "TRK-LIVE-001").first()
+            self.assertIsNotNone(req)
+            live_message = Message(
+                request_id=req.id,
+                author_type="LAWYER",
+                author_name="Юрист",
+                body="Новое сообщение live",
+            )
+            db.add(live_message)
+            db.flush()
+            db.add(
+                Attachment(
+                    request_id=req.id,
+                    message_id=live_message.id,
+                    file_name="live-public.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=512,
+                    s3_key=f"requests/{req.id}/live-public.pdf",
+                )
+            )
+            db.commit()
+
+        live_delta = self.chat_client.get(
+            "/api/public/chat/requests/TRK-LIVE-001/live",
+            params={"cursor": current_cursor},
+            cookies=cookies,
+        )
+        self.assertEqual(live_delta.status_code, 200)
+        self.assertTrue(bool(live_delta.json().get("has_updates")))
+        self.assertEqual(len(live_delta.json().get("messages") or []), 1)
+        self.assertEqual(len(live_delta.json().get("attachments") or []), 1)
 
         typing_on = self.chat_client.post(
             "/api/public/chat/requests/TRK-LIVE-001/typing",

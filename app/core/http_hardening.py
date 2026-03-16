@@ -59,15 +59,23 @@ _FRAMEABLE_PATH_PATTERNS = (
 )
 
 _PERF_PATH_PATTERNS = (
+    ("admin_metrics_overview", re.compile(r"^/api/admin/metrics/overview$")),
+    ("admin_metrics_overview_sla", re.compile(r"^/api/admin/metrics/overview-sla$")),
     ("admin_kanban", re.compile(r"^/api/admin/requests/kanban$")),
+    ("admin_request_workspace", re.compile(r"^/api/admin/requests/[^/]+/workspace$")),
+    ("admin_request_detail", re.compile(r"^/api/admin/requests/[^/]+$")),
     ("admin_request_detail", re.compile(r"^/api/admin/crud/requests/[^/]+$")),
     ("admin_chat_messages", re.compile(r"^/api/admin/chat/requests/[^/]+/messages$")),
+    ("admin_chat_messages_window", re.compile(r"^/api/admin/chat/requests/[^/]+/messages-window$")),
     ("admin_chat_live", re.compile(r"^/api/admin/chat/requests/[^/]+/live$")),
     ("admin_request_status_route", re.compile(r"^/api/admin/requests/[^/]+/status-route$")),
+    ("admin_request_attachments_query", re.compile(r"^/api/admin/uploads/request-attachments/[^/]+$")),
     ("admin_request_attachments_query", re.compile(r"^/api/admin/crud/attachments/query$")),
+    ("admin_request_invoices_query", re.compile(r"^/api/admin/invoices/by-request/[^/]+$")),
     ("admin_request_invoices_query", re.compile(r"^/api/admin/invoices/query$")),
     ("public_request_detail", re.compile(r"^/api/public/requests/[^/]+$")),
     ("public_chat_messages", re.compile(r"^/api/public/chat/requests/[^/]+/messages$")),
+    ("public_chat_messages_window", re.compile(r"^/api/public/chat/requests/[^/]+/messages-window$")),
     ("public_chat_live", re.compile(r"^/api/public/chat/requests/[^/]+/live$")),
     ("public_request_attachments", re.compile(r"^/api/public/requests/[^/]+/attachments$")),
     ("public_request_invoices", re.compile(r"^/api/public/requests/[^/]+/invoices$")),

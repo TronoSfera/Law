@@ -257,6 +257,7 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
             db.commit()
 
             own_id = str(own.id)
+            foreign_id = str(foreign.id)
             unassigned_id = str(unassigned.id)
             foreign_msg_id = str(msg_foreign.id)
             foreign_att_id = str(att_foreign.id)
@@ -281,6 +282,17 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         attachment_request_ids = {str(row.get("request_id")) for row in (attachments_query.json().get("rows") or [])}
         self.assertEqual(attachment_request_ids, {own_id, unassigned_id})
 
+        own_request_attachments = self.client.get(f"/api/admin/uploads/request-attachments/{own_id}", headers=headers)
+        self.assertEqual(own_request_attachments.status_code, 200)
+        self.assertEqual(len(own_request_attachments.json().get("rows") or []), 1)
+
+        unassigned_request_attachments = self.client.get(f"/api/admin/uploads/request-attachments/{unassigned_id}", headers=headers)
+        self.assertEqual(unassigned_request_attachments.status_code, 200)
+        self.assertEqual(len(unassigned_request_attachments.json().get("rows") or []), 1)
+
+        blocked_request_attachments = self.client.get(f"/api/admin/uploads/request-attachments/{foreign_id}", headers=headers)
+        self.assertEqual(blocked_request_attachments.status_code, 403)
+
         foreign_message_get = self.client.get(f"/api/admin/crud/messages/{foreign_msg_id}", headers=headers)
         self.assertEqual(foreign_message_get.status_code, 403)
         foreign_attachment_get = self.client.get(f"/api/admin/crud/attachments/{foreign_att_id}", headers=headers)
@@ -301,6 +313,98 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
             json={"request_id": unassigned_id, "body": "Попытка без назначения"},
         )
         self.assertEqual(blocked_unassigned_create.status_code, 403)
+
+    def test_request_workspace_endpoint_returns_compound_payload_with_role_scope(self):
+        with self.SessionLocal() as db:
+            lawyer_self = AdminUser(
+                role="LAWYER",
+                name="Юрист Workspace",
+                email="lawyer.workspace@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_other = AdminUser(
+                role="LAWYER",
+                name="Юрист Чужой Workspace",
+                email="lawyer.workspace.other@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer_self, lawyer_other])
+            db.flush()
+            self_id = str(lawyer_self.id)
+            other_id = str(lawyer_other.id)
+
+            own = Request(
+                track_number="TRK-WORKSPACE-OWN",
+                client_name="Клиент Workspace",
+                client_phone="+79990010111",
+                status_code="IN_PROGRESS",
+                description="workspace own",
+                extra_fields={},
+                assigned_lawyer_id=self_id,
+            )
+            foreign = Request(
+                track_number="TRK-WORKSPACE-FOREIGN",
+                client_name="Клиент Workspace Foreign",
+                client_phone="+79990010112",
+                status_code="IN_PROGRESS",
+                description="workspace foreign",
+                extra_fields={},
+                assigned_lawyer_id=other_id,
+            )
+            db.add_all([own, foreign])
+            db.flush()
+            own_id = str(own.id)
+            foreign_id = str(foreign.id)
+
+            for index in range(55):
+                db.add(
+                    Message(
+                        request_id=own.id,
+                        author_type="CLIENT",
+                        author_name="Клиент",
+                        body=f"workspace msg {index}",
+                    )
+                )
+            db.add(
+                Attachment(
+                    request_id=own.id,
+                    file_name="workspace.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=64,
+                    s3_key=f"requests/{own.id}/workspace.pdf",
+                    immutable=False,
+                )
+            )
+            db.commit()
+
+        headers = self._auth_headers("LAWYER", email="lawyer.workspace@example.com", sub=self_id)
+        own_workspace = self.client.get(f"/api/admin/requests/{own_id}/workspace", headers=headers)
+        self.assertEqual(own_workspace.status_code, 200)
+        payload = own_workspace.json()
+        self.assertEqual(str((payload.get("request") or {}).get("id")), own_id)
+        self.assertEqual(len(payload.get("messages") or []), 50)
+        self.assertTrue(bool(payload.get("messages_has_more")))
+        self.assertEqual(int(payload.get("messages_total") or 0), 55)
+        self.assertEqual(int(payload.get("messages_loaded_count") or 0), 50)
+        self.assertEqual(len(payload.get("attachments") or []), 1)
+        self.assertIn("status_route", payload)
+        self.assertIn("finance_summary", payload)
+
+        older_messages = self.chat_client.get(
+            f"/api/admin/chat/requests/{own_id}/messages-window",
+            headers=headers,
+            params={"before_count": 50, "limit": 10},
+        )
+        self.assertEqual(older_messages.status_code, 200)
+        older_payload = older_messages.json()
+        self.assertEqual(len(older_payload.get("rows") or []), 5)
+        self.assertFalse(bool(older_payload.get("has_more")))
+        self.assertEqual(int(older_payload.get("loaded_count") or 0), 55)
+
+        foreign_workspace = self.client.get(f"/api/admin/requests/{foreign_id}/workspace", headers=headers)
+        self.assertEqual(foreign_workspace.status_code, 403)
 
     def test_topic_status_flow_supports_branching_transitions(self):
         headers = self._auth_headers("ADMIN", email="root@example.com")
@@ -507,6 +611,35 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         )
         self.assertEqual(own_live_no_delta.status_code, 200)
         self.assertFalse(bool(own_live_no_delta.json().get("has_updates")))
+
+        with self.SessionLocal() as db:
+            own_req = db.get(Request, UUID(own_id))
+            self.assertIsNotNone(own_req)
+            live_message = Message(request_id=own_req.id, author_type="CLIENT", author_name="Клиент", body="live delta", immutable=False)
+            db.add(live_message)
+            db.flush()
+            db.add(
+                Attachment(
+                    request_id=own_req.id,
+                    message_id=live_message.id,
+                    file_name="live-delta.pdf",
+                    mime_type="application/pdf",
+                    size_bytes=321,
+                    s3_key=f"requests/{own_req.id}/live-delta.pdf",
+                    immutable=False,
+                )
+            )
+            db.commit()
+
+        own_live_delta = self.chat_client.get(
+            f"/api/admin/chat/requests/{own_id}/live",
+            headers=lawyer_headers,
+            params={"cursor": own_cursor},
+        )
+        self.assertEqual(own_live_delta.status_code, 200)
+        self.assertTrue(bool(own_live_delta.json().get("has_updates")))
+        self.assertEqual(len(own_live_delta.json().get("messages") or []), 1)
+        self.assertEqual(len(own_live_delta.json().get("attachments") or []), 1)
 
         foreign_live = self.chat_client.get(f"/api/admin/chat/requests/{foreign_id}/live", headers=lawyer_headers)
         self.assertEqual(foreign_live.status_code, 403)

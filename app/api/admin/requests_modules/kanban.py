@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.admin_user import AdminUser
@@ -202,6 +202,87 @@ def sort_kanban_items(items: list[dict[str, object]], sort_mode: str) -> list[di
     )
 
 
+def _apply_sql_safe_boolean_filters(
+    query,
+    *,
+    boolean_filters: list[tuple[str, str, bool]],
+    role: str,
+    actor: str,
+    terminal_codes: set[str],
+    next_day_start: datetime,
+):
+    remaining_filters: list[tuple[str, str, bool]] = []
+    for field, op, expected in boolean_filters:
+        if field != "deadline_alert":
+            remaining_filters.append((field, op, expected))
+            continue
+        actual_true_expr = (
+            Request.important_date_at.is_not(None)
+            & (Request.important_date_at < next_day_start)
+            & Request.status_code.notin_(terminal_codes)
+        )
+        if role == "LAWYER":
+            actual_true_expr = actual_true_expr & (Request.assigned_lawyer_id == actor)
+
+        target_true = expected if op == "=" else not expected
+        query = query.filter(actual_true_expr if target_true else ~actual_true_expr)
+    return query, remaining_filters
+
+
+def _build_lawyer_sort_order(query, db: Session) -> list[str]:
+    assigned_id_rows = (
+        query.with_entities(Request.assigned_lawyer_id)
+        .filter(Request.assigned_lawyer_id.is_not(None))
+        .distinct()
+        .all()
+    )
+    assigned_ids = [str(raw_id).strip() for (raw_id,) in assigned_id_rows if str(raw_id or "").strip()]
+    if not assigned_ids:
+        return []
+
+    valid_lawyer_ids: list[UUID] = []
+    for raw in assigned_ids:
+        try:
+            valid_lawyer_ids.append(UUID(raw))
+        except ValueError:
+            continue
+
+    lawyer_name_rows = db.query(AdminUser.id, AdminUser.name).filter(AdminUser.id.in_(valid_lawyer_ids)).all() if valid_lawyer_ids else []
+    lawyer_name_map = {
+        str(lawyer_id): str(name or "").strip()
+        for lawyer_id, name in lawyer_name_rows
+        if str(lawyer_id or "").strip()
+    }
+    return sorted(
+        lawyer_name_map.keys(),
+        key=lambda lawyer_id: (
+            1 if not lawyer_name_map.get(lawyer_id) else 0,
+            lawyer_name_map.get(lawyer_id, "").lower(),
+            lawyer_id,
+        ),
+    )
+
+
+def _apply_sql_sort(query, *, sort_mode: str, lawyer_sort_order: list[str] | None = None):
+    if sort_mode == "lawyer":
+        ordered_ids = lawyer_sort_order or []
+        if ordered_ids:
+            lawyer_rank_case = case(
+                *[(Request.assigned_lawyer_id == lawyer_id, index) for index, lawyer_id in enumerate(ordered_ids)],
+                else_=len(ordered_ids) + 1,
+            )
+            return query.order_by(
+                lawyer_rank_case.asc(),
+                case((Request.assigned_lawyer_id.is_(None), 1), else_=0).asc(),
+                Request.created_at.desc(),
+            )
+        return query.order_by(
+            case((Request.assigned_lawyer_id.is_(None), 1), else_=0).asc(),
+            Request.created_at.desc(),
+        )
+    return query.order_by(Request.created_at.desc())
+
+
 def get_requests_kanban_service(
     db: Session,
     admin: dict,
@@ -226,6 +307,13 @@ def get_requests_kanban_service(
 
     normalized_sort_mode = sort_mode if sort_mode in ALLOWED_KANBAN_SORT_MODES else "created_newest"
     query_filters, boolean_filters = parse_kanban_filters_or_400(filters)
+    now_utc = datetime.now(timezone.utc)
+    next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
+    terminal_codes = {
+        str(code).strip()
+        for (code,) in db.query(Status.code).filter(Status.is_terminal.is_(True)).all()
+        if str(code or "").strip()
+    } or {"RESOLVED", "CLOSED", "REJECTED"}
     if query_filters:
         base_query = apply_universal_query(
             base_query,
@@ -237,7 +325,28 @@ def get_requests_kanban_service(
             ),
         )
 
-    request_rows: list[Request] = base_query.all()
+    base_query, boolean_filters = _apply_sql_safe_boolean_filters(
+        base_query,
+        boolean_filters=boolean_filters,
+        role=role,
+        actor=actor,
+        terminal_codes=terminal_codes,
+        next_day_start=next_day_start,
+    )
+
+    can_apply_sql_window = normalized_sort_mode in {"created_newest", "lawyer"} and not boolean_filters
+    total = 0
+    request_query = base_query
+    if can_apply_sql_window:
+        lawyer_sort_order = _build_lawyer_sort_order(request_query, db) if normalized_sort_mode == "lawyer" else []
+        total = request_query.count()
+        request_query = _apply_sql_sort(
+            request_query,
+            sort_mode=normalized_sort_mode,
+            lawyer_sort_order=lawyer_sort_order,
+        ).limit(limit)
+
+    request_rows: list[Request] = request_query.all()
 
     request_id_to_row = {str(row.id): row for row in request_rows}
     request_ids = [row.id for row in request_rows]
@@ -266,9 +375,6 @@ def get_requests_kanban_service(
             if notification_request_id is not None
         }
     status_codes = {str(row.status_code or "").strip() for row in request_rows if str(row.status_code or "").strip()}
-    now_utc = datetime.now(timezone.utc)
-    next_day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
-
     status_meta_map: dict[str, dict[str, object]] = {}
     if status_codes:
         status_rows = (
@@ -537,11 +643,15 @@ def get_requests_kanban_service(
             }
         )
 
-    items = apply_boolean_kanban_filters(items, boolean_filters)
-    items = sort_kanban_items(items, normalized_sort_mode)
-    total = len(items)
-    if total > limit:
-        items = items[:limit]
+    if boolean_filters:
+        items = apply_boolean_kanban_filters(items, boolean_filters)
+    if not can_apply_sql_window:
+        items = sort_kanban_items(items, normalized_sort_mode)
+        total = len(items)
+        if total > limit:
+            items = items[:limit]
+    else:
+        items = sort_kanban_items(items, normalized_sort_mode)
 
     for row in items:
         key = str(row.get("status_group") or "").strip()

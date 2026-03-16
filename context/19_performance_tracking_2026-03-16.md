@@ -18,11 +18,11 @@
 |---|---|---|---|---|
 | PERF-01 | Зафиксировать baseline по ключевым endpoint и сценариям | in_progress | P0 | — |
 | PERF-02 | Добавить индекс на `requests.assigned_lawyer_id` | completed | P0 | — |
-| PERF-03 | Убрать full reload карточки заявки при live-обновлениях | planned | P0 | PERF-01 |
-| PERF-04 | Собрать единый endpoint карточки заявки | planned | P0 | PERF-01 |
-| PERF-05 | Выделить узкие request-scoped endpoints для вложений и счетов | planned | P0 | PERF-04 |
-| PERF-06 | Переписать kanban на SQL-first фильтрацию/limit | planned | P0 | PERF-01, PERF-02 |
-| PERF-07 | Ограничить initial chat payload и добавить догрузку истории | planned | P1 | PERF-03, PERF-04 |
+| PERF-03 | Убрать full reload карточки заявки при live-обновлениях | completed | P0 | PERF-01 |
+| PERF-04 | Собрать единый endpoint карточки заявки | in_progress | P0 | PERF-01 |
+| PERF-05 | Выделить узкие request-scoped endpoints для вложений и счетов | completed | P0 | PERF-04 |
+| PERF-06 | Переписать kanban на SQL-first фильтрацию/limit | in_progress | P0 | PERF-01, PERF-02 |
+| PERF-07 | Ограничить initial chat payload и добавить догрузку истории | in_progress | P1 | PERF-03, PERF-04 |
 | PERF-08 | Добавить нужные вспомогательные индексы и повторный profiling | planned | P1 | PERF-01 |
 
 ## PERF-01
@@ -48,8 +48,33 @@
 - 2026-03-16: добавлен ops-скрипт `scripts/ops/perf_baseline.sh` для repeatable baseline по admin workspace.
 - 2026-03-16: baseline еще не снят, потому что локальный контур на `localhost:8081` не поднят.
 - 2026-03-16: выполнен `PERF-02` - добавлен индекс `ix_requests_assigned_lawyer_id`, миграционный тест пройден.
+- 2026-03-16: dashboard перестроен на приоритетную загрузку `overview`, справочники уходят в неблокирующий bootstrap.
+- 2026-03-16: карточка заявки переведена с generic `attachments/query` и `invoices/query` на узкие request-scoped endpoint.
+- 2026-03-16: `PERF-05` закрыт, backend регресс по чатам/счетам/hardening пройден.
+- 2026-03-16: `PERF-03` начат - admin `/live` отдает delta `messages/attachments`, hook больше не делает полный `loadRequestModalData()` на polling.
+- 2026-03-16: регресс `tests.admin.test_lawyer_chat` пройден, локальная сборка `admin/index.jsx` пройдена.
+- 2026-03-16: `PERF-03` завершен - client `/live` тоже переведен на delta без полного reload workspace.
+- 2026-03-16: `PERF-04` начат - admin карточка заявки переведена на единый endpoint `/api/admin/requests/{id}/workspace`.
+- 2026-03-16: `PERF-06` начат - для канбана в сценарии `created_newest` без boolean-фильтров `count/order_by/limit` перенесены в SQL, чтобы не загружать весь filtered set в Python.
+- 2026-03-16: добавлен регресс на канбан `limit + total + truncated`, контейнерный тест `tests.admin.test_status_flow_kanban` пройден.
+- 2026-03-16: в `compute_sla_snapshot` выборки `StatusHistory` и первых lawyer messages ограничены только активными заявками; это должно ускорить `/api/admin/metrics/overview` на первом запросе.
+- 2026-03-16: `overview` добавлен в perf-labels и в `scripts/ops/perf_baseline.sh`, чтобы дальше мерить dashboard отдельно от канбана/workspace.
+- 2026-03-16: контейнерный регресс `tests.admin.test_metrics_templates tests.test_dashboard_finance` пройден после оптимизации overview/SLA.
+- 2026-03-16: поднят минимальный локальный контур для живых замеров (`db`, `redis`, `minio`, `email-service`, `chat-service`, `backend`, `frontend`); `frontend` ушел в restart-loop из-за `host not found in upstream "minio"` в nginx-конфиге, поэтому full baseline через `:8081` не собран.
+- 2026-03-16: снят manual backend-baseline напрямую через `:8002` для `metrics_overview`, `kanban`, `request_workspace`; цифры получились низкими на локальном seed и полезны только как smoke-check, а не как репрезентативный perf baseline.
+- 2026-03-16: исправлен restart-loop `frontend` через lazy DNS resolve для `minio` в nginx, полноценный baseline через `http://localhost:8081` снова доступен.
+- 2026-03-16: получен baseline через `:8081` после оптимизаций dashboard/workspace: `kanban ~17.8 ms avg`, `metrics_overview core ~12.9 ms avg`, `metrics_overview_sla ~8.2 ms avg`, `request_workspace ~14.9 ms avg`, `chat_live ~14.4 ms avg` на локальном seed.
+- 2026-03-16: `overview` переведен на двухфазную загрузку: быстрый `include_sla=false` + фоновый `/api/admin/metrics/overview-sla`, чтобы убрать `compute_sla_snapshot()` из критического пути dashboard.
+- 2026-03-16: `PERF-07` начат - initial chat payload ограничен окном сообщений, добавлены `messages-window` endpoints для admin/public и догрузка старой истории в UI по кнопке.
+- 2026-03-16: контейнерные регрессы после paged-chat пройдены: `tests.admin.test_lawyer_chat`, `tests.test_public_cabinet`, `tests.admin.test_metrics_templates`, `tests.test_dashboard_finance`, `tests.test_http_hardening`.
+- 2026-03-16: добавлен сценарий `scripts/ops/perf_long_chat_workspace.sh`, который сидит request с длинным чатом и меряет first open workspace и `messages-window` на живом контуре.
+- 2026-03-16: long-chat baseline снят на `2000` сообщениях, отчет `reports/perf/perf-long-chat-workspace-20260316-201459.md`: `request_workspace ~579 ms avg`, `messages_window ~650 ms avg`, initial payload и older-page оба возвращают только `50` сообщений из `2000`.
+- 2026-03-16: при первом прогоне long-chat сценария выяснилось, что `chat-service` работал на старом контейнере без актуальных `X-Perf-*` headers; после rebuild `chat-service` server timing для `messages-window` подтвержден на живом контуре.
+- 2026-03-16: `PERF-06` продвинут дальше - SQL-first window теперь покрывает не только `created_newest`, но и `sort_mode=lawyer`, а boolean-фильтр `deadline_alert` переносится в SQL до загрузки строк.
+- 2026-03-16: добавлен контейнерный регресс `test_requests_kanban_lawyer_sort_uses_limit_without_losing_total`, подтверждающий `limit/truncated/total` для `sort_mode=lawyer`.
 
 ## Дальше
 
-1. Поднять локальный контур и выполнить `./scripts/ops/perf_baseline.sh http://localhost:8081`.
-2. После снятия baseline перейти к `PERF-06` и убирать `base_query.all()` из kanban.
+1. Разобрать server-side стоимость `request_workspace` и `messages-window` на длинном чате: window-пагинация уже работает, но оба endpoint остаются около `0.6-0.65s`, значит узкое место теперь в запросах/сериализации, а не в объеме initial payload.
+2. Довести `PERF-04` до конца и решить, нужен ли такой же unified endpoint для client workspace.
+3. Продолжить `PERF-06` для оставшихся режимов канбана, где все еще остается Python-side post-processing: `deadline`, `overdue`, `has_unread_updates`.

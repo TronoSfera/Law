@@ -19,6 +19,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.request import Request
 from app.schemas.uploads import UploadCompletePayload, UploadCompleteResponse, UploadInitPayload, UploadInitResponse, UploadScope
+from app.api.admin.requests_modules.permissions import ensure_lawyer_can_view_request_or_403
 from app.services.notifications import EVENT_ATTACHMENT as NOTIFICATION_EVENT_ATTACHMENT, notify_request_event
 from app.services.request_read_markers import EVENT_ATTACHMENT, mark_unread_for_client
 from app.services.security_audit import record_file_security_event
@@ -163,6 +164,26 @@ def _normalize_avatar_to_webp_or_400(storage, *, key: str) -> tuple[int, str]:
         raise HTTPException(status_code=400, detail="Не удалось обработать изображение аватара")
     _write_object_bytes_or_500(storage, key=key, content=optimized, mime_type="image/webp")
     return int(len(optimized)), "image/webp"
+
+
+def _serialize_attachment(row: Attachment) -> dict:
+    return {
+        "id": str(row.id),
+        "request_id": str(row.request_id),
+        "message_id": str(row.message_id) if row.message_id else None,
+        "file_name": row.file_name,
+        "mime_type": row.mime_type,
+        "size_bytes": int(row.size_bytes or 0),
+        "s3_key": row.s3_key,
+        "immutable": bool(row.immutable),
+        "scan_status": row.scan_status,
+        "scan_signature": row.scan_signature,
+        "scan_error": row.scan_error,
+        "scanned_at": row.scanned_at.isoformat() if row.scanned_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "responsible": row.responsible,
+    }
 
 
 @router.post("/init", response_model=UploadInitResponse)
@@ -422,6 +443,22 @@ def upload_complete(
             persist_now=True,
         )
         raise
+
+
+@router.get("/request-attachments/{request_id}")
+def list_request_attachments(
+    request_id: str,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    request_uuid = _uuid_or_400(request_id, "request_id")
+    req = db.get(Request, request_uuid)
+    if req is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    ensure_lawyer_can_view_request_or_403(admin, req)
+    rows = db.query(Attachment).filter(Attachment.request_id == req.id).order_by(Attachment.created_at.asc(), Attachment.id.asc()).all()
+    return {"rows": [_serialize_attachment(row) for row in rows], "total": len(rows)}
 
 
 @router.get("/object/{object_key:path}")

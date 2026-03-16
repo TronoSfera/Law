@@ -896,3 +896,104 @@ class AdminStatusFlowKanbanTests(AdminUniversalCrudBase):
         sorted_rows = sorted_by_deadline.json().get("rows") or []
         self.assertTrue(sorted_rows)
         self.assertEqual(sorted_rows[0]["id"], request_overdue_id)
+
+    def test_requests_kanban_created_newest_uses_limit_without_losing_total(self):
+        with self.SessionLocal() as db:
+            db.add(Status(code="NEW", name="Новая", enabled=True, sort_order=1, is_terminal=False, kind="DEFAULT"))
+            db.flush()
+            base_created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            request_ids = []
+            for index in range(4):
+                request_row = Request(
+                    track_number=f"TRK-KANBAN-LIMIT-{index}",
+                    client_name=f"Клиент {index}",
+                    client_phone=f"+7999000010{index}",
+                    status_code="NEW",
+                    description=f"limit-{index}",
+                    extra_fields={},
+                    created_at=base_created_at + timedelta(minutes=index),
+                )
+                db.add(request_row)
+                db.flush()
+                request_ids.append(str(request_row.id))
+            db.commit()
+
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+        response = self.client.get("/api/admin/requests/kanban?limit=2", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload.get("rows") or []
+
+        self.assertEqual(payload["total"], 4)
+        self.assertTrue(bool(payload["truncated"]))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row["id"] for row in rows], [request_ids[3], request_ids[2]])
+
+    def test_requests_kanban_lawyer_sort_uses_limit_without_losing_total(self):
+        with self.SessionLocal() as db:
+            db.add(Status(code="NEW", name="Новая", enabled=True, sort_order=1, is_terminal=False, kind="DEFAULT"))
+            lawyer_b = AdminUser(
+                role="LAWYER",
+                name="Boris Lawyer",
+                email="lawyer-boris@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            lawyer_a = AdminUser(
+                role="LAWYER",
+                name="Alex Lawyer",
+                email="lawyer-alexey@example.com",
+                password_hash="hash",
+                is_active=True,
+            )
+            db.add_all([lawyer_b, lawyer_a])
+            db.flush()
+            base_created_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+            rows = [
+                Request(
+                    track_number="TRK-KANBAN-LAWYER-1",
+                    client_name="Клиент 1",
+                    client_phone="+79990001111",
+                    status_code="NEW",
+                    description="lawyer-sort-1",
+                    extra_fields={},
+                    assigned_lawyer_id=str(lawyer_b.id),
+                    created_at=base_created_at + timedelta(minutes=1),
+                ),
+                Request(
+                    track_number="TRK-KANBAN-LAWYER-2",
+                    client_name="Клиент 2",
+                    client_phone="+79990001112",
+                    status_code="NEW",
+                    description="lawyer-sort-2",
+                    extra_fields={},
+                    assigned_lawyer_id=str(lawyer_a.id),
+                    created_at=base_created_at + timedelta(minutes=2),
+                ),
+                Request(
+                    track_number="TRK-KANBAN-LAWYER-3",
+                    client_name="Клиент 3",
+                    client_phone="+79990001113",
+                    status_code="NEW",
+                    description="lawyer-sort-3",
+                    extra_fields={},
+                    assigned_lawyer_id=None,
+                    created_at=base_created_at + timedelta(minutes=3),
+                ),
+            ]
+            db.add_all(rows)
+            db.commit()
+
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+        response = self.client.get("/api/admin/requests/kanban?limit=2&sort_mode=lawyer", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        response_rows = payload.get("rows") or []
+
+        self.assertEqual(payload["total"], 3)
+        self.assertTrue(bool(payload["truncated"]))
+        self.assertEqual(len(response_rows), 2)
+        self.assertEqual(
+            [str(item.get("assigned_lawyer_name") or "") for item in response_rows],
+            ["Alex Lawyer", "Boris Lawyer"],
+        )

@@ -226,7 +226,6 @@
     AttachmentPreviewModalComponent,
     StatusLineComponent
   }) {
-    var _a, _b, _c;
     const { useEffect, useMemo, useRef, useState } = React;
     const [preview, setPreview] = useState({ open: false, url: "", fileName: "", mimeType: "" });
     const [chatTab, setChatTab] = useState("chat");
@@ -326,7 +325,7 @@
       []
     );
     const openPreview = (item) => {
-      if (!(item == null ? void 0 : item.download_url)) return;
+      if (!item?.download_url) return;
       setPreview({
         open: true,
         url: String(item.download_url),
@@ -363,11 +362,11 @@
     const safeInvoices = Array.isArray(invoices) ? invoices : [];
     const safeStatusHistory = Array.isArray(statusHistory) ? statusHistory : [];
     const safeAvailableStatuses = Array.isArray(availableStatuses) ? availableStatuses : [];
-    const totalFilesBytes = safeAttachments.reduce((acc, item) => acc + Number((item == null ? void 0 : item.size_bytes) || 0), 0);
-    const clientLabel = (row == null ? void 0 : row.client_name) || "-";
-    const clientPhone = String((row == null ? void 0 : row.client_phone) || "").trim();
-    const lawyerLabel = (row == null ? void 0 : row.assigned_lawyer_name) || (row == null ? void 0 : row.assigned_lawyer_id) || "\u041D\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D";
-    const lawyerPhone = String((row == null ? void 0 : row.assigned_lawyer_phone) || "").trim();
+    const totalFilesBytes = safeAttachments.reduce((acc, item) => acc + Number(item?.size_bytes || 0), 0);
+    const clientLabel = row?.client_name || "-";
+    const clientPhone = String(row?.client_phone || "").trim();
+    const lawyerLabel = row?.assigned_lawyer_name || row?.assigned_lawyer_id || "\u041D\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D";
+    const lawyerPhone = String(row?.assigned_lawyer_phone || "").trim();
     const clientHasPhone = Boolean(clientPhone);
     const lawyerHasPhone = Boolean(lawyerPhone);
     const messagePlaceholder = canFillRequestData ? "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043B\u044F \u044E\u0440\u0438\u0441\u0442\u0430" : "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043B\u044F \u043A\u043B\u0438\u0435\u043D\u0442\u0430";
@@ -375,7 +374,7 @@
       () => (dataRequestModal.templateList || []).find((item) => {
         const query = String(dataRequestModal.requestTemplateQuery || "").trim().toLowerCase();
         if (!query) return false;
-        return query === String((item == null ? void 0 : item.name) || "").trim().toLowerCase() || query === String((item == null ? void 0 : item.id) || "").trim().toLowerCase();
+        return query === String(item?.name || "").trim().toLowerCase() || query === String(item?.id || "").trim().toLowerCase();
       }) || null,
       [dataRequestModal.requestTemplateQuery, dataRequestModal.templateList]
     );
@@ -383,7 +382,7 @@
       () => (dataRequestModal.templates || []).find((item) => {
         const query = String(dataRequestModal.catalogFieldQuery || "").trim().toLowerCase();
         if (!query) return false;
-        return query === String((item == null ? void 0 : item.label) || "").trim().toLowerCase() || query === String((item == null ? void 0 : item.key) || "").trim().toLowerCase() || query === String((item == null ? void 0 : item.id) || "").trim().toLowerCase();
+        return query === String(item?.label || "").trim().toLowerCase() || query === String(item?.key || "").trim().toLowerCase() || query === String(item?.id || "").trim().toLowerCase();
       }) || null,
       [dataRequestModal.catalogFieldQuery, dataRequestModal.templates]
     );
@@ -391,15 +390,15 @@
       const query = String(dataRequestModal.requestTemplateQuery || "").trim().toLowerCase();
       const rows = Array.isArray(dataRequestModal.templateList) ? dataRequestModal.templateList : [];
       if (!query) return rows.slice(0, 8);
-      return rows.filter((item) => String((item == null ? void 0 : item.name) || "").toLowerCase().includes(query)).slice(0, 8);
+      return rows.filter((item) => String(item?.name || "").toLowerCase().includes(query)).slice(0, 8);
     }, [dataRequestModal.requestTemplateQuery, dataRequestModal.templateList]);
     const filteredCatalogFields = useMemo(() => {
       const query = String(dataRequestModal.catalogFieldQuery || "").trim().toLowerCase();
       const rows = Array.isArray(dataRequestModal.templates) ? dataRequestModal.templates : [];
       if (!query) return rows.slice(0, 10);
       return rows.filter((item) => {
-        const label = String((item == null ? void 0 : item.label) || "").toLowerCase();
-        const key = String((item == null ? void 0 : item.key) || "").toLowerCase();
+        const label = String(item?.label || "").toLowerCase();
+        const key = String(item?.key || "").toLowerCase();
         return label.includes(query) || key.includes(query);
       }).slice(0, 10);
     }, [dataRequestModal.catalogFieldQuery, dataRequestModal.templates]);
@@ -426,7 +425,7 @@
     const attachmentById = useMemo(() => {
       const map = /* @__PURE__ */ new Map();
       safeAttachments.forEach((item) => {
-        const id = String((item == null ? void 0 : item.id) || "").trim();
+        const id = String(item?.id || "").trim();
         if (id) map.set(id, item);
       });
       return map;
@@ -449,14 +448,14 @@
       return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes());
     };
     const defaultImportantDateLocal = useMemo(() => {
-      const source = String(currentImportantDateAt || (row == null ? void 0 : row.important_date_at) || "").trim();
+      const source = String(currentImportantDateAt || row?.important_date_at || "").trim();
       if (source) {
         const local = toDateTimeLocalValue(source);
         if (local) return local;
       }
       const next = new Date(Date.now() + 3 * 24 * 60 * 60 * 1e3);
       return toDateTimeLocalValue(next.toISOString());
-    }, [currentImportantDateAt, row == null ? void 0 : row.important_date_at]);
+    }, [currentImportantDateAt, row?.important_date_at]);
     const formatDuration = (seconds) => {
       const total = Number(seconds);
       if (!Number.isFinite(total) || total < 0) return "\u2014";
@@ -473,14 +472,13 @@
       return String(Math.round((amount + Number.EPSILON) * 100) / 100);
     };
     const openFinanceIssueForm = () => {
-      var _a2, _b2, _c2, _d, _e;
-      const defaultAmount = (_e = (_d = (_c2 = (_b2 = (_a2 = finance == null ? void 0 : finance.request_cost) != null ? _a2 : row == null ? void 0 : row.request_cost) != null ? _b2 : row == null ? void 0 : row.invoice_amount) != null ? _c2 : finance == null ? void 0 : finance.effective_rate) != null ? _d : row == null ? void 0 : row.effective_rate) != null ? _e : "";
+      const defaultAmount = finance?.request_cost ?? row?.request_cost ?? row?.invoice_amount ?? finance?.effective_rate ?? row?.effective_rate ?? "";
       setFinanceIssueForm({
         open: true,
         saving: false,
         amount: formatMoneyInput(defaultAmount),
-        serviceDescription: String((row == null ? void 0 : row.topic_name) || (row == null ? void 0 : row.topic_code) || "\u042E\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0443\u0441\u043B\u0443\u0433\u0438"),
-        payerDisplayName: String((row == null ? void 0 : row.client_name) || "").trim() || "\u041A\u043B\u0438\u0435\u043D\u0442",
+        serviceDescription: String(row?.topic_name || row?.topic_code || "\u042E\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0443\u0441\u043B\u0443\u0433\u0438"),
+        payerDisplayName: String(row?.client_name || "").trim() || "\u041A\u043B\u0438\u0435\u043D\u0442",
         error: ""
       });
     };
@@ -493,7 +491,7 @@
     };
     const submitFinanceIssueForm = async (event) => {
       if (event && typeof event.preventDefault === "function") event.preventDefault();
-      if (!(row == null ? void 0 : row.id) || typeof onIssueInvoice !== "function") return;
+      if (!row?.id || typeof onIssueInvoice !== "function") return;
       const normalizedAmount = Number(String(financeIssueForm.amount || "").replace(",", "."));
       if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
         setFinanceIssueForm((prev) => ({ ...prev, error: "\u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u0443\u044E \u0441\u0443\u043C\u043C\u0443 \u0441\u0447\u0435\u0442\u0430" }));
@@ -509,12 +507,12 @@
         });
         setFinanceIssueForm((prev) => ({ ...prev, open: false, saving: false, error: "" }));
       } catch (error) {
-        setFinanceIssueForm((prev) => ({ ...prev, saving: false, error: (error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0441\u0447\u0435\u0442" }));
+        setFinanceIssueForm((prev) => ({ ...prev, saving: false, error: error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0441\u0447\u0435\u0442" }));
       }
     };
     const openStatusChangeModal = (preset) => {
-      const suggested = Array.isArray(preset == null ? void 0 : preset.suggestedStatuses) ? preset.suggestedStatuses.filter(Boolean) : [];
-      const currentCode = String((row == null ? void 0 : row.status_code) || "").trim();
+      const suggested = Array.isArray(preset?.suggestedStatuses) ? preset.suggestedStatuses.filter(Boolean) : [];
+      const currentCode = String(row?.status_code || "").trim();
       const firstSuggested = suggested.find((code) => code && code !== currentCode) || "";
       setStatusChangeModal({
         open: true,
@@ -538,27 +536,27 @@
     const requestDataListItems = useMemo(() => {
       const byKey = /* @__PURE__ */ new Map();
       const messagesChrono = [...safeMessages].sort((a, b) => {
-        const at = new Date((a == null ? void 0 : a.created_at) || 0).getTime();
-        const bt = new Date((b == null ? void 0 : b.created_at) || 0).getTime();
+        const at = new Date(a?.created_at || 0).getTime();
+        const bt = new Date(b?.created_at || 0).getTime();
         if (at !== bt) return at - bt;
-        return String((a == null ? void 0 : a.id) || "").localeCompare(String((b == null ? void 0 : b.id) || ""), "ru");
+        return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
       });
       messagesChrono.forEach((msg) => {
-        if (String((msg == null ? void 0 : msg.message_kind) || "") !== "REQUEST_DATA") return;
-        const items = Array.isArray(msg == null ? void 0 : msg.request_data_items) ? msg.request_data_items : [];
+        if (String(msg?.message_kind || "") !== "REQUEST_DATA") return;
+        const items = Array.isArray(msg?.request_data_items) ? msg.request_data_items : [];
         items.forEach((item, idx) => {
-          const key = String((item == null ? void 0 : item.key) || (item == null ? void 0 : item.id) || "item-" + idx);
+          const key = String(item?.key || item?.id || "item-" + idx);
           if (!key) return;
           byKey.set(key, {
-            id: String((item == null ? void 0 : item.id) || ""),
+            id: String(item?.id || ""),
             key,
-            label: String((item == null ? void 0 : item.label) || (item == null ? void 0 : item.label_short) || key),
-            field_type: String((item == null ? void 0 : item.field_type) || "string").toLowerCase(),
-            value_text: (item == null ? void 0 : item.value_text) == null ? "" : String(item.value_text),
-            is_filled: Boolean(item == null ? void 0 : item.is_filled),
-            source_message_id: String((msg == null ? void 0 : msg.id) || ""),
-            source_message_created_at: (msg == null ? void 0 : msg.created_at) || null,
-            value_file: (item == null ? void 0 : item.value_file) || null
+            label: String(item?.label || item?.label_short || key),
+            field_type: String(item?.field_type || "string").toLowerCase(),
+            value_text: item?.value_text == null ? "" : String(item.value_text),
+            is_filled: Boolean(item?.is_filled),
+            source_message_id: String(msg?.id || ""),
+            source_message_created_at: msg?.created_at || null,
+            value_file: item?.value_file || null
           });
         });
       });
@@ -572,7 +570,7 @@
     const attachmentsByMessageId = useMemo(() => {
       const map = /* @__PURE__ */ new Map();
       safeAttachments.forEach((item) => {
-        const messageId = String((item == null ? void 0 : item.message_id) || "").trim();
+        const messageId = String(item?.message_id || "").trim();
         if (!messageId) return;
         if (!map.has(messageId)) map.set(messageId, []);
         map.get(messageId).push(item);
@@ -587,19 +585,19 @@
         if (Number.isFinite(ts) && ts > latestTs) latestTs = ts;
       };
       safeMessages.forEach((item) => {
-        pickLatest(item == null ? void 0 : item.updated_at);
-        pickLatest(item == null ? void 0 : item.created_at);
+        pickLatest(item?.updated_at);
+        pickLatest(item?.created_at);
       });
       safeAttachments.forEach((item) => {
-        pickLatest(item == null ? void 0 : item.updated_at);
-        pickLatest(item == null ? void 0 : item.created_at);
+        pickLatest(item?.updated_at);
+        pickLatest(item?.created_at);
       });
       return latestTs > 0 ? new Date(latestTs).toISOString() : "";
     }, [safeAttachments, safeMessages]);
     const typingHintText = useMemo(() => {
       const rows = Array.isArray(typingPeers) ? typingPeers : [];
       if (!rows.length) return "";
-      const labels = rows.map((item) => String((item == null ? void 0 : item.actor_label) || (item == null ? void 0 : item.label) || "").trim()).filter(Boolean);
+      const labels = rows.map((item) => String(item?.actor_label || item?.label || "").trim()).filter(Boolean);
       if (!labels.length) return "\u0421\u043E\u0431\u0435\u0441\u0435\u0434\u043D\u0438\u043A \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442...";
       const unique = [];
       labels.forEach((label) => {
@@ -610,7 +608,7 @@
       return unique[0] + ", " + unique[1] + " \u0438 \u0435\u0449\u0435 " + String(unique.length - 2) + " \u043F\u0435\u0447\u0430\u0442\u0430\u044E\u0442...";
     }, [typingPeers]);
     const openAttachmentFromMessage = (item) => {
-      if (!(item == null ? void 0 : item.download_url)) return;
+      if (!item?.download_url) return;
       const kind = detectAttachmentPreviewKind(item.file_name, item.mime_type);
       if (kind === "none") {
         window.open(String(item.download_url), "_blank", "noopener,noreferrer");
@@ -619,13 +617,13 @@
       openPreview(item);
     };
     const downloadAttachment = (item) => {
-      const url = String((item == null ? void 0 : item.download_url) || "").trim();
+      const url = String(item?.download_url || "").trim();
       if (!url) return;
       const link = document.createElement("a");
       link.href = url;
       link.target = "_blank";
       link.rel = "noreferrer";
-      const fileName = String((item == null ? void 0 : item.file_name) || "").trim();
+      const fileName = String(item?.file_name || "").trim();
       if (fileName) link.download = fileName;
       document.body.appendChild(link);
       link.click();
@@ -633,7 +631,7 @@
     };
     useEffect(() => {
       liveCursorRef.current = localActivityCursor || "";
-    }, [localActivityCursor, row == null ? void 0 : row.id]);
+    }, [localActivityCursor, row?.id]);
     useEffect(() => {
       if (!row || typeof onLiveProbe !== "function") {
         setTypingPeers([]);
@@ -657,9 +655,9 @@
         liveInFlightRef.current = true;
         try {
           const payload = await onLiveProbe({ cursor: liveCursorRef.current });
-          const cursor = String((payload == null ? void 0 : payload.cursor) || "").trim();
+          const cursor = String(payload?.cursor || "").trim();
           if (cursor) liveCursorRef.current = cursor;
-          setTypingPeers(Array.isArray(payload == null ? void 0 : payload.typing) ? payload.typing : []);
+          setTypingPeers(Array.isArray(payload?.typing) ? payload.typing : []);
           liveFailCountRef.current = 0;
           setLiveMode("online");
         } catch (_) {
@@ -799,9 +797,9 @@
           ...prev,
           open: true,
           loading: false,
-          templates: Array.isArray(data == null ? void 0 : data.rows) ? data.rows : [],
-          templateList: Array.isArray(data == null ? void 0 : data.templates) ? data.templates : [],
-          availableDocuments: Array.isArray(data == null ? void 0 : data.documents) ? data.documents : [],
+          templates: Array.isArray(data?.rows) ? data.rows : [],
+          templateList: Array.isArray(data?.templates) ? data.templates : [],
+          availableDocuments: Array.isArray(data?.documents) ? data.documents : [],
           documentName: "",
           requestTemplateQuery: "",
           catalogFieldQuery: ""
@@ -838,11 +836,11 @@
           open: true,
           loading: false,
           messageId: String(messageId),
-          rows: Array.isArray(batch == null ? void 0 : batch.items) ? batch.items.map(newDataRequestRow) : [],
-          documentName: String((batch == null ? void 0 : batch.document_name) || ""),
-          templates: Array.isArray(templates == null ? void 0 : templates.rows) ? templates.rows : [],
-          templateList: Array.isArray(templates == null ? void 0 : templates.templates) ? templates.templates : [],
-          availableDocuments: Array.isArray(templates == null ? void 0 : templates.documents) ? templates.documents : [],
+          rows: Array.isArray(batch?.items) ? batch.items.map(newDataRequestRow) : [],
+          documentName: String(batch?.document_name || ""),
+          templates: Array.isArray(templates?.rows) ? templates.rows : [],
+          templateList: Array.isArray(templates?.templates) ? templates.templates : [],
+          availableDocuments: Array.isArray(templates?.documents) ? templates.documents : [],
           requestTemplateQuery: "",
           catalogFieldQuery: ""
         }));
@@ -857,8 +855,8 @@
       const query = String(queryValue || "").trim().toLowerCase();
       if (!query) return null;
       return (dataRequestModal.templateList || []).find((item) => {
-        const id = String((item == null ? void 0 : item.id) || "").toLowerCase();
-        const name = String((item == null ? void 0 : item.name) || "").toLowerCase();
+        const id = String(item?.id || "").toLowerCase();
+        const name = String(item?.name || "").toLowerCase();
         return query === id || query === name;
       }) || null;
     };
@@ -866,9 +864,9 @@
       const query = String(queryValue || "").trim().toLowerCase();
       if (!query) return null;
       return (dataRequestModal.templates || []).find((item) => {
-        const id = String((item == null ? void 0 : item.id) || "").toLowerCase();
-        const key = String((item == null ? void 0 : item.key) || "").toLowerCase();
-        const label = String((item == null ? void 0 : item.label) || "").toLowerCase();
+        const id = String(item?.id || "").toLowerCase();
+        const key = String(item?.key || "").toLowerCase();
+        const label = String(item?.label || "").toLowerCase();
         return query === id || query === key || query === label;
       }) || null;
     };
@@ -879,42 +877,39 @@
       setDataRequestModal((prev) => ({ ...prev, loading: true, error: "" }));
       try {
         const data = await onLoadRequestDataTemplateDetails(templateId);
-        const incomingRows = (Array.isArray(data == null ? void 0 : data.items) ? data.items : []).map(
+        const incomingRows = (Array.isArray(data?.items) ? data.items : []).map(
           (item) => newDataRequestRow({
             ...item,
             topic_template_id: item.topic_data_template_id || item.topic_template_id || "",
             field_type: item.value_type || item.field_type
           })
         );
-        setDataRequestModal((prev) => {
-          var _a2, _b2;
-          return {
-            ...prev,
-            loading: false,
-            rows: mergeRequestDataRows(prev.rows, incomingRows),
-            selectedRequestTemplateId: String(((_a2 = data == null ? void 0 : data.template) == null ? void 0 : _a2.id) || prev.selectedRequestTemplateId || ""),
-            requestTemplateQuery: String(((_b2 = data == null ? void 0 : data.template) == null ? void 0 : _b2.name) || templateNameHint || prev.requestTemplateQuery || ""),
-            templateStatus: ""
-          };
-        });
+        setDataRequestModal((prev) => ({
+          ...prev,
+          loading: false,
+          rows: mergeRequestDataRows(prev.rows, incomingRows),
+          selectedRequestTemplateId: String(data?.template?.id || prev.selectedRequestTemplateId || ""),
+          requestTemplateQuery: String(data?.template?.name || templateNameHint || prev.requestTemplateQuery || ""),
+          templateStatus: ""
+        }));
       } catch (error) {
         setDataRequestModal((prev) => ({ ...prev, loading: false, error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0448\u0430\u0431\u043B\u043E\u043D" }));
       }
     };
     const applySelectedRequestTemplate = async () => {
       const selectedByQuery = findRequestTemplateByQuery(dataRequestModal.requestTemplateQuery);
-      const templateId = String((selectedByQuery == null ? void 0 : selectedByQuery.id) || dataRequestModal.selectedRequestTemplateId || "").trim();
-      return applyRequestTemplateById(templateId, (selectedByQuery == null ? void 0 : selectedByQuery.name) || "");
+      const templateId = String(selectedByQuery?.id || dataRequestModal.selectedRequestTemplateId || "").trim();
+      return applyRequestTemplateById(templateId, selectedByQuery?.name || "");
     };
     const refreshDataRequestCatalog = async () => {
       if (typeof onLoadRequestDataTemplates !== "function") return null;
       const data = await onLoadRequestDataTemplates();
       setDataRequestModal((prev) => ({
         ...prev,
-        templates: Array.isArray(data == null ? void 0 : data.rows) ? data.rows : [],
-        templateList: Array.isArray(data == null ? void 0 : data.templates) ? data.templates : [],
-        availableDocuments: Array.isArray(data == null ? void 0 : data.documents) ? data.documents : [],
-        selectedRequestTemplateId: prev.selectedRequestTemplateId && (Array.isArray(data == null ? void 0 : data.templates) ? data.templates : []).some((item) => String(item == null ? void 0 : item.id) === String(prev.selectedRequestTemplateId)) ? prev.selectedRequestTemplateId : ""
+        templates: Array.isArray(data?.rows) ? data.rows : [],
+        templateList: Array.isArray(data?.templates) ? data.templates : [],
+        availableDocuments: Array.isArray(data?.documents) ? data.documents : [],
+        selectedRequestTemplateId: prev.selectedRequestTemplateId && (Array.isArray(data?.templates) ? data.templates : []).some((item) => String(item?.id) === String(prev.selectedRequestTemplateId)) ? prev.selectedRequestTemplateId : ""
       }));
       return data;
     };
@@ -934,7 +929,7 @@
       setDataRequestModal((prev) => ({ ...prev, savingTemplate: true, error: "", templateStatus: "" }));
       try {
         const result = await onSaveRequestDataTemplate({
-          template_id: String((selectedFromQuery == null ? void 0 : selectedFromQuery.id) || dataRequestModal.selectedRequestTemplateId || "").trim() || void 0,
+          template_id: String(selectedFromQuery?.id || dataRequestModal.selectedRequestTemplateId || "").trim() || void 0,
           name: templateName,
           items: rows.map((row2) => ({
             topic_data_template_id: row2.topic_template_id || void 0,
@@ -943,24 +938,21 @@
             value_type: row2.field_type || "string"
           }))
         });
-        const savedRows = (Array.isArray(result == null ? void 0 : result.items) ? result.items : []).map(
+        const savedRows = (Array.isArray(result?.items) ? result.items : []).map(
           (item) => newDataRequestRow({
             ...item,
             topic_template_id: item.topic_data_template_id || item.topic_template_id || "",
             field_type: item.value_type || item.field_type
           })
         );
-        setDataRequestModal((prev) => {
-          var _a2, _b2;
-          return {
-            ...prev,
-            savingTemplate: false,
-            rows: savedRows.length ? savedRows : prev.rows,
-            selectedRequestTemplateId: String(((_a2 = result == null ? void 0 : result.template) == null ? void 0 : _a2.id) || prev.selectedRequestTemplateId || ""),
-            requestTemplateQuery: String(((_b2 = result == null ? void 0 : result.template) == null ? void 0 : _b2.name) || templateName),
-            templateStatus: "\u0428\u0430\u0431\u043B\u043E\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D"
-          };
-        });
+        setDataRequestModal((prev) => ({
+          ...prev,
+          savingTemplate: false,
+          rows: savedRows.length ? savedRows : prev.rows,
+          selectedRequestTemplateId: String(result?.template?.id || prev.selectedRequestTemplateId || ""),
+          requestTemplateQuery: String(result?.template?.name || templateName),
+          templateStatus: "\u0428\u0430\u0431\u043B\u043E\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D"
+        }));
         await refreshDataRequestCatalog();
       } catch (error) {
         setDataRequestModal((prev) => ({ ...prev, savingTemplate: false, error: error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0448\u0430\u0431\u043B\u043E\u043D" }));
@@ -968,7 +960,7 @@
     };
     const addSelectedTemplateRow = () => {
       const selectedByQuery = findCatalogFieldByQuery(dataRequestModal.catalogFieldQuery);
-      const templateId = String((selectedByQuery == null ? void 0 : selectedByQuery.id) || dataRequestModal.selectedCatalogTemplateId || "").trim();
+      const templateId = String(selectedByQuery?.id || dataRequestModal.selectedCatalogTemplateId || "").trim();
       const template = (dataRequestModal.templates || []).find((item) => String(item.id) === templateId);
       if (!template) {
         const manualLabel = String(dataRequestModal.catalogFieldQuery || "").trim();
@@ -1084,19 +1076,19 @@
       });
       try {
         const data = await onLoadRequestDataBatch(String(messageId));
-        const items = Array.isArray(data == null ? void 0 : data.items) ? data.items.slice().sort((a, b) => Number((a == null ? void 0 : a.sort_order) || 0) - Number((b == null ? void 0 : b.sort_order) || 0)).map((item, index) => ({
-          localId: "client-data-" + String((item == null ? void 0 : item.id) || (item == null ? void 0 : item.key) || index),
-          id: String((item == null ? void 0 : item.id) || ""),
-          key: String((item == null ? void 0 : item.key) || ""),
-          label: String((item == null ? void 0 : item.label) || (item == null ? void 0 : item.key) || "\u041F\u043E\u043B\u0435"),
-          field_type: String((item == null ? void 0 : item.field_type) || "string").toLowerCase(),
-          value_text: (item == null ? void 0 : item.value_text) == null ? "" : String(item.value_text),
-          value_file: (item == null ? void 0 : item.value_file) || null,
+        const items = Array.isArray(data?.items) ? data.items.slice().sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0)).map((item, index) => ({
+          localId: "client-data-" + String(item?.id || item?.key || index),
+          id: String(item?.id || ""),
+          key: String(item?.key || ""),
+          label: String(item?.label || item?.key || "\u041F\u043E\u043B\u0435"),
+          field_type: String(item?.field_type || "string").toLowerCase(),
+          value_text: item?.value_text == null ? "" : String(item.value_text),
+          value_file: item?.value_file || null,
           pendingFile: null
         })) : [];
         setClientDataModal((prev) => ({ ...prev, loading: false, items }));
       } catch (error) {
-        setClientDataModal((prev) => ({ ...prev, loading: false, error: (error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441 \u0434\u0430\u043D\u043D\u044B\u0445" }));
+        setClientDataModal((prev) => ({ ...prev, loading: false, error: error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441 \u0434\u0430\u043D\u043D\u044B\u0445" }));
       }
     };
     const updateClientDataItem = (localId, patch) => {
@@ -1116,17 +1108,17 @@
       try {
         const payloadItems = [];
         for (const item of clientDataModal.items || []) {
-          const fieldType = String((item == null ? void 0 : item.field_type) || "string").toLowerCase();
+          const fieldType = String(item?.field_type || "string").toLowerCase();
           if (fieldType === "file") {
-            let attachmentId = String((item == null ? void 0 : item.value_text) || "").trim();
-            if (item == null ? void 0 : item.pendingFile) {
+            let attachmentId = String(item?.value_text || "").trim();
+            if (item?.pendingFile) {
               if (typeof onUploadRequestAttachment !== "function") {
                 throw new Error("\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0444\u0430\u0439\u043B\u0430 \u0434\u043B\u044F \u043F\u043E\u043B\u044F \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430");
               }
               const uploadResult = await onUploadRequestAttachment(item.pendingFile, {
                 source: "data_request",
                 message_id: currentMessageId,
-                key: String((item == null ? void 0 : item.key) || "")
+                key: String(item?.key || "")
               });
               attachmentId = String(
                 uploadResult && (uploadResult.attachment_id || uploadResult.id || uploadResult.value || uploadResult) || ""
@@ -1134,17 +1126,17 @@
               if (!attachmentId) throw new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0434\u043B\u044F \u043F\u043E\u043B\u044F \u0437\u0430\u043F\u0440\u043E\u0441\u0430");
             }
             payloadItems.push({
-              id: String((item == null ? void 0 : item.id) || ""),
-              key: String((item == null ? void 0 : item.key) || ""),
+              id: String(item?.id || ""),
+              key: String(item?.key || ""),
               attachment_id: attachmentId || "",
               value_text: attachmentId || ""
             });
             continue;
           }
           payloadItems.push({
-            id: String((item == null ? void 0 : item.id) || ""),
-            key: String((item == null ? void 0 : item.key) || ""),
-            value_text: String((item == null ? void 0 : item.value_text) || "")
+            id: String(item?.id || ""),
+            key: String(item?.key || ""),
+            value_text: String(item?.value_text || "")
           });
         }
         await onSaveRequestDataValues({
@@ -1156,7 +1148,7 @@
         setClientDataModal((prev) => ({
           ...prev,
           saving: false,
-          error: (error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435"
+          error: error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435"
         }));
       }
     };
@@ -1201,13 +1193,13 @@
     };
     const submitStatusChange = async (event) => {
       if (event && typeof event.preventDefault === "function") event.preventDefault();
-      if (!(row == null ? void 0 : row.id) || typeof onChangeStatus !== "function") return;
+      if (!row?.id || typeof onChangeStatus !== "function") return;
       const nextStatus = String(statusChangeModal.statusCode || "").trim();
       if (!nextStatus) {
         setStatusChangeModal((prev) => ({ ...prev, error: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043D\u043E\u0432\u044B\u0439 \u0441\u0442\u0430\u0442\u0443\u0441" }));
         return;
       }
-      if (nextStatus === String((row == null ? void 0 : row.status_code) || "").trim()) {
+      if (nextStatus === String(row?.status_code || "").trim()) {
         setStatusChangeModal((prev) => ({ ...prev, error: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0442\u0430\u0442\u0443\u0441, \u043E\u0442\u043B\u0438\u0447\u043D\u044B\u0439 \u043E\u0442 \u0442\u0435\u043A\u0443\u0449\u0435\u0433\u043E" }));
         return;
       }
@@ -1233,16 +1225,16 @@
     safeMessages.forEach((item) => {
       timelineSource.push({
         type: "message",
-        key: "msg-" + String((item == null ? void 0 : item.id) || Math.random()),
-        created_at: (item == null ? void 0 : item.created_at) || null,
+        key: "msg-" + String(item?.id || Math.random()),
+        created_at: item?.created_at || null,
         payload: item
       });
     });
-    safeAttachments.filter((item) => !String((item == null ? void 0 : item.message_id) || "").trim()).forEach((item) => {
+    safeAttachments.filter((item) => !String(item?.message_id || "").trim()).forEach((item) => {
       timelineSource.push({
         type: "file",
-        key: "file-" + String((item == null ? void 0 : item.id) || Math.random()),
-        created_at: (item == null ? void 0 : item.created_at) || null,
+        key: "file-" + String(item?.id || Math.random()),
+        created_at: item?.created_at || null,
         payload: item
       });
     });
@@ -1277,14 +1269,14 @@
       });
       return () => window.cancelAnimationFrame(raf);
     }, [chatTab, localActivityCursor]);
-    const baseRouteNodes = Array.isArray(statusRouteNodes) && statusRouteNodes.length ? statusRouteNodes : (row == null ? void 0 : row.status_code) ? [{ code: row.status_code, name: String((row == null ? void 0 : row.status_name) || statusLabel(row.status_code) || row.status_code), state: "current", note: "\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u044D\u0442\u0430\u043F \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0438 \u0437\u0430\u044F\u0432\u043A\u0438" }] : [];
+    const baseRouteNodes = Array.isArray(statusRouteNodes) && statusRouteNodes.length ? statusRouteNodes : row?.status_code ? [{ code: row.status_code, name: String(row?.status_name || statusLabel(row.status_code) || row.status_code), state: "current", note: "\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u044D\u0442\u0430\u043F \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0438 \u0437\u0430\u044F\u0432\u043A\u0438" }] : [];
     const upcomingImportantDate = useMemo(() => {
-      const source = String(currentImportantDateAt || (row == null ? void 0 : row.important_date_at) || "").trim();
+      const source = String(currentImportantDateAt || row?.important_date_at || "").trim();
       if (!source) return "";
       const timestamp = new Date(source).getTime();
       if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return "";
       return new Date(timestamp).toISOString();
-    }, [currentImportantDateAt, row == null ? void 0 : row.important_date_at]);
+    }, [currentImportantDateAt, row?.important_date_at]);
     const routeNodes = useMemo(() => {
       if (viewerRoleCode !== "CLIENT" && viewerRoleCode !== "LAWYER" || !upcomingImportantDate) return baseRouteNodes;
       if (!Array.isArray(baseRouteNodes) || !baseRouteNodes.length) {
@@ -1298,9 +1290,9 @@
           }
         ];
       }
-      const hasVirtualNode = baseRouteNodes.some((node) => String((node == null ? void 0 : node.code) || "").trim() === "__IMPORTANT_DATE__");
+      const hasVirtualNode = baseRouteNodes.some((node) => String(node?.code || "").trim() === "__IMPORTANT_DATE__");
       if (hasVirtualNode) return baseRouteNodes;
-      const currentIndex = baseRouteNodes.findIndex((node) => String((node == null ? void 0 : node.state) || "").trim().toLowerCase() === "current");
+      const currentIndex = baseRouteNodes.findIndex((node) => String(node?.state || "").trim().toLowerCase() === "current");
       const virtualNode = {
         code: "__IMPORTANT_DATE__",
         name: "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430",
@@ -1320,8 +1312,8 @@
       const completed = [];
       const pending = [];
       routeNodes.forEach((node) => {
-        const code = String((node == null ? void 0 : node.code) || "").trim();
-        const state = String((node == null ? void 0 : node.state) || "pending").trim().toLowerCase();
+        const code = String(node?.code || "").trim();
+        const state = String(node?.state || "pending").trim().toLowerCase();
         if (code === "__IMPORTANT_DATE__") {
           important.push(node);
           return;
@@ -1341,43 +1333,42 @@
     const AttachmentPreviewModal = AttachmentPreviewModalComponent;
     const StatusLine = StatusLineComponent;
     const resolveMessageReceiptState = (payload) => {
-      const authorType = String((payload == null ? void 0 : payload.author_type) || "").trim().toUpperCase();
+      const authorType = String(payload?.author_type || "").trim().toUpperCase();
       const isClientAuthor = authorType === "CLIENT";
-      const deliveredAt = isClientAuthor ? payload == null ? void 0 : payload.delivered_to_staff_at : payload == null ? void 0 : payload.delivered_to_client_at;
-      const readAt = isClientAuthor ? payload == null ? void 0 : payload.read_by_staff_at : payload == null ? void 0 : payload.read_by_client_at;
+      const deliveredAt = isClientAuthor ? payload?.delivered_to_staff_at : payload?.delivered_to_client_at;
+      const readAt = isClientAuthor ? payload?.read_by_staff_at : payload?.read_by_client_at;
       if (readAt) return { state: "read", label: "\u041F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E" };
       if (deliveredAt) return { state: "delivered", label: "\u0414\u043E\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043E" };
       return { state: "sent", label: "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E" };
     };
     const isOutgoingForViewer = (payload) => {
-      const authorType = String((payload == null ? void 0 : payload.author_type) || "").trim().toUpperCase();
+      const authorType = String(payload?.author_type || "").trim().toUpperCase();
       if (!authorType) return false;
       if (viewerRoleCode === "CLIENT") return authorType === "CLIENT";
       return authorType !== "CLIENT";
     };
     const renderMessageMeta = (payload) => {
-      const timeLabel = fmtTimeOnly(payload == null ? void 0 : payload.created_at);
+      const timeLabel = fmtTimeOnly(payload?.created_at);
       if (!isOutgoingForViewer(payload)) return /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, timeLabel);
       const receipt = resolveMessageReceiptState(payload);
       return /* @__PURE__ */ React.createElement("div", { className: "chat-message-meta" }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, timeLabel), /* @__PURE__ */ React.createElement("span", { className: "chat-message-status " + receipt.state, title: receipt.label, "aria-label": receipt.label }, /* @__PURE__ */ React.createElement("span", { className: "chat-message-status-check first", "aria-hidden": "true" }, "\u2713"), receipt.state !== "sent" ? /* @__PURE__ */ React.createElement("span", { className: "chat-message-status-check second", "aria-hidden": "true" }, "\u2713") : null));
     };
     const renderRequestDataMessageItems = (payload) => {
-      var _a2;
-      const items = Array.isArray(payload == null ? void 0 : payload.request_data_items) ? payload.request_data_items : [];
-      const allFilled = Boolean(payload == null ? void 0 : payload.request_data_all_filled);
+      const items = Array.isArray(payload?.request_data_items) ? payload.request_data_items : [];
+      const allFilled = Boolean(payload?.request_data_all_filled);
       if (!items.length) return /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, "\u0417\u0430\u043F\u0440\u043E\u0441");
       if (allFilled) {
-        const fileOnly = items.length === 1 && String(((_a2 = items[0]) == null ? void 0 : _a2.field_type) || "").toLowerCase() === "file";
+        const fileOnly = items.length === 1 && String(items[0]?.field_type || "").toLowerCase() === "file";
         return /* @__PURE__ */ React.createElement("p", { className: "chat-message-text chat-request-data-collapsed" }, fileOnly ? "\u0424\u0430\u0439\u043B" : "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D");
       }
       const visibleItems = items.slice(0, 7);
       const hiddenCount = Math.max(0, items.length - visibleItems.length);
-      return /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-list" }, visibleItems.map((item, idx) => /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-item" + ((item == null ? void 0 : item.is_filled) ? " filled" : ""), key: String((item == null ? void 0 : item.id) || idx) }, /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-index" }, (item == null ? void 0 : item.is_filled) ? /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-check" }, "\u2713") : null, String((item == null ? void 0 : item.index) || idx + 1) + "."), /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-label" }, String((item == null ? void 0 : item.label_short) || (item == null ? void 0 : item.label) || "\u041F\u043E\u043B\u0435")))), hiddenCount > 0 ? /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-more" }, "... \u0435\u0449\u0435 ", hiddenCount) : null);
+      return /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-list" }, visibleItems.map((item, idx) => /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-item" + (item?.is_filled ? " filled" : ""), key: String(item?.id || idx) }, /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-index" }, item?.is_filled ? /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-check" }, "\u2713") : null, String(item?.index || idx + 1) + "."), /* @__PURE__ */ React.createElement("span", { className: "chat-request-data-label" }, String(item?.label_short || item?.label || "\u041F\u043E\u043B\u0435")))), hiddenCount > 0 ? /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-more" }, "... \u0435\u0449\u0435 ", hiddenCount) : null);
     };
     const resolveServiceMessageContent = (payload) => {
-      const messageKind = String((payload == null ? void 0 : payload.message_kind) || "");
+      const messageKind = String(payload?.message_kind || "");
       if (messageKind === "REQUEST_DATA") return null;
-      const bodyRaw = String((payload == null ? void 0 : payload.body) || "").replace(/\r/g, "").trim();
+      const bodyRaw = String(payload?.body || "").replace(/\r/g, "").trim();
       if (!bodyRaw) return null;
       const lines = bodyRaw.split("\n");
       const firstLine = String(lines[0] || "").trim();
@@ -1437,27 +1428,26 @@
       return null;
     };
     const resolveStatusDisplayName = (code, explicitName) => {
-      var _a2;
       const explicit = String(explicitName || "").trim();
       if (explicit) return explicit;
       const normalizedCode = String(code || "").trim();
       if (!normalizedCode) return "-";
-      const optionName = String(((_a2 = statusByCode.get(normalizedCode)) == null ? void 0 : _a2.name) || "").trim();
+      const optionName = String(statusByCode.get(normalizedCode)?.name || "").trim();
       if (optionName) return optionName;
       const legacyName = String(statusLabel(normalizedCode) || "").trim();
       if (legacyName && legacyName !== normalizedCode) return legacyName;
       return humanizeKey(normalizedCode);
     };
     const formatRequestDataValue = (item) => {
-      const type = String((item == null ? void 0 : item.field_type) || "string").toLowerCase();
+      const type = String(item?.field_type || "string").toLowerCase();
       if (type === "date") {
-        const text2 = String((item == null ? void 0 : item.value_text) || "").trim();
+        const text2 = String(item?.value_text || "").trim();
         return text2 ? fmtDateOnly(text2) : "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E";
       }
       if (type === "file") {
-        const attachmentId = String((item == null ? void 0 : item.value_text) || "").trim();
+        const attachmentId = String(item?.value_text || "").trim();
         const linkedAttachment = attachmentId ? attachmentById.get(attachmentId) : null;
-        const fileMeta = (item == null ? void 0 : item.value_file) || (linkedAttachment ? {
+        const fileMeta = item?.value_file || (linkedAttachment ? {
           attachment_id: linkedAttachment.id,
           file_name: linkedAttachment.file_name,
           mime_type: linkedAttachment.mime_type,
@@ -1466,14 +1456,14 @@
         } : null);
         return fileMeta || null;
       }
-      const text = String((item == null ? void 0 : item.value_text) || "").trim();
+      const text = String(item?.value_text || "").trim();
       return text || "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E";
     };
-    const currentStatusName = resolveStatusDisplayName(row == null ? void 0 : row.status_code, (row == null ? void 0 : row.status_name) || "");
+    const currentStatusName = resolveStatusDisplayName(row?.status_code, row?.status_name || "");
     const dataRequestProgress = useMemo(() => {
       const rows = Array.isArray(dataRequestModal.rows) ? dataRequestModal.rows : [];
       const total = rows.length;
-      const filled = rows.filter((rowItem) => Boolean((rowItem == null ? void 0 : rowItem.is_filled) || String((rowItem == null ? void 0 : rowItem.value_text) || "").trim())).length;
+      const filled = rows.filter((rowItem) => Boolean(rowItem?.is_filled || String(rowItem?.value_text || "").trim())).length;
       return { total, filled };
     }, [dataRequestModal.rows]);
     return /* @__PURE__ */ React.createElement("div", { className: "block" }, /* @__PURE__ */ React.createElement("div", { className: "request-workspace-layout" }, /* @__PURE__ */ React.createElement("div", { className: "request-main-column" }, /* @__PURE__ */ React.createElement("div", { className: "block" }, /* @__PURE__ */ React.createElement("div", { className: "request-card-head" }, /* @__PURE__ */ React.createElement("h3", null, "\u041A\u0430\u0440\u0442\u043E\u0447\u043A\u0430"), /* @__PURE__ */ React.createElement("div", { className: "request-card-head-actions" }, canRequestData ? /* @__PURE__ */ React.createElement(
@@ -1540,16 +1530,16 @@
       },
       lawyerLabel
     ))) : null, canSeeCreatedUpdatedInCard ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u043E\u0437\u0434\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row.created_at))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row.updated_at)))) : null), /* @__PURE__ */ React.createElement("div", { className: "request-status-route" }, /* @__PURE__ */ React.createElement("h4", null, "\u041C\u0430\u0440\u0448\u0440\u0443\u0442 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432"), routeNodesForDisplay.length ? /* @__PURE__ */ React.createElement("ol", { className: "request-route-list", id: "request-status-route" }, routeNodesForDisplay.map((node, index) => {
-      const state = String((node == null ? void 0 : node.state) || "pending");
-      const code = String((node == null ? void 0 : node.code) || "").trim();
-      const rawName = String((node == null ? void 0 : node.name) || "").trim();
+      const state = String(node?.state || "pending");
+      const code = String(node?.code || "").trim();
+      const rawName = String(node?.name || "").trim();
       const name = resolveStatusDisplayName(code, rawName && rawName !== code ? rawName : "");
-      const note = String((node == null ? void 0 : node.note) || "").trim();
+      const note = String(node?.note || "").trim();
       const isImportantDateNode = code === "__IMPORTANT_DATE__";
-      const changedAtSource = String((node == null ? void 0 : node.changed_at) || "").trim() || (isImportantDateNode ? String(currentImportantDateAt || (row == null ? void 0 : row.important_date_at) || "").trim() : "");
+      const changedAtSource = String(node?.changed_at || "").trim() || (isImportantDateNode ? String(currentImportantDateAt || row?.important_date_at || "").trim() : "");
       const changedAt = changedAtSource ? fmtDate(changedAtSource) : "";
       const className = "route-item " + (state === "current" ? "current" : state === "completed" ? "completed" : "pending") + (isImportantDateNode ? " important-date" : "");
-      return /* @__PURE__ */ React.createElement("li", { className, key: ((node == null ? void 0 : node.code) || "node") + "-" + index }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("b", null, name), isImportantDateNode ? /* @__PURE__ */ React.createElement("p", null, "\u041A\u043E\u043D\u0442\u0440\u043E\u043B\u044C\u043D\u044B\u0439 \u0441\u0440\u043E\u043A: " + (changedAt || "-")) : /* @__PURE__ */ React.createElement(React.Fragment, null, note ? /* @__PURE__ */ React.createElement("p", null, note) : null, /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, "\u0414\u0430\u0442\u0430 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F: ", changedAt || "-"))));
+      return /* @__PURE__ */ React.createElement("li", { className, key: (node?.code || "node") + "-" + index }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("b", null, name), isImportantDateNode ? /* @__PURE__ */ React.createElement("p", null, "\u041A\u043E\u043D\u0442\u0440\u043E\u043B\u044C\u043D\u044B\u0439 \u0441\u0440\u043E\u043A: " + (changedAt || "-")) : /* @__PURE__ */ React.createElement(React.Fragment, null, note ? /* @__PURE__ */ React.createElement("p", null, note) : null, /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, "\u0414\u0430\u0442\u0430 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F: ", changedAt || "-"))));
     })) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041C\u0430\u0440\u0448\u0440\u0443\u0442 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432 \u0434\u043B\u044F \u0442\u0435\u043C\u044B \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"))) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435"))), /* @__PURE__ */ React.createElement("div", { className: "block request-chat-block" }, /* @__PURE__ */ React.createElement("div", { className: "request-chat-head" }, /* @__PURE__ */ React.createElement("h3", null, "\u041A\u043E\u043C\u043C\u0443\u043D\u0438\u043A\u0430\u0446\u0438\u044F"), /* @__PURE__ */ React.createElement("div", { className: "request-chat-tabs", role: "tablist", "aria-label": "\u041A\u043E\u043C\u043C\u0443\u043D\u0438\u043A\u0430\u0446\u0438\u044F" }, /* @__PURE__ */ React.createElement(
       "button",
       {
@@ -1582,78 +1572,69 @@
         style: { position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }
       }
     ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList, ref: chatListRef }, chatTimelineItems.length ? chatTimelineItems.map(
-      (entry) => {
-        var _a2, _b2, _c2, _d, _e;
-        return entry.type === "date" ? /* @__PURE__ */ React.createElement("li", { key: entry.key, className: "chat-date-divider" }, /* @__PURE__ */ React.createElement("span", null, entry.label)) : entry.type === "file" ? /* @__PURE__ */ React.createElement(
-          "li",
+      (entry) => entry.type === "date" ? /* @__PURE__ */ React.createElement("li", { key: entry.key, className: "chat-date-divider" }, /* @__PURE__ */ React.createElement("span", null, entry.label)) : entry.type === "file" ? /* @__PURE__ */ React.createElement(
+        "li",
+        {
+          key: entry.key,
+          className: "chat-message " + (String(entry.payload?.responsible || "").toUpperCase().includes("\u041A\u041B\u0418\u0415\u041D\u0422") ? "incoming" : "outgoing")
+        },
+        /* @__PURE__ */ React.createElement("div", { className: "chat-message-author" }, String(entry.payload?.responsible || "\u0421\u0438\u0441\u0442\u0435\u043C\u0430")),
+        /* @__PURE__ */ React.createElement("div", { className: "chat-message-bubble" }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-files" }, /* @__PURE__ */ React.createElement(
+          "button",
           {
-            key: entry.key,
-            className: "chat-message " + (String(((_a2 = entry.payload) == null ? void 0 : _a2.responsible) || "").toUpperCase().includes("\u041A\u041B\u0418\u0415\u041D\u0422") ? "incoming" : "outgoing")
+            type: "button",
+            className: "chat-message-file-chip",
+            onClick: () => openAttachmentFromMessage(entry.payload),
+            title: String(entry.payload?.file_name || "\u0424\u0430\u0439\u043B")
           },
-          /* @__PURE__ */ React.createElement("div", { className: "chat-message-author" }, String(((_b2 = entry.payload) == null ? void 0 : _b2.responsible) || "\u0421\u0438\u0441\u0442\u0435\u043C\u0430")),
-          /* @__PURE__ */ React.createElement("div", { className: "chat-message-bubble" }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-files" }, /* @__PURE__ */ React.createElement(
-            "button",
-            {
-              type: "button",
-              className: "chat-message-file-chip",
-              onClick: () => openAttachmentFromMessage(entry.payload),
-              title: String(((_c2 = entry.payload) == null ? void 0 : _c2.file_name) || "\u0424\u0430\u0439\u043B")
-            },
-            /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"),
-            /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(((_d = entry.payload) == null ? void 0 : _d.file_name) || "\u0424\u0430\u0439\u043B"))
-          )), /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, fmtTimeOnly((_e = entry.payload) == null ? void 0 : _e.created_at)))
-        ) : (() => {
-          var _a3, _b3, _c3, _d2, _e2, _f, _g, _h;
-          const messageKind = String(((_a3 = entry.payload) == null ? void 0 : _a3.message_kind) || "");
-          const isRequestDataMessage = messageKind === "REQUEST_DATA";
-          const serviceMessageContent = resolveServiceMessageContent(entry.payload);
-          const requestDataInteractive = isRequestDataMessage && (canRequestData || canFillRequestData);
-          const bubbleClass = "chat-message-bubble" + (isRequestDataMessage ? " chat-request-data-bubble" : "") + (((_b3 = entry.payload) == null ? void 0 : _b3.request_data_all_filled) ? " all-filled" : "") + (isRequestDataMessage && canFillRequestData ? " request-data-message-btn" : "");
-          const itemClass = "chat-message " + (String(((_c3 = entry.payload) == null ? void 0 : _c3.author_type) || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing") + (isRequestDataMessage && canFillRequestData ? " request-data-item" + (((_d2 = entry.payload) == null ? void 0 : _d2.request_data_all_filled) ? " done" : "") : "");
-          return /* @__PURE__ */ React.createElement("li", { key: entry.key, className: itemClass }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-author" }, String(((_e2 = entry.payload) == null ? void 0 : _e2.author_name) || ((_f = entry.payload) == null ? void 0 : _f.author_type) || "\u0421\u0438\u0441\u0442\u0435\u043C\u0430")), /* @__PURE__ */ React.createElement(
-            "div",
-            {
-              className: bubbleClass,
-              onClick: requestDataInteractive ? () => {
-                var _a4, _b4;
-                return canRequestData ? openEditDataRequestModal(String(((_a4 = entry.payload) == null ? void 0 : _a4.id) || "")) : openClientDataRequestModal(String(((_b4 = entry.payload) == null ? void 0 : _b4.id) || ""));
-              } : void 0,
-              role: requestDataInteractive ? "button" : void 0,
-              tabIndex: requestDataInteractive ? 0 : void 0,
-              onKeyDown: requestDataInteractive ? (event) => {
-                var _a4, _b4;
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  if (canRequestData) openEditDataRequestModal(String(((_a4 = entry.payload) == null ? void 0 : _a4.id) || ""));
-                  else openClientDataRequestModal(String(((_b4 = entry.payload) == null ? void 0 : _b4.id) || ""));
-                }
-              } : void 0
-            },
-            String(((_g = entry.payload) == null ? void 0 : _g.message_kind) || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, (serviceMessageContent == null ? void 0 : serviceMessageContent.title) ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, String(((_h = entry.payload) == null ? void 0 : _h.body) || ""))),
-            (() => {
-              var _a4, _b4;
-              if (String(((_a4 = entry.payload) == null ? void 0 : _a4.message_kind) || "") === "REQUEST_DATA") return null;
-              const messageId = String(((_b4 = entry.payload) == null ? void 0 : _b4.id) || "").trim();
-              if (!messageId) return null;
-              const messageFiles = attachmentsByMessageId.get(messageId) || [];
-              if (!messageFiles.length) return null;
-              return /* @__PURE__ */ React.createElement("div", { className: "chat-message-files" }, messageFiles.map((file) => /* @__PURE__ */ React.createElement(
-                "button",
-                {
-                  type: "button",
-                  key: String(file.id),
-                  className: "chat-message-file-chip",
-                  onClick: () => openAttachmentFromMessage(file),
-                  title: String(file.file_name || "\u0424\u0430\u0439\u043B")
-                },
-                /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"),
-                /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(file.file_name || "\u0424\u0430\u0439\u043B"))
-              )));
-            })(),
-            renderMessageMeta(entry.payload)
-          ));
-        })();
-      }
+          /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"),
+          /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(entry.payload?.file_name || "\u0424\u0430\u0439\u043B"))
+        )), /* @__PURE__ */ React.createElement("div", { className: "chat-message-time" }, fmtTimeOnly(entry.payload?.created_at)))
+      ) : (() => {
+        const messageKind = String(entry.payload?.message_kind || "");
+        const isRequestDataMessage = messageKind === "REQUEST_DATA";
+        const serviceMessageContent = resolveServiceMessageContent(entry.payload);
+        const requestDataInteractive = isRequestDataMessage && (canRequestData || canFillRequestData);
+        const bubbleClass = "chat-message-bubble" + (isRequestDataMessage ? " chat-request-data-bubble" : "") + (entry.payload?.request_data_all_filled ? " all-filled" : "") + (isRequestDataMessage && canFillRequestData ? " request-data-message-btn" : "");
+        const itemClass = "chat-message " + (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing") + (isRequestDataMessage && canFillRequestData ? " request-data-item" + (entry.payload?.request_data_all_filled ? " done" : "") : "");
+        return /* @__PURE__ */ React.createElement("li", { key: entry.key, className: itemClass }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-author" }, String(entry.payload?.author_name || entry.payload?.author_type || "\u0421\u0438\u0441\u0442\u0435\u043C\u0430")), /* @__PURE__ */ React.createElement(
+          "div",
+          {
+            className: bubbleClass,
+            onClick: requestDataInteractive ? () => canRequestData ? openEditDataRequestModal(String(entry.payload?.id || "")) : openClientDataRequestModal(String(entry.payload?.id || "")) : void 0,
+            role: requestDataInteractive ? "button" : void 0,
+            tabIndex: requestDataInteractive ? 0 : void 0,
+            onKeyDown: requestDataInteractive ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                if (canRequestData) openEditDataRequestModal(String(entry.payload?.id || ""));
+                else openClientDataRequestModal(String(entry.payload?.id || ""));
+              }
+            } : void 0
+          },
+          String(entry.payload?.message_kind || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, serviceMessageContent?.title ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, String(entry.payload?.body || ""))),
+          (() => {
+            if (String(entry.payload?.message_kind || "") === "REQUEST_DATA") return null;
+            const messageId = String(entry.payload?.id || "").trim();
+            if (!messageId) return null;
+            const messageFiles = attachmentsByMessageId.get(messageId) || [];
+            if (!messageFiles.length) return null;
+            return /* @__PURE__ */ React.createElement("div", { className: "chat-message-files" }, messageFiles.map((file) => /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                type: "button",
+                key: String(file.id),
+                className: "chat-message-file-chip",
+                onClick: () => openAttachmentFromMessage(file),
+                title: String(file.file_name || "\u0424\u0430\u0439\u043B")
+              },
+              /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"),
+              /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(file.file_name || "\u0424\u0430\u0439\u043B"))
+            )));
+          })(),
+          renderMessageMeta(entry.payload)
+        ));
+      })()
     ) : /* @__PURE__ */ React.createElement("li", { className: "muted chat-empty-state" }, "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u043D\u0435\u0442")), /* @__PURE__ */ React.createElement("form", { className: "stack", onSubmit: onSendMessage }, /* @__PURE__ */ React.createElement(
       "div",
       {
@@ -1707,10 +1688,7 @@
         type: "button",
         "data-tooltip": "\u041F\u0440\u0438\u043A\u0440\u0435\u043F\u0438\u0442\u044C \u0444\u0430\u0439\u043B",
         "aria-label": "\u041F\u0440\u0438\u043A\u0440\u0435\u043F\u0438\u0442\u044C \u0444\u0430\u0439\u043B",
-        onClick: () => {
-          var _a2;
-          return (_a2 = fileInputRef.current) == null ? void 0 : _a2.click();
-        },
+        onClick: () => fileInputRef.current?.click(),
         disabled: loading || fileUploading
       },
       /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement(
@@ -1780,13 +1758,13 @@
         "aria-hidden": clientDataModal.open ? "false" : "true",
         id: idMap.dataRequestOverlay
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-data-summary-modal data-request-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0417\u0430\u043F\u0440\u043E\u0441 \u0434\u0430\u043D\u043D\u044B\u0445"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0417\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u0443 \u044E\u0440\u0438\u0441\u0442\u0430")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeClientDataModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("form", { className: "stack", onSubmit: submitClientDataModal }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-list", id: idMap.dataRequestItems }, clientDataModal.loading ? /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...") : (clientDataModal.items || []).length ? (clientDataModal.items || []).map((item, index) => {
-        const fieldType = String((item == null ? void 0 : item.field_type) || "string").toLowerCase();
-        const fileMeta = item == null ? void 0 : item.value_file;
-        return /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-row", key: String(item.localId || index) }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-label" }, String(index + 1) + ". " + String((item == null ? void 0 : item.label) || (item == null ? void 0 : item.key) || "\u041F\u043E\u043B\u0435")), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-value" }, fieldType === "text" ? /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-data-summary-modal data-request-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0417\u0430\u043F\u0440\u043E\u0441 \u0434\u0430\u043D\u043D\u044B\u0445"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, row?.track_number ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0417\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u043F\u0440\u043E\u0441\u0443 \u044E\u0440\u0438\u0441\u0442\u0430")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeClientDataModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("form", { className: "stack", onSubmit: submitClientDataModal }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-list", id: idMap.dataRequestItems }, clientDataModal.loading ? /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...") : (clientDataModal.items || []).length ? (clientDataModal.items || []).map((item, index) => {
+        const fieldType = String(item?.field_type || "string").toLowerCase();
+        const fileMeta = item?.value_file;
+        return /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-row", key: String(item.localId || index) }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-label" }, String(index + 1) + ". " + String(item?.label || item?.key || "\u041F\u043E\u043B\u0435")), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-value" }, fieldType === "text" ? /* @__PURE__ */ React.createElement(
           "textarea",
           {
-            value: String((item == null ? void 0 : item.value_text) || ""),
+            value: String(item?.value_text || ""),
             onChange: (event) => updateClientDataItem(item.localId, { value_text: event.target.value }),
             rows: 3,
             disabled: clientDataModal.saving || clientDataModal.loading
@@ -1795,7 +1773,7 @@
           "input",
           {
             type: "date",
-            value: String((item == null ? void 0 : item.value_text) || "").slice(0, 10),
+            value: String(item?.value_text || "").slice(0, 10),
             onChange: (event) => updateClientDataItem(item.localId, { value_text: event.target.value }),
             disabled: clientDataModal.saving || clientDataModal.loading
           }
@@ -1804,7 +1782,7 @@
           {
             type: "number",
             step: "any",
-            value: String((item == null ? void 0 : item.value_text) || ""),
+            value: String(item?.value_text || ""),
             onChange: (event) => updateClientDataItem(item.localId, { value_text: event.target.value }),
             disabled: clientDataModal.saving || clientDataModal.loading
           }
@@ -1826,11 +1804,11 @@
             }),
             disabled: clientDataModal.saving || clientDataModal.loading
           }
-        ), (item == null ? void 0 : item.pendingFile) ? /* @__PURE__ */ React.createElement("span", { className: "muted" }, String(item.pendingFile.name || "")) : null) : /* @__PURE__ */ React.createElement(
+        ), item?.pendingFile ? /* @__PURE__ */ React.createElement("span", { className: "muted" }, String(item.pendingFile.name || "")) : null) : /* @__PURE__ */ React.createElement(
           "input",
           {
             type: "text",
-            value: String((item == null ? void 0 : item.value_text) || ""),
+            value: String(item?.value_text || ""),
             onChange: (event) => updateClientDataItem(item.localId, { value_text: event.target.value }),
             disabled: clientDataModal.saving || clientDataModal.loading
           }
@@ -1852,7 +1830,7 @@
         onClick: closeStatusChangeModal,
         "aria-hidden": statusChangeModal.open ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-status-change-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0421\u043C\u0435\u043D\u0430 \u0441\u0442\u0430\u0442\u0443\u0441\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0442\u0430\u0442\u0443\u0441 \u0438 \u0432\u0430\u0436\u043D\u0443\u044E \u0434\u0430\u0442\u0443")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeStatusChangeModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-status-change-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0421\u043C\u0435\u043D\u0430 \u0441\u0442\u0430\u0442\u0443\u0441\u0430"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, row?.track_number ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0442\u0430\u0442\u0443\u0441 \u0438 \u0432\u0430\u0436\u043D\u0443\u044E \u0434\u0430\u0442\u0443")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeStatusChangeModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement(
         "input",
         {
           ref: statusChangeFileInputRef,
@@ -1873,7 +1851,7 @@
           disabled: statusChangeModal.saving || loading
         },
         /* @__PURE__ */ React.createElement("option", { value: "" }, "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0442\u0430\u0442\u0443\u0441"),
-        statusOptions.filter((item) => item.code !== String((row == null ? void 0 : row.status_code) || "").trim()).filter(
+        statusOptions.filter((item) => item.code !== String(row?.status_code || "").trim()).filter(
           (item) => Array.isArray(statusChangeModal.allowedStatusCodes) && statusChangeModal.allowedStatusCodes.length ? statusChangeModal.allowedStatusCodes.includes(item.code) : true
         ).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.code, value: item.code }, item.name + (item.groupName ? " \u2022 " + item.groupName : "")))
       )), /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "status-change-important-date" }, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430 (\u0434\u0435\u0434\u043B\u0430\u0439\u043D)"), /* @__PURE__ */ React.createElement(
@@ -1900,10 +1878,7 @@
           type: "button",
           className: "icon-btn file-action-btn",
           "data-tooltip": "\u041F\u0440\u0438\u043A\u0440\u0435\u043F\u0438\u0442\u044C \u0444\u0430\u0439\u043B\u044B",
-          onClick: () => {
-            var _a2;
-            return (_a2 = statusChangeFileInputRef.current) == null ? void 0 : _a2.click();
-          },
+          onClick: () => statusChangeFileInputRef.current?.click(),
           disabled: statusChangeModal.saving || loading
         },
         /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement(
@@ -1923,10 +1898,10 @@
         },
         "\xD7"
       )))) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0424\u0430\u0439\u043B\u044B \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u044B")), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-block" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-head" }, /* @__PURE__ */ React.createElement("b", null, "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432"), /* @__PURE__ */ React.createElement("span", { className: "muted" }, safeStatusHistory.length ? String(safeStatusHistory.length) + " \u0437\u0430\u043F\u0438\u0441\u0435\u0439" : "\u041D\u0435\u0442 \u0437\u0430\u043F\u0438\u0441\u0435\u0439")), /* @__PURE__ */ React.createElement("ol", { className: "request-route-list request-status-history-list" }, safeStatusHistory.length ? safeStatusHistory.map((item, index) => {
-        const statusCode = String((item == null ? void 0 : item.to_status) || "");
+        const statusCode = String(item?.to_status || "");
         const statusMeta = statusByCode.get(statusCode);
         const itemClass = "route-item request-status-history-route-item " + (index === 0 ? "current" : "completed");
-        return /* @__PURE__ */ React.createElement("li", { key: String((item == null ? void 0 : item.id) || index), className: itemClass }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-row" }, /* @__PURE__ */ React.createElement("b", null, resolveStatusDisplayName(statusCode, (item == null ? void 0 : item.to_status_name) || (statusMeta == null ? void 0 : statusMeta.name) || "")), (statusMeta == null ? void 0 : statusMeta.isTerminal) ? /* @__PURE__ */ React.createElement("span", { className: "request-status-history-chip" }, "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439") : null), /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, fmtShortDateTime(item == null ? void 0 : item.changed_at)), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430: " + fmtShortDateTime(item == null ? void 0 : item.important_date_at)), /* @__PURE__ */ React.createElement("span", null, "\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C: " + formatDuration(item == null ? void 0 : item.duration_seconds))), String((item == null ? void 0 : item.comment) || "").trim() ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-comment" }, String(item.comment)) : null));
+        return /* @__PURE__ */ React.createElement("li", { key: String(item?.id || index), className: itemClass }, /* @__PURE__ */ React.createElement("span", { className: "route-dot" }), /* @__PURE__ */ React.createElement("div", { className: "route-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-status-history-row" }, /* @__PURE__ */ React.createElement("b", null, resolveStatusDisplayName(statusCode, item?.to_status_name || statusMeta?.name || "")), statusMeta?.isTerminal ? /* @__PURE__ */ React.createElement("span", { className: "request-status-history-chip" }, "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439") : null), /* @__PURE__ */ React.createElement("div", { className: "muted route-time" }, fmtShortDateTime(item?.changed_at)), /* @__PURE__ */ React.createElement("div", { className: "request-status-history-meta" }, /* @__PURE__ */ React.createElement("span", null, "\u0412\u0430\u0436\u043D\u0430\u044F \u0434\u0430\u0442\u0430: " + fmtShortDateTime(item?.important_date_at)), /* @__PURE__ */ React.createElement("span", null, "\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C: " + formatDuration(item?.duration_seconds))), String(item?.comment || "").trim() ? /* @__PURE__ */ React.createElement("div", { className: "request-status-history-comment" }, String(item.comment)) : null));
       }) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432 \u043F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u0430\u044F"))), statusChangeModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, statusChangeModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
         "button",
         {
@@ -1943,7 +1918,7 @@
         onClick: closeFinanceModal,
         "aria-hidden": financeOpen ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-finance-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0424\u0438\u043D\u0430\u043D\u0441\u044B \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeFinanceModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-card-grid request-finance-grid" }, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount((_a = finance == null ? void 0 : finance.request_cost) != null ? _a : row == null ? void 0 : row.request_cost))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount(finance == null ? void 0 : finance.paid_total))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0414\u0430\u0442\u0430 \u043E\u043F\u043B\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime((_b = finance == null ? void 0 : finance.last_paid_at) != null ? _b : row == null ? void 0 : row.paid_at))), canSeeRate ? /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount((_c = finance == null ? void 0 : finance.effective_rate) != null ? _c : row == null ? void 0 : row.effective_rate))) : null), typeof onIssueInvoice === "function" ? /* @__PURE__ */ React.createElement("div", { className: "request-finance-actions" }, !financeIssueForm.open ? /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-finance-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0424\u0438\u043D\u0430\u043D\u0441\u044B \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, row?.track_number ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeFinanceModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-card-grid request-finance-grid" }, /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount(finance?.request_cost ?? row?.request_cost))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount(finance?.paid_total))), /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0414\u0430\u0442\u0430 \u043E\u043F\u043B\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(finance?.last_paid_at ?? row?.paid_at))), canSeeRate ? /* @__PURE__ */ React.createElement("div", { className: "request-field" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u0442\u0430\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtAmount(finance?.effective_rate ?? row?.effective_rate))) : null), typeof onIssueInvoice === "function" ? /* @__PURE__ */ React.createElement("div", { className: "request-finance-actions" }, !financeIssueForm.open ? /* @__PURE__ */ React.createElement(
         "button",
         {
           type: "button",
@@ -1984,7 +1959,7 @@
           disabled: financeIssueForm.saving || loading,
           placeholder: "\u042E\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0443\u0441\u043B\u0443\u0433\u0438"
         }
-      )), financeIssueForm.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, financeIssueForm.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right request-finance-actions-inline" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "btn secondary btn-sm", onClick: closeFinanceIssueForm, disabled: financeIssueForm.saving }, "\u041E\u0442\u043C\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "btn btn-sm", disabled: financeIssueForm.saving || loading }, financeIssueForm.saving ? "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0438\u0435..." : "\u0412\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C")))) : null, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoices" }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoices-head" }, /* @__PURE__ */ React.createElement("h4", null, "\u0421\u0447\u0435\u0442\u0430"), /* @__PURE__ */ React.createElement("span", { className: "muted" }, safeInvoices.length ? String(safeInvoices.length) + " \u0448\u0442." : "\u041D\u0435\u0442 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0445 \u0441\u0447\u0435\u0442\u043E\u0432")), safeInvoices.length ? /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-list" }, safeInvoices.map((item) => /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-row", key: String((item == null ? void 0 : item.id) || (item == null ? void 0 : item.invoice_number) || (item == null ? void 0 : item.issued_at) || "-") }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-number" }, /* @__PURE__ */ React.createElement("code", null, String((item == null ? void 0 : item.invoice_number) || "-"))), /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-details" }, /* @__PURE__ */ React.createElement("span", null, invoiceStatusLabel(item == null ? void 0 : item.status)), /* @__PURE__ */ React.createElement("span", null, fmtAmount(item == null ? void 0 : item.amount) + " " + String((item == null ? void 0 : item.currency) || "RUB")), /* @__PURE__ */ React.createElement("span", null, "\u0421\u043E\u0437\u0434\u0430\u043D: " + fmtDate(item == null ? void 0 : item.issued_at)), /* @__PURE__ */ React.createElement("span", null, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D: " + fmtDate(item == null ? void 0 : item.paid_at)))), typeof onDownloadInvoicePdf === "function" ? /* @__PURE__ */ React.createElement(
+      )), financeIssueForm.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, financeIssueForm.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right request-finance-actions-inline" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "btn secondary btn-sm", onClick: closeFinanceIssueForm, disabled: financeIssueForm.saving }, "\u041E\u0442\u043C\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "btn btn-sm", disabled: financeIssueForm.saving || loading }, financeIssueForm.saving ? "\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0438\u0435..." : "\u0412\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C")))) : null, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoices" }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoices-head" }, /* @__PURE__ */ React.createElement("h4", null, "\u0421\u0447\u0435\u0442\u0430"), /* @__PURE__ */ React.createElement("span", { className: "muted" }, safeInvoices.length ? String(safeInvoices.length) + " \u0448\u0442." : "\u041D\u0435\u0442 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0445 \u0441\u0447\u0435\u0442\u043E\u0432")), safeInvoices.length ? /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-list" }, safeInvoices.map((item) => /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-row", key: String(item?.id || item?.invoice_number || item?.issued_at || "-") }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-number" }, /* @__PURE__ */ React.createElement("code", null, String(item?.invoice_number || "-"))), /* @__PURE__ */ React.createElement("div", { className: "request-finance-invoice-details" }, /* @__PURE__ */ React.createElement("span", null, invoiceStatusLabel(item?.status)), /* @__PURE__ */ React.createElement("span", null, fmtAmount(item?.amount) + " " + String(item?.currency || "RUB")), /* @__PURE__ */ React.createElement("span", null, "\u0421\u043E\u0437\u0434\u0430\u043D: " + fmtDate(item?.issued_at)), /* @__PURE__ */ React.createElement("span", null, "\u041E\u043F\u043B\u0430\u0447\u0435\u043D: " + fmtDate(item?.paid_at)))), typeof onDownloadInvoicePdf === "function" ? /* @__PURE__ */ React.createElement(
         "button",
         {
           type: "button",
@@ -2003,7 +1978,7 @@
         onClick: () => setDescriptionOpen(false),
         "aria-hidden": descriptionOpen ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-description-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0417\u0430\u044F\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-headline" }, /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, String((row == null ? void 0 : row.topic_name) || (row == null ? void 0 : row.topic_code) || "\u0422\u0435\u043C\u0430 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u0430")), /* @__PURE__ */ React.createElement("span", { className: "request-description-status-chip" }, currentStatusName))), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setDescriptionOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-main" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-title" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u044B")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-text" }, (row == null ? void 0 : row.description) ? String(row.description) : "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041A\u043B\u0438\u0435\u043D\u0442"), /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-description-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, row?.track_number ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0417\u0430\u044F\u0432\u043A\u0430"), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-headline" }, /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, String(row?.topic_name || row?.topic_code || "\u0422\u0435\u043C\u0430 \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u0430")), /* @__PURE__ */ React.createElement("span", { className: "request-description-status-chip" }, currentStatusName))), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setDescriptionOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-body" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-main" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-title" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u044B")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-text" }, row?.description ? String(row.description) : "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-modal-meta" }, /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u041A\u043B\u0438\u0435\u043D\u0442"), /* @__PURE__ */ React.createElement(
         "span",
         {
           className: "request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : ""),
@@ -2017,7 +1992,7 @@
           "data-tooltip": lawyerHasPhone ? lawyerPhone : void 0
         },
         lawyerLabel
-      )), /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u043E\u0437\u0434\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row == null ? void 0 : row.created_at))), /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item align-right" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row == null ? void 0 : row.updated_at)))))))
+      )), /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0421\u043E\u0437\u0434\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row?.created_at))), /* @__PURE__ */ React.createElement("div", { className: "request-description-meta-item align-right" }, /* @__PURE__ */ React.createElement("span", { className: "request-field-label" }, "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "request-field-value" }, fmtShortDateTime(row?.updated_at)))))))
     ), /* @__PURE__ */ React.createElement(
       "div",
       {
@@ -2025,7 +2000,7 @@
         onClick: closeDataRequestModal,
         "aria-hidden": dataRequestModal.open ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-data-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, dataRequestModal.messageId ? "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u0434\u0430\u043D\u043D\u044B\u0445" : "\u0417\u0430\u043F\u0440\u043E\u0441 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u043E\u043B\u044F \u0434\u043B\u044F \u0437\u0430\u043F\u0440\u043E\u0441\u0430")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeDataRequestModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "stack" }, /* @__PURE__ */ React.createElement("div", { className: "request-data-modal-grid" }, /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-data-request-template-select" }, "\u0428\u0430\u0431\u043B\u043E\u043D \u0437\u0430\u043F\u0440\u043E\u0441\u0430 (\u043F\u043E\u0438\u0441\u043A)"), /* @__PURE__ */ React.createElement("div", { className: "request-data-combobox" }, /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-data-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, dataRequestModal.messageId ? "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u0434\u0430\u043D\u043D\u044B\u0445" : "\u0417\u0430\u043F\u0440\u043E\u0441 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, row?.track_number ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u043E\u043B\u044F \u0434\u043B\u044F \u0437\u0430\u043F\u0440\u043E\u0441\u0430")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: closeDataRequestModal, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "stack" }, /* @__PURE__ */ React.createElement("div", { className: "request-data-modal-grid" }, /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "request-data-request-template-select" }, "\u0428\u0430\u0431\u043B\u043E\u043D \u0437\u0430\u043F\u0440\u043E\u0441\u0430 (\u043F\u043E\u0438\u0441\u043A)"), /* @__PURE__ */ React.createElement("div", { className: "request-data-combobox" }, /* @__PURE__ */ React.createElement(
         "input",
         {
           id: "request-data-request-template-select",
@@ -2154,18 +2129,18 @@
       ))), /* @__PURE__ */ React.createElement("div", { className: "request-data-rows" }, (dataRequestModal.rows || []).length ? (dataRequestModal.rows || []).map((rowItem, idx) => /* @__PURE__ */ React.createElement(
         "div",
         {
-          className: "request-data-row" + (String(draggedRequestRowId) === String(rowItem.localId) ? " dragging" : "") + (String(dragOverRequestRowId) === String(rowItem.localId) && String(draggedRequestRowId) !== String(rowItem.localId) ? " drag-over" : "") + (viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled) ? " row-locked" : ""),
+          className: "request-data-row" + (String(draggedRequestRowId) === String(rowItem.localId) ? " dragging" : "") + (String(dragOverRequestRowId) === String(rowItem.localId) && String(draggedRequestRowId) !== String(rowItem.localId) ? " drag-over" : "") + (viewerRoleCode === "LAWYER" && rowItem?.is_filled ? " row-locked" : ""),
           key: rowItem.localId,
           onDragOver: (event) => {
             if (!draggedRequestRowId) return;
             event.preventDefault();
-            if (viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)) return;
+            if (viewerRoleCode === "LAWYER" && rowItem?.is_filled) return;
             setDragOverRequestRowId(String(rowItem.localId || ""));
           },
           onDrop: (event) => {
             if (!draggedRequestRowId) return;
             event.preventDefault();
-            if (viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)) return;
+            if (viewerRoleCode === "LAWYER" && rowItem?.is_filled) return;
             moveDataRequestRowToIndex(draggedRequestRowId, idx);
             handleRequestRowDragEnd();
           }
@@ -2175,11 +2150,11 @@
           {
             type: "button",
             className: "icon-btn request-data-row-index-handle",
-            "data-tooltip": viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled) ? "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u0435: \u043F\u0435\u0440\u0435\u043C\u0435\u0449\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" : "\u041F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0434\u043B\u044F \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043F\u043E\u0440\u044F\u0434\u043A\u0430",
-            draggable: !(viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)),
-            onDragStart: (event) => handleRequestRowDragStart(event, rowItem, viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)),
+            "data-tooltip": viewerRoleCode === "LAWYER" && rowItem?.is_filled ? "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u0435: \u043F\u0435\u0440\u0435\u043C\u0435\u0449\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E" : "\u041F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0434\u043B\u044F \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043F\u043E\u0440\u044F\u0434\u043A\u0430",
+            draggable: !(viewerRoleCode === "LAWYER" && rowItem?.is_filled),
+            onDragStart: (event) => handleRequestRowDragStart(event, rowItem, viewerRoleCode === "LAWYER" && rowItem?.is_filled),
             onDragEnd: handleRequestRowDragEnd,
-            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled),
+            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && rowItem?.is_filled,
             "aria-label": "\u041F\u043E\u0440\u044F\u0434\u043E\u043A \u043F\u043E\u043B\u044F " + String(idx + 1)
           },
           /* @__PURE__ */ React.createElement("span", null, idx + 1)
@@ -2189,7 +2164,7 @@
           {
             value: rowItem.label,
             onChange: (event) => updateDataRequestRow(rowItem.localId, { label: event.target.value }),
-            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)
+            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && rowItem?.is_filled
           }
         )),
         /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", null, "\u0422\u0438\u043F"), /* @__PURE__ */ React.createElement(
@@ -2197,7 +2172,7 @@
           {
             value: rowItem.field_type || "string",
             onChange: (event) => updateDataRequestRow(rowItem.localId, { field_type: event.target.value }),
-            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)
+            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && rowItem?.is_filled
           },
           requestDataTypeOptions.map((option) => /* @__PURE__ */ React.createElement("option", { key: option.value, value: option.value }, option.label))
         )),
@@ -2206,13 +2181,13 @@
           {
             type: "button",
             className: "icon-btn danger request-data-row-action-btn",
-            "data-tooltip": viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled) ? "\u042E\u0440\u0438\u0441\u0442 \u043D\u0435 \u043C\u043E\u0436\u0435\u0442 \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u0435" : "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u043B\u0435",
+            "data-tooltip": viewerRoleCode === "LAWYER" && rowItem?.is_filled ? "\u042E\u0440\u0438\u0441\u0442 \u043D\u0435 \u043C\u043E\u0436\u0435\u0442 \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u0435" : "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u043B\u0435",
             onClick: () => removeDataRequestRow(rowItem.localId),
-            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && (rowItem == null ? void 0 : rowItem.is_filled)
+            disabled: dataRequestModal.loading || dataRequestModal.saving || dataRequestModal.savingTemplate || viewerRoleCode === "LAWYER" && rowItem?.is_filled
           },
           "\xD7"
         )),
-        canRequestData && ((rowItem == null ? void 0 : rowItem.is_filled) || String((rowItem == null ? void 0 : rowItem.value_text) || "").trim()) ? /* @__PURE__ */ React.createElement("div", { className: "request-data-row-client-value" }, /* @__PURE__ */ React.createElement("span", { className: "request-data-row-client-label" }, "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C:"), String((rowItem == null ? void 0 : rowItem.field_type) || "").toLowerCase() === "file" ? (rowItem == null ? void 0 : rowItem.value_file) && rowItem.value_file.download_url ? /* @__PURE__ */ React.createElement(
+        canRequestData && (rowItem?.is_filled || String(rowItem?.value_text || "").trim()) ? /* @__PURE__ */ React.createElement("div", { className: "request-data-row-client-value" }, /* @__PURE__ */ React.createElement("span", { className: "request-data-row-client-label" }, "\u0417\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C:"), String(rowItem?.field_type || "").toLowerCase() === "file" ? rowItem?.value_file && rowItem.value_file.download_url ? /* @__PURE__ */ React.createElement(
           "button",
           {
             type: "button",
@@ -2221,7 +2196,7 @@
           },
           /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"),
           /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(rowItem.value_file.file_name || "\u0424\u0430\u0439\u043B"))
-        ) : /* @__PURE__ */ React.createElement("span", { className: "muted" }, "\u0424\u0430\u0439\u043B \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D") : /* @__PURE__ */ React.createElement("span", { className: "request-data-row-client-text" }, String((rowItem == null ? void 0 : rowItem.field_type) || "").toLowerCase() === "date" ? fmtDateOnly(rowItem == null ? void 0 : rowItem.value_text) : String((rowItem == null ? void 0 : rowItem.value_text) || "").trim().slice(0, 140))) : null
+        ) : /* @__PURE__ */ React.createElement("span", { className: "muted" }, "\u0424\u0430\u0439\u043B \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D") : /* @__PURE__ */ React.createElement("span", { className: "request-data-row-client-text" }, String(rowItem?.field_type || "").toLowerCase() === "date" ? fmtDateOnly(rowItem?.value_text) : String(rowItem?.value_text || "").trim().slice(0, 140))) : null
       )) : /* @__PURE__ */ React.createElement("div", { className: "muted" }, "\u041F\u043E\u043B\u044F \u0434\u043B\u044F \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u0435\u0449\u0435 \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u044B"))), dataRequestModal.error ? /* @__PURE__ */ React.createElement("div", { className: "status error" }, dataRequestModal.error) : null, /* @__PURE__ */ React.createElement("div", { className: "modal-actions modal-actions-right" }, /* @__PURE__ */ React.createElement(
         "button",
         {
@@ -2239,9 +2214,9 @@
         onClick: () => setRequestDataListOpen(false),
         "aria-hidden": requestDataListOpen ? "false" : "true"
       },
-      /* @__PURE__ */ React.createElement("div", { className: "modal request-data-summary-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0414\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, (row == null ? void 0 : row.track_number) ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setRequestDataListOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-list" }, requestDataListItems.length ? requestDataListItems.map((item) => {
+      /* @__PURE__ */ React.createElement("div", { className: "modal request-data-summary-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "\u0414\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u044F\u0432\u043A\u0438"), /* @__PURE__ */ React.createElement("p", { className: "muted request-finance-subtitle" }, row?.track_number ? "\u0417\u0430\u044F\u0432\u043A\u0430 " + String(row.track_number) : "")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setRequestDataListOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-list" }, requestDataListItems.length ? requestDataListItems.map((item) => {
         const value = formatRequestDataValue(item);
-        const isFile = String((item == null ? void 0 : item.field_type) || "").toLowerCase() === "file";
+        const isFile = String(item?.field_type || "").toLowerCase() === "file";
         return /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-row", key: String(item.id || item.key) }, /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-label" }, String(item.label || humanizeKey(item.key))), /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-value" }, isFile ? value && typeof value === "object" ? /* @__PURE__ */ React.createElement("div", { className: "request-data-summary-file" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "chat-message-file-chip", onClick: () => downloadAttachment(value) }, /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-icon", "aria-hidden": "true" }, "\u{1F4CE}"), /* @__PURE__ */ React.createElement("span", { className: "chat-message-file-name" }, String(value.file_name || "\u0424\u0430\u0439\u043B")))) : /* @__PURE__ */ React.createElement("span", { className: "muted" }, "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E") : String(value || "\u041D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u043E")));
       }) : /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043F\u043E \u0437\u0430\u044F\u0432\u043A\u0435 \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044E\u0442")))
     ));
@@ -2272,8 +2247,28 @@
   // app/web/client.jsx
   (function() {
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
+    function sortRowsByCreatedAt(rows) {
+      return [...rows].sort((left, right) => {
+        const leftTs = new Date(left?.created_at || left?.updated_at || 0).getTime();
+        const rightTs = new Date(right?.created_at || right?.updated_at || 0).getTime();
+        if (Number.isFinite(leftTs) && Number.isFinite(rightTs) && leftTs !== rightTs) return leftTs - rightTs;
+        return String(left?.id || "").localeCompare(String(right?.id || ""), "ru");
+      });
+    }
+    function mergeRowsById(existingRows, incomingRows) {
+      const merged = /* @__PURE__ */ new Map();
+      (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
+        const key = String(row?.id || "").trim();
+        if (key) merged.set(key, row);
+      });
+      (Array.isArray(incomingRows) ? incomingRows : []).forEach((row) => {
+        const key = String(row?.id || "").trim();
+        if (key) merged.set(key, row);
+      });
+      return sortRowsByCreatedAt(Array.from(merged.values()));
+    }
     function StatusLine({ status }) {
-      return /* @__PURE__ */ React.createElement("p", { className: "status" + ((status == null ? void 0 : status.kind) ? " " + status.kind : "") }, (status == null ? void 0 : status.message) || "");
+      return /* @__PURE__ */ React.createElement("p", { className: "status" + (status?.kind ? " " + status.kind : "") }, status?.message || "");
     }
     function Overlay({ open, id, onClose, children }) {
       return /* @__PURE__ */ React.createElement("div", { className: "overlay" + (open ? " open" : ""), id, onClick: onClose }, children);
@@ -2534,14 +2529,14 @@
           }
         ))
       ), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: onClose, "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7"))), /* @__PURE__ */ React.createElement("ul", { className: "simple-list client-request-picker-list", id: "client-request-picker-list" }, rows.length ? rows.map((row, index) => {
-        const track = String((row == null ? void 0 : row.track_number) || "").trim();
+        const track = String(row?.track_number || "").trim();
         const isActive = track && track === String(activeTrack || "").trim();
-        const hasUpdates = Number((row == null ? void 0 : row.viewer_unread_total) || 0) > 0 || Boolean(row == null ? void 0 : row.client_has_unread_updates);
-        const statusName = String((row == null ? void 0 : row.status_name) || statusLabel(row == null ? void 0 : row.status_code) || "-");
+        const hasUpdates = Number(row?.viewer_unread_total || 0) > 0 || Boolean(row?.client_has_unread_updates);
+        const statusName = String(row?.status_name || statusLabel(row?.status_code) || "-");
         return /* @__PURE__ */ React.createElement(
           "li",
           {
-            key: String((row == null ? void 0 : row.id) || track || "row-" + String(index)),
+            key: String(row?.id || track || "row-" + String(index)),
             className: "client-request-picker-item" + (isActive ? " active" : "") + (hasUpdates ? " has-updates" : "")
           },
           /* @__PURE__ */ React.createElement(
@@ -2554,13 +2549,12 @@
               "aria-label": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443 " + (track || "")
             },
             /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-head" }, /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-track" }, track || "\u0411\u0435\u0437 \u043D\u043E\u043C\u0435\u0440\u0430"), /* @__PURE__ */ React.createElement("span", { className: "client-request-news-dot" + (hasUpdates ? " active" : ""), "aria-hidden": "true" })),
-            /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-meta" }, /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-status" }, statusName), /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-updated" }, fmtShortDateTime(row == null ? void 0 : row.updated_at)))
+            /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-meta" }, /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-status" }, statusName), /* @__PURE__ */ React.createElement("span", { className: "client-request-picker-updated" }, fmtShortDateTime(row?.updated_at)))
           )
         );
       }) : /* @__PURE__ */ React.createElement("li", { className: "muted" }, loading ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043F\u0438\u0441\u043A\u0430..." : "\u0417\u0430\u044F\u0432\u043E\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E")), /* @__PURE__ */ React.createElement("div", { className: "client-request-picker-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary btn-sm", type: "button", onClick: onClose }, "\u041E\u0442\u043C\u0435\u043D\u0430"))));
     }
     function App() {
-      var _a, _b;
       const UPLOAD_MAX_ATTEMPTS = 4;
       const [requestModal, setRequestModal] = useState(createRequestModalState());
       const [requestsList, setRequestsList] = useState([]);
@@ -2604,8 +2598,8 @@
       }, []);
       const buildStorageUploadError = useCallback(async (response, fallbackMessage) => {
         const base = String(fallbackMessage || "\u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0438 \u0444\u0430\u0439\u043B\u0430 \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435");
-        const status2 = Number((response == null ? void 0 : response.status) || 0);
-        const statusText = String((response == null ? void 0 : response.statusText) || "").trim();
+        const status2 = Number(response?.status || 0);
+        const statusText = String(response?.statusText || "").trim();
         let details = "";
         try {
           details = String(await response.text() || "").replace(/\s+/g, " ").trim();
@@ -2627,10 +2621,10 @@
         return base + jitter;
       }, []);
       const isRetryableUploadError = useCallback((error) => {
-        const status2 = Number((error == null ? void 0 : error.httpStatus) || (error == null ? void 0 : error.status) || 0);
+        const status2 = Number(error?.httpStatus || error?.status || 0);
         if ([408, 425, 429, 500, 502, 503, 504].includes(status2)) return true;
         if (status2 > 0) return false;
-        const message = String((error == null ? void 0 : error.message) || "").toLowerCase();
+        const message = String(error?.message || "").toLowerCase();
         if (!message) return true;
         return message.includes("networkerror") || message.includes("failed to fetch") || message.includes("load failed") || message.includes("network request failed") || message.includes("timeout");
       }, []);
@@ -2649,7 +2643,7 @@
               await wait(nextUploadRetryDelayMs(attempt));
             }
           }
-          const reason = String((lastError == null ? void 0 : lastError.message) || "\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0435\u0442\u0438");
+          const reason = String(lastError?.message || "\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0435\u0442\u0438");
           throw new Error(label + ": " + reason + " (\u043F\u043E\u043F\u044B\u0442\u043E\u043A: " + attemptsUsed + ")");
         },
         [UPLOAD_MAX_ATTEMPTS, isRetryableUploadError, nextUploadRetryDelayMs, wait]
@@ -2657,7 +2651,7 @@
       const uploadPublicRequestAttachment = useCallback(async (file, extra = {}) => {
         const requestId = String(requestModal.requestId || "").trim();
         if (!requestId) throw new Error("\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 \u0437\u0430\u044F\u0432\u043A\u0430");
-        const mimeType = String((file == null ? void 0 : file.type) || "application/octet-stream");
+        const mimeType = String(file?.type || "application/octet-stream");
         const initData = await runUploadStepWithRetry("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0444\u0430\u0439\u043B\u0430", async () => {
           return apiJson(
             "/api/public/uploads/init",
@@ -2699,7 +2693,7 @@
                 size_bytes: file.size,
                 scope: "REQUEST_ATTACHMENT",
                 request_id: requestId,
-                message_id: (extra == null ? void 0 : extra.message_id) || null
+                message_id: extra?.message_id || null
               })
             },
             "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443 \u0444\u0430\u0439\u043B\u0430"
@@ -2723,13 +2717,13 @@
             apiJson("/api/public/requests/" + encodeURIComponent(track) + "/service-requests", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F")
           ]);
           const invoices = Array.isArray(invoicesData) ? invoicesData : [];
-          const paidInvoices = invoices.filter((item) => String((item == null ? void 0 : item.status) || "").toUpperCase() === "PAID");
+          const paidInvoices = invoices.filter((item) => String(item?.status || "").toUpperCase() === "PAID");
           const paidTotal = paidInvoices.reduce((acc, item) => {
-            const amount = Number((item == null ? void 0 : item.amount) || 0);
+            const amount = Number(item?.amount || 0);
             return Number.isFinite(amount) ? acc + amount : acc;
           }, 0);
           const lastPaidAt = paidInvoices.reduce((latest, item) => {
-            const raw = String((item == null ? void 0 : item.paid_at) || "").trim();
+            const raw = String(item?.paid_at || "").trim();
             if (!raw) return latest;
             if (!latest) return raw;
             const currentTs = new Date(raw).getTime();
@@ -2738,36 +2732,33 @@
           }, "");
           setActiveTrack(track);
           setServiceRequests(Array.isArray(serviceRequestsData) ? serviceRequestsData : []);
-          setRequestModal((prev) => {
-            var _a2, _b2;
-            return {
-              ...prev,
-              loading: false,
-              requestId: String((requestData == null ? void 0 : requestData.id) || ""),
-              trackNumber: String((requestData == null ? void 0 : requestData.track_number) || track),
-              requestData: requestData || null,
-              financeSummary: {
-                request_cost: (_a2 = requestData == null ? void 0 : requestData.request_cost) != null ? _a2 : null,
-                effective_rate: (_b2 = requestData == null ? void 0 : requestData.effective_rate) != null ? _b2 : null,
-                paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
-                last_paid_at: lastPaidAt || (requestData == null ? void 0 : requestData.paid_at) || null
-              },
-              statusRouteNodes: Array.isArray(statusRouteData == null ? void 0 : statusRouteData.nodes) ? statusRouteData.nodes : [],
-              statusHistory: Array.isArray(statusRouteData == null ? void 0 : statusRouteData.history) ? statusRouteData.history : [],
-              availableStatuses: [],
-              currentImportantDateAt: String((statusRouteData == null ? void 0 : statusRouteData.current_important_date_at) || (requestData == null ? void 0 : requestData.important_date_at) || ""),
-              invoices,
-              messages: Array.isArray(messagesData) ? messagesData : [],
-              attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
-              fileUploading: false
-            };
-          });
+          setRequestModal((prev) => ({
+            ...prev,
+            loading: false,
+            requestId: String(requestData?.id || ""),
+            trackNumber: String(requestData?.track_number || track),
+            requestData: requestData || null,
+            financeSummary: {
+              request_cost: requestData?.request_cost ?? null,
+              effective_rate: requestData?.effective_rate ?? null,
+              paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
+              last_paid_at: lastPaidAt || requestData?.paid_at || null
+            },
+            statusRouteNodes: Array.isArray(statusRouteData?.nodes) ? statusRouteData.nodes : [],
+            statusHistory: Array.isArray(statusRouteData?.history) ? statusRouteData.history : [],
+            availableStatuses: [],
+            currentImportantDateAt: String(statusRouteData?.current_important_date_at || requestData?.important_date_at || ""),
+            invoices,
+            messages: Array.isArray(messagesData) ? messagesData : [],
+            attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
+            fileUploading: false
+          }));
         },
         [apiJson]
       );
       const refreshRequestsList = useCallback(async () => {
         const data = await apiJson("/api/public/requests/my", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A");
-        const rows = Array.isArray(data == null ? void 0 : data.rows) ? data.rows : [];
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
         setRequestsList(rows);
         return rows;
       }, [apiJson]);
@@ -2803,7 +2794,7 @@
       );
       const openRequestPicker = useCallback(() => {
         setRequestPickerModal({ open: true, loading: true });
-        void refreshRequestsList().catch((error) => setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A", "error")).finally(() => {
+        void refreshRequestsList().catch((error) => setPageStatus(error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A", "error")).finally(() => {
           setRequestPickerModal((prev) => ({ ...prev, loading: false }));
         });
       }, [refreshRequestsList, setPageStatus]);
@@ -2812,7 +2803,7 @@
       }, []);
       const reloadRequestPicker = useCallback(() => {
         setRequestPickerModal((prev) => ({ ...prev, loading: true }));
-        void refreshRequestsList().catch((error) => setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A", "error")).finally(() => {
+        void refreshRequestsList().catch((error) => setPageStatus(error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A", "error")).finally(() => {
           setRequestPickerModal((prev) => ({ ...prev, loading: false }));
         });
       }, [refreshRequestsList, setPageStatus]);
@@ -2827,14 +2818,13 @@
             setRequestPickerModal({ open: false, loading: false });
           } catch (error) {
             setRequestPickerModal((prev) => ({ ...prev, loading: false }));
-            setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", "error");
+            setPageStatus(error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443", "error");
           }
         },
         [loadRequestWorkspace, refreshRequestsList, setPageStatus]
       );
       const updateMessageDraft = useCallback((event) => {
-        var _a2;
-        const value = ((_a2 = event == null ? void 0 : event.target) == null ? void 0 : _a2.value) || "";
+        const value = event?.target?.value || "";
         setRequestModal((prev) => ({ ...prev, messageDraft: value }));
       }, []);
       const appendFiles = useCallback((files) => {
@@ -2864,7 +2854,7 @@
       }, []);
       const downloadPublicInvoicePdf = useCallback(
         async (row) => {
-          const url = String((row == null ? void 0 : row.download_url) || "").trim();
+          const url = String(row?.download_url || "").trim();
           if (!url) {
             setPageStatus("\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 PDF \u0441\u0447\u0435\u0442\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430.", "error");
             return;
@@ -2884,7 +2874,7 @@
               throw new Error(String(message));
             }
             const blob = await response.blob();
-            const fileName = String((row == null ? void 0 : row.invoice_number) || "invoice") + ".pdf";
+            const fileName = String(row?.invoice_number || "invoice") + ".pdf";
             const fileUrl = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = fileUrl;
@@ -2895,7 +2885,7 @@
             URL.revokeObjectURL(fileUrl);
             setPageStatus("PDF \u0441\u043A\u0430\u0447\u0430\u043D", "ok");
           } catch (error) {
-            setPageStatus("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F: " + ((error == null ? void 0 : error.message) || "\u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u043E\u0448\u0438\u0431\u043A\u0430"), "error");
+            setPageStatus("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F: " + (error?.message || "\u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430\u044F \u043E\u0448\u0438\u0431\u043A\u0430"), "error");
           }
         },
         [setPageStatus]
@@ -2926,7 +2916,7 @@
                 },
                 "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435"
               );
-              messageId = String((messageData == null ? void 0 : messageData.id) || "").trim() || null;
+              messageId = String(messageData?.id || "").trim() || null;
             }
             for (const file of files) {
               await uploadPublicRequestAttachment(file, { message_id: messageId });
@@ -2938,7 +2928,7 @@
             else setPageStatus("\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E.", "ok");
           } catch (error) {
             setRequestModal((prev) => ({ ...prev, fileUploading: false }));
-            setPageStatus((error == null ? void 0 : error.message) || "\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F", "error");
+            setPageStatus(error?.message || "\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F", "error");
           }
         },
         [activeTrack, apiJson, loadRequestWorkspace, requestModal.messageDraft, requestModal.requestId, requestModal.selectedFiles, setPageStatus, uploadPublicRequestAttachment]
@@ -2984,11 +2974,19 @@
             "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C live-\u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u0447\u0430\u0442\u0430"
           );
           if (payload && payload.has_updates) {
-            await loadRequestWorkspace(track, false);
+            const nextMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+            const nextAttachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+            if (nextMessages.length || nextAttachments.length) {
+              setRequestModal((prev) => ({
+                ...prev,
+                messages: mergeRowsById(prev.messages, nextMessages),
+                attachments: mergeRowsById(prev.attachments, nextAttachments)
+              }));
+            }
           }
           return payload || { has_updates: false, typing: [], cursor: null };
         },
-        [activeTrack, apiJson, loadRequestWorkspace]
+        [activeTrack, apiJson]
       );
       const setTypingSignal = useCallback(
         async ({ typing } = {}) => {
@@ -3021,21 +3019,21 @@
           status: { message: "", kind: "" }
         }));
       }, []);
-      const normalizedCurrentLawyerId = String(((_a = requestModal.requestData) == null ? void 0 : _a.assigned_lawyer_id) || "").trim().toLowerCase();
+      const normalizedCurrentLawyerId = String(requestModal.requestData?.assigned_lawyer_id || "").trim().toLowerCase();
       const serviceRequestState = useMemo(() => {
         const rows = Array.isArray(serviceRequests) ? serviceRequests : [];
-        const curatorRows = rows.filter((item) => String((item == null ? void 0 : item.type) || "").toUpperCase() === "CURATOR_CONTACT");
-        const lawyerRows = rows.filter((item) => String((item == null ? void 0 : item.type) || "").toUpperCase() === "LAWYER_CHANGE_REQUEST");
+        const curatorRows = rows.filter((item) => String(item?.type || "").toUpperCase() === "CURATOR_CONTACT");
+        const lawyerRows = rows.filter((item) => String(item?.type || "").toUpperCase() === "LAWYER_CHANGE_REQUEST");
         const latestLawyerChange = lawyerRows[0] || null;
         const hasCuratorRequest = curatorRows.length > 0;
         let lawyerChangeDisabledByState = false;
         if (latestLawyerChange) {
           const hasLawyerSnapshot = Object.prototype.hasOwnProperty.call(latestLawyerChange, "assigned_lawyer_id");
           if (hasLawyerSnapshot) {
-            const requestedForLawyer = String((latestLawyerChange == null ? void 0 : latestLawyerChange.assigned_lawyer_id) || "").trim().toLowerCase();
+            const requestedForLawyer = String(latestLawyerChange?.assigned_lawyer_id || "").trim().toLowerCase();
             lawyerChangeDisabledByState = requestedForLawyer === normalizedCurrentLawyerId;
           } else {
-            const statusCode = String((latestLawyerChange == null ? void 0 : latestLawyerChange.status) || "").toUpperCase();
+            const statusCode = String(latestLawyerChange?.status || "").toUpperCase();
             lawyerChangeDisabledByState = statusCode === "NEW" || statusCode === "IN_PROGRESS";
           }
         }
@@ -3087,7 +3085,7 @@
             setClientHelpModal((prev) => ({
               ...prev,
               loadingType: "",
-              status: { message: (error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435", kind: "error" }
+              status: { message: error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u0435", kind: "error" }
             }));
           }
         },
@@ -3097,18 +3095,17 @@
         const params = new URLSearchParams(window.location.search);
         const preferredTrack = String(params.get("track") || "").trim().toUpperCase();
         void loadMyRequests(preferredTrack).catch((error) => {
-          setPageStatus((error == null ? void 0 : error.message) || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443 \u043A\u043B\u0438\u0435\u043D\u0442\u0430", "error");
+          setPageStatus(error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443 \u043A\u043B\u0438\u0435\u043D\u0442\u0430", "error");
         });
       }, [loadMyRequests, setPageStatus]);
       const summary = requestModal.requestData || null;
-      const summaryStatusName = String((summary == null ? void 0 : summary.status_name) || statusLabel(summary == null ? void 0 : summary.status_code) || "-");
+      const summaryStatusName = String(summary?.status_name || statusLabel(summary?.status_code) || "-");
       const viewerFullName = useMemo(() => {
-        var _a2;
-        const fullName = String(((_a2 = requestModal.requestData) == null ? void 0 : _a2.client_name) || "").trim();
+        const fullName = String(requestModal.requestData?.client_name || "").trim();
         return fullName || "\u041A\u043B\u0438\u0435\u043D\u0442";
-      }, [(_b = requestModal.requestData) == null ? void 0 : _b.client_name]);
+      }, [requestModal.requestData?.client_name]);
       const hasAnyUnreadUpdates = useMemo(
-        () => requestsList.some((row) => Number((row == null ? void 0 : row.viewer_unread_total) || 0) > 0 || Boolean(row == null ? void 0 : row.client_has_unread_updates)),
+        () => requestsList.some((row) => Number(row?.viewer_unread_total || 0) > 0 || Boolean(row?.client_has_unread_updates)),
         [requestsList]
       );
       return /* @__PURE__ */ React.createElement("div", { className: "client-page-shell" }, /* @__PURE__ */ React.createElement("main", { className: "main client-main" }, /* @__PURE__ */ React.createElement("div", { className: "topbar client-topbar" }, /* @__PURE__ */ React.createElement("div", { className: "client-topbar-copy" }, /* @__PURE__ */ React.createElement("div", { className: "client-title-row" }, /* @__PURE__ */ React.createElement("img", { className: "brand-mark", src: "/brand-mark.svg", alt: "", width: "24", height: "24" }), /* @__PURE__ */ React.createElement("h1", null, /* @__PURE__ */ React.createElement("span", null, "\u041B\u0438\u0447\u043D\u044B\u0439 \u043A\u0430\u0431\u0438\u043D\u0435\u0442"), /* @__PURE__ */ React.createElement("span", { className: "client-title-separator", "aria-hidden": "true" }, "\u2022"), /* @__PURE__ */ React.createElement("span", { className: "client-title-user" }, viewerFullName))), /* @__PURE__ */ React.createElement("div", { className: "client-help-inline" }, /* @__PURE__ */ React.createElement("p", { className: "muted" }, "\u041C\u044B \u0440\u0430\u0434\u044B \u0432\u0430\u043C \u043F\u043E\u043C\u043E\u0447\u044C"), /* @__PURE__ */ React.createElement(

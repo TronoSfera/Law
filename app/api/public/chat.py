@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_public_session
@@ -15,8 +16,11 @@ from app.schemas.public import PublicMessageCreate
 from app.services.chat_presence import list_typing_presence, set_typing_presence
 from app.services.notifications import EVENT_REQUEST_DATA as NOTIFICATION_EVENT_REQUEST_DATA, notify_request_event, unread_client_summary
 from app.services.chat_secure_service import (
+    DEFAULT_CHAT_WINDOW_LIMIT,
+    clamp_chat_window_limit,
     create_client_message,
     get_chat_activity_summary,
+    list_messages_for_request_window,
     list_messages_for_request,
     mark_messages_delivered_for_client,
     mark_messages_read_for_client,
@@ -83,6 +87,19 @@ def _attachment_meta_for_public(req: Request, value_text: str | None, db: Sessio
         "mime_type": attachment.mime_type,
         "size_bytes": int(attachment.size_bytes or 0),
         "download_url": f"/api/public/uploads/object/{attachment.id}",
+    }
+
+
+def _serialize_public_attachment(row: Attachment) -> dict:
+    return {
+        "id": str(row.id),
+        "request_id": str(row.request_id),
+        "message_id": str(row.message_id) if row.message_id else None,
+        "file_name": row.file_name,
+        "mime_type": row.mime_type,
+        "size_bytes": int(row.size_bytes or 0),
+        "created_at": _iso_or_none(row.created_at),
+        "download_url": f"/api/public/uploads/object/{row.id}",
     }
 
 
@@ -181,6 +198,42 @@ def list_messages_by_track(
     return payload
 
 
+@router.get("/requests/{track_number}/messages-window")
+def list_messages_window_by_track(
+    track_number: str,
+    http_request: FastapiRequest,
+    before_count: int = 0,
+    limit: int = DEFAULT_CHAT_WINDOW_LIMIT,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, track_number)
+    _ensure_view_access_or_403(session, req)
+    mark_messages_read_for_client(db, request_id=req.id)
+    rows, total, has_more, loaded_count = list_messages_for_request_window(
+        db,
+        req.id,
+        limit=limit,
+        before_count=before_count,
+    )
+    payload = {
+        "rows": serialize_messages_for_request(db, req.id, rows),
+        "total": total,
+        "has_more": has_more,
+        "loaded_count": loaded_count,
+        "limit": clamp_chat_window_limit(limit),
+    }
+    _audit_public_chat_read(
+        db,
+        session=session,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_MESSAGES",
+        details={"rows": len(rows), "window": True},
+    )
+    return payload
+
+
 @router.post("/requests/{track_number}/messages", status_code=201)
 def create_message_by_track(
     track_number: str,
@@ -212,6 +265,29 @@ def get_live_chat_state_by_track(
     latest_activity_iso = _iso_or_none(latest_activity_at)
     cursor_dt = _parse_cursor(cursor)
     has_updates = bool(latest_activity_at and (cursor_dt is None or latest_activity_at > cursor_dt))
+    delta_messages = []
+    delta_attachments = []
+    if has_updates and cursor_dt is not None:
+        message_rows = (
+            db.query(Message)
+            .filter(
+                Message.request_id == req.id,
+                func.coalesce(Message.updated_at, Message.created_at) > cursor_dt,
+            )
+            .order_by(Message.created_at.asc(), Message.id.asc())
+            .all()
+        )
+        attachment_rows = (
+            db.query(Attachment)
+            .filter(
+                Attachment.request_id == req.id,
+                func.coalesce(Attachment.updated_at, Attachment.created_at) > cursor_dt,
+            )
+            .order_by(Attachment.created_at.asc(), Attachment.id.asc())
+            .all()
+        )
+        delta_messages = serialize_messages_for_request(db, req.id, message_rows)
+        delta_attachments = [_serialize_public_attachment(row) for row in attachment_rows]
 
     subject = _require_view_session_or_403(session)
     actor_key = f"CLIENT:{_normalize_track(subject) or _normalize_phone(subject)}"
@@ -224,6 +300,8 @@ def get_live_chat_state_by_track(
         "attachment_count": int(summary.get("attachment_count") or 0),
         "latest_message_at": _iso_or_none(_as_utc_datetime(summary.get("latest_message_at"))),
         "latest_attachment_at": _iso_or_none(_as_utc_datetime(summary.get("latest_attachment_at"))),
+        "messages": delta_messages,
+        "attachments": delta_attachments,
         "typing": typing_rows,
         "unread": unread_client_summary(
             db,

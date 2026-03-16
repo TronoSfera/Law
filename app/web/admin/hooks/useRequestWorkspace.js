@@ -55,6 +55,46 @@ function isRetryableUploadError(error) {
   );
 }
 
+function sortRowsByCreatedAt(rows) {
+  return [...rows].sort((left, right) => {
+    const leftTs = new Date(left?.created_at || left?.updated_at || 0).getTime();
+    const rightTs = new Date(right?.created_at || right?.updated_at || 0).getTime();
+    if (Number.isFinite(leftTs) && Number.isFinite(rightTs) && leftTs !== rightTs) return leftTs - rightTs;
+    return String(left?.id || "").localeCompare(String(right?.id || ""), "ru");
+  });
+}
+
+function mergeRowsById(existingRows, incomingRows) {
+  const merged = new Map();
+  (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
+    const key = String(row?.id || "").trim();
+    if (key) merged.set(key, row);
+  });
+  (Array.isArray(incomingRows) ? incomingRows : []).forEach((row) => {
+    const key = String(row?.id || "").trim();
+    if (key) merged.set(key, row);
+  });
+  return sortRowsByCreatedAt(Array.from(merged.values()));
+}
+
+function normalizeMessageAuthors(rows, users) {
+  const usersByEmail = new Map(
+    (Array.isArray(users) ? users : [])
+      .filter((user) => user && user.email)
+      .map((user) => [String(user.email).toLowerCase(), String(user.name || user.email)])
+  );
+  return (Array.isArray(rows) ? rows : []).map((item) => {
+    if (!item || typeof item !== "object") return item;
+    const authorType = String(item.author_type || "").toUpperCase();
+    const authorName = String(item.author_name || "").trim();
+    if ((authorType === "LAWYER" || authorType === "SYSTEM") && authorName.includes("@")) {
+      const mapped = usersByEmail.get(authorName.toLowerCase());
+      if (mapped) return { ...item, author_name: mapped };
+    }
+    return item;
+  });
+}
+
 export function useRequestWorkspace(options) {
   const { useCallback, useRef, useState } = React;
   const opts = options || {};
@@ -63,7 +103,6 @@ export function useRequestWorkspace(options) {
   const setActiveSection = opts.setActiveSection;
   const token = opts.token || "";
   const users = Array.isArray(opts.users) ? opts.users : [];
-  const buildUniversalQuery = opts.buildUniversalQuery;
   const resolveAdminObjectSrc = opts.resolveAdminObjectSrc;
 
   const [requestModal, setRequestModal] = useState(createRequestModalState());
@@ -193,24 +232,21 @@ export function useRequestWorkspace(options) {
           financeSummary: null,
           invoices: [],
           statusRouteNodes: [],
+          messagesHasMore: false,
+          messagesLoadingMore: false,
+          messagesLoadedCount: 0,
+          messagesTotal: 0,
         }));
       }
 
-      const requestFilter = [{ field: "request_id", op: "=", value: String(requestId) }];
       try {
-        const [row, messagesData, attachmentsData, statusRouteData, invoicesData] = await Promise.all([
-          api("/api/admin/crud/requests/" + requestId),
-          api("/api/admin/chat/requests/" + requestId + "/messages"),
-          api("/api/admin/crud/attachments/query", {
-            method: "POST",
-            body: buildUniversalQuery(requestFilter, [{ field: "created_at", dir: "asc" }], 500, 0),
-          }),
-          api("/api/admin/requests/" + requestId + "/status-route").catch(() => ({ nodes: [] })),
-          api("/api/admin/invoices/query", {
-            method: "POST",
-            body: buildUniversalQuery(requestFilter, [{ field: "issued_at", dir: "desc" }], 500, 0),
-          }).catch(() => ({ rows: [] })),
-        ]);
+        const workspaceData = await api("/api/admin/requests/" + requestId + "/workspace");
+        const row = workspaceData?.request || null;
+        const messagesData = { rows: workspaceData?.messages || [] };
+        const attachmentsData = { rows: workspaceData?.attachments || [] };
+        const statusRouteData = workspaceData?.status_route || { nodes: [] };
+        const invoicesData = { rows: workspaceData?.invoices || [] };
+        const financeSummaryData = workspaceData?.finance_summary || null;
         const usersById = new Map(users.filter((user) => user && user.id).map((user) => [String(user.id), user]));
         const rowData = row && typeof row === "object" ? { ...row } : row;
         if (rowData && typeof rowData === "object") {
@@ -227,19 +263,7 @@ export function useRequestWorkspace(options) {
           ...item,
           download_url: resolveAdminObjectSrc(item.s3_key, token),
         }));
-        const usersByEmail = new Map(
-          users.filter((user) => user && user.email).map((user) => [String(user.email).toLowerCase(), String(user.name || user.email)])
-        );
-        const normalizedMessages = (messagesData.rows || []).map((item) => {
-          if (!item || typeof item !== "object") return item;
-          const authorType = String(item.author_type || "").toUpperCase();
-          const authorName = String(item.author_name || "").trim();
-          if ((authorType === "LAWYER" || authorType === "SYSTEM") && authorName.includes("@")) {
-            const mapped = usersByEmail.get(authorName.toLowerCase());
-            if (mapped) return { ...item, author_name: mapped };
-          }
-          return item;
-        });
+        const normalizedMessages = normalizeMessageAuthors(messagesData.rows || [], users);
         const invoices = Array.isArray(invoicesData?.rows) ? invoicesData.rows : [];
         const paidInvoices = invoices.filter(
           (item) => String(item?.status || "").toUpperCase() === "PAID"
@@ -262,7 +286,7 @@ export function useRequestWorkspace(options) {
           requestId: rowData?.id || requestId,
           trackNumber: String(rowData?.track_number || ""),
           requestData: rowData,
-          financeSummary: {
+          financeSummary: financeSummaryData || {
             request_cost: rowData?.request_cost ?? null,
             effective_rate: rowData?.effective_rate ?? null,
             paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
@@ -274,6 +298,10 @@ export function useRequestWorkspace(options) {
           availableStatuses: Array.isArray(statusRouteData?.available_statuses) ? statusRouteData.available_statuses : [],
           currentImportantDateAt: String(statusRouteData?.current_important_date_at || rowData?.important_date_at || ""),
           messages: normalizedMessages,
+          messagesHasMore: Boolean(workspaceData?.messages_has_more),
+          messagesLoadingMore: false,
+          messagesLoadedCount: Number(workspaceData?.messages_loaded_count || normalizedMessages.length || 0),
+          messagesTotal: Number(workspaceData?.messages_total || normalizedMessages.length || 0),
           attachments,
           selectedFiles: [],
           fileUploading: false,
@@ -292,6 +320,10 @@ export function useRequestWorkspace(options) {
           availableStatuses: [],
           currentImportantDateAt: "",
           messages: [],
+          messagesHasMore: false,
+          messagesLoadingMore: false,
+          messagesLoadedCount: 0,
+          messagesTotal: 0,
           attachments: [],
           selectedFiles: [],
           fileUploading: false,
@@ -299,7 +331,7 @@ export function useRequestWorkspace(options) {
         if (typeof setStatus === "function") setStatus("requestModal", "Ошибка: " + error.message, "error");
       }
     },
-    [api, buildUniversalQuery, resolveAdminObjectSrc, setStatus, token, users]
+    [api, resolveAdminObjectSrc, setStatus, token, users]
   );
 
   const refreshRequestModal = useCallback(async () => {
@@ -450,12 +482,67 @@ export function useRequestWorkspace(options) {
       const query = cursor ? "?cursor=" + encodeURIComponent(String(cursor)) : "";
       const payload = await api("/api/admin/chat/requests/" + requestId + "/live" + query);
       if (payload && payload.has_updates) {
-        await loadRequestModalData(requestId, { showLoading: false });
+        const nextMessages = normalizeMessageAuthors(payload?.messages || [], users);
+        const nextAttachments = (payload?.attachments || []).map((item) => ({
+          ...item,
+          download_url: resolveAdminObjectSrc(item?.s3_key, token),
+        }));
+        if (nextMessages.length || nextAttachments.length) {
+          setRequestModal((prev) => {
+            const mergedMessages = mergeRowsById(prev.messages, nextMessages);
+            const previousCount = Array.isArray(prev.messages) ? prev.messages.length : 0;
+            const addedCount = Math.max(0, mergedMessages.length - previousCount);
+            return {
+              ...prev,
+              messages: mergedMessages,
+              messagesLoadedCount: Number(prev.messagesLoadedCount || previousCount) + addedCount,
+              messagesTotal: Number(prev.messagesTotal || previousCount) + addedCount,
+              attachments: mergeRowsById(prev.attachments, nextAttachments),
+            };
+          });
+        }
       }
       return payload || { has_updates: false, typing: [], cursor: null };
     },
-    [api, loadRequestModalData, requestModal.requestId]
+    [api, requestModal.requestId, resolveAdminObjectSrc, token, users]
   );
+
+  const loadOlderRequestMessages = useCallback(async () => {
+    const requestId = String(requestModal.requestId || "").trim();
+    const loadedCount = Number(requestModal.messagesLoadedCount || 0);
+    if (!api || !requestId || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
+    setRequestModal((prev) => ({ ...prev, messagesLoadingMore: true }));
+    try {
+      const payload = await api(
+        "/api/admin/chat/requests/" +
+          requestId +
+          "/messages-window?before_count=" +
+          encodeURIComponent(String(loadedCount))
+      );
+      const nextMessages = normalizeMessageAuthors(payload?.rows || [], users);
+      setRequestModal((prev) => ({
+        ...prev,
+        messagesLoadingMore: false,
+        messages: mergeRowsById(nextMessages, prev.messages),
+        messagesHasMore: Boolean(payload?.has_more),
+        messagesLoadedCount: Number(payload?.loaded_count || prev.messagesLoadedCount || 0),
+        messagesTotal: Number(payload?.total || prev.messagesTotal || 0),
+      }));
+      return payload || null;
+    } catch (error) {
+      setRequestModal((prev) => ({ ...prev, messagesLoadingMore: false }));
+      if (typeof setStatus === "function") setStatus("requestModal", "Ошибка загрузки истории: " + error.message, "error");
+      return null;
+    }
+  }, [
+    api,
+    requestModal.messagesHasMore,
+    requestModal.messagesLoadedCount,
+    requestModal.messagesLoadingMore,
+    requestModal.requestId,
+    setStatus,
+    users,
+  ]);
 
   const setRequestTyping = useCallback(
     async ({ typing } = {}) => {
@@ -583,6 +670,7 @@ export function useRequestWorkspace(options) {
     submitRequestStatusChange,
     submitRequestModalMessage,
     probeRequestLive,
+    loadOlderRequestMessages,
     setRequestTyping,
     loadRequestDataTemplates,
     loadRequestDataBatch,

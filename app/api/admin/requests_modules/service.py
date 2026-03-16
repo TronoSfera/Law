@@ -10,11 +10,19 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.admin_user import AdminUser
+from app.models.attachment import Attachment
 from app.models.audit_log import AuditLog
+from app.models.invoice import Invoice
 from app.models.notification import Notification
 from app.models.request import Request
 from app.models.request_service_request import RequestServiceRequest
 from app.schemas.admin import RequestAdminCreate, RequestAdminPatch
+from app.services.chat_secure_service import (
+    DEFAULT_CHAT_WINDOW_LIMIT,
+    list_messages_for_request_window,
+    mark_messages_read_for_staff,
+    serialize_messages_for_request,
+)
 from app.schemas.universal import UniversalQuery
 from app.services.billing_flow import apply_billing_transition_effects
 from app.services.notifications import (
@@ -44,7 +52,7 @@ from .permissions import (
     ensure_lawyer_can_view_request_or_403,
     request_uuid_or_400,
 )
-from .status_flow import apply_request_special_filters, split_request_special_filters
+from .status_flow import apply_request_special_filters, get_request_status_route_service, split_request_special_filters
 
 
 def query_requests_service(uq: UniversalQuery, db: Session, admin: dict) -> dict[str, Any]:
@@ -396,6 +404,104 @@ def get_request_service(request_id: str, db: Session, admin: dict) -> dict[str, 
         "lawyer_unread_event_type": req.lawyer_unread_event_type,
         "created_at": req.created_at.isoformat() if req.created_at else None,
         "updated_at": req.updated_at.isoformat() if req.updated_at else None,
+    }
+
+
+def _serialize_request_attachment(row: Attachment) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "request_id": str(row.request_id),
+        "message_id": str(row.message_id) if row.message_id else None,
+        "file_name": row.file_name,
+        "mime_type": row.mime_type,
+        "size_bytes": int(row.size_bytes or 0),
+        "s3_key": row.s3_key,
+        "immutable": bool(row.immutable),
+        "scan_status": row.scan_status,
+        "scan_signature": row.scan_signature,
+        "scan_error": row.scan_error,
+        "scanned_at": row.scanned_at.isoformat() if row.scanned_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "responsible": row.responsible,
+    }
+
+
+def _serialize_request_invoice(row: Invoice) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "invoice_number": row.invoice_number,
+        "request_id": str(row.request_id),
+        "client_id": str(row.client_id) if row.client_id else None,
+        "status": row.status,
+        "amount": float(row.amount) if row.amount is not None else None,
+        "currency": row.currency,
+        "payer_display_name": row.payer_display_name,
+        "issued_by_admin_user_id": str(row.issued_by_admin_user_id) if row.issued_by_admin_user_id else None,
+        "issued_by_role": row.issued_by_role,
+        "issued_at": row.issued_at.isoformat() if row.issued_at else None,
+        "paid_at": row.paid_at.isoformat() if row.paid_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "responsible": row.responsible,
+        "pdf_url": f"/api/admin/invoices/{row.id}/pdf",
+    }
+
+
+def get_request_workspace_service(request_id: str, db: Session, admin: dict) -> dict[str, Any]:
+    request_payload = get_request_service(request_id, db, admin)
+    request_uuid = request_uuid_or_400(request_id)
+    req = db.get(Request, request_uuid)
+    if req is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    mark_messages_read_for_staff(db, request_id=req.id)
+    message_rows, messages_total, messages_has_more, messages_loaded_count = list_messages_for_request_window(
+        db,
+        req.id,
+        limit=DEFAULT_CHAT_WINDOW_LIMIT,
+        before_count=0,
+    )
+    attachment_rows = (
+        db.query(Attachment)
+        .filter(Attachment.request_id == req.id)
+        .order_by(Attachment.created_at.asc(), Attachment.id.asc())
+        .all()
+    )
+    role = str(admin.get("role") or "").upper()
+    invoice_rows: list[Invoice] = []
+    if role in {"ADMIN", "LAWYER"}:
+        invoice_rows = (
+            db.query(Invoice)
+            .filter(Invoice.request_id == req.id)
+            .order_by(Invoice.issued_at.desc(), Invoice.id.desc())
+            .all()
+        )
+
+    paid_invoices = [row for row in invoice_rows if str(row.status or "").upper() == "PAID"]
+    paid_total = round(sum(float(row.amount or 0) for row in paid_invoices), 2)
+    latest_paid_at = None
+    for row in paid_invoices:
+        if row.paid_at is None:
+            continue
+        if latest_paid_at is None or row.paid_at > latest_paid_at:
+            latest_paid_at = row.paid_at
+
+    return {
+        "request": request_payload,
+        "messages": serialize_messages_for_request(db, req.id, message_rows),
+        "messages_total": messages_total,
+        "messages_has_more": messages_has_more,
+        "messages_loaded_count": messages_loaded_count,
+        "attachments": [_serialize_request_attachment(row) for row in attachment_rows],
+        "invoices": [_serialize_request_invoice(row) for row in invoice_rows],
+        "finance_summary": {
+            "request_cost": request_payload.get("request_cost"),
+            "effective_rate": request_payload.get("effective_rate"),
+            "paid_total": paid_total,
+            "last_paid_at": latest_paid_at.isoformat() if latest_paid_at else request_payload.get("paid_at"),
+        },
+        "status_route": get_request_status_route_service(request_id, db, admin),
     }
 
 

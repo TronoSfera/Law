@@ -181,6 +181,63 @@ class AdminMetricsTemplatesTests(AdminUniversalCrudBase):
         self.assertAlmostEqual(float(body["frt_avg_minutes"]), 20.0, places=1)
         self.assertIn("NEW", body.get("avg_time_in_status_hours") or {})
 
+    def test_dashboard_metrics_can_skip_sla_for_fast_overview(self):
+        headers = self._auth_headers("ADMIN", email="root@example.com")
+        now = datetime.now(timezone.utc)
+        with self.SessionLocal() as db:
+            db.add_all(
+                [
+                    Status(code="NEW", name="Новая", enabled=True, sort_order=0, is_terminal=False),
+                    Status(code="CLOSED", name="Закрыта", enabled=True, sort_order=1, is_terminal=True),
+                ]
+            )
+            req = Request(
+                track_number="TRK-SLA-M-FAST-1",
+                client_name="Клиент SLA Fast",
+                client_phone="+79990000013",
+                topic_code="civil-law",
+                status_code="NEW",
+                extra_fields={},
+                created_at=now - timedelta(hours=30),
+                updated_at=now - timedelta(hours=30),
+            )
+            db.add(req)
+            db.flush()
+            db.add(
+                Message(
+                    request_id=req.id,
+                    author_type="LAWYER",
+                    author_name="Юрист",
+                    body="Ответ",
+                    created_at=req.created_at + timedelta(minutes=20),
+                    updated_at=req.created_at + timedelta(minutes=20),
+                )
+            )
+            db.add(
+                StatusHistory(
+                    request_id=req.id,
+                    from_status=None,
+                    to_status="NEW",
+                    changed_by_admin_id=None,
+                    created_at=now - timedelta(hours=30),
+                    updated_at=now - timedelta(hours=30),
+                )
+            )
+            db.commit()
+
+        response = self.client.get("/api/admin/metrics/overview?include_sla=false", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(int(body.get("sla_overdue") or 0), 0)
+        self.assertIsNone(body.get("frt_avg_minutes"))
+        self.assertEqual(body.get("avg_time_in_status_hours"), {})
+
+        sla_response = self.client.get("/api/admin/metrics/overview-sla", headers=headers)
+        self.assertEqual(sla_response.status_code, 200)
+        sla_body = sla_response.json()
+        self.assertGreaterEqual(int(sla_body.get("sla_overdue") or 0), 1)
+        self.assertIsNotNone(sla_body.get("frt_avg_minutes"))
+
     def test_admin_can_manage_admin_user_topics_only_for_lawyers(self):
         headers = self._auth_headers("ADMIN", email="root@example.com")
         with self.SessionLocal() as db:

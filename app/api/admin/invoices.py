@@ -233,6 +233,52 @@ def query_invoices(
     return payload
 
 
+@router.get("/by-request/{request_id}")
+def list_invoices_by_request(
+    request_id: str,
+    http_request: FastapiRequest,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER")),
+):
+    role = str(admin.get("role") or "").upper()
+    actor_id = _actor_uuid_or_401(admin)
+
+    req = db.get(Request, _uuid_or_400(request_id, "request_id"))
+    if req is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_lawyer_owns_request_or_403(role, actor_id, req)
+
+    rows = db.query(Invoice).filter(Invoice.request_id == req.id).order_by(Invoice.issued_at.desc(), Invoice.id.desc()).all()
+    issuer_ids = {row.issued_by_admin_user_id for row in rows if row.issued_by_admin_user_id}
+    users = db.query(AdminUser.id, AdminUser.name, AdminUser.email).filter(AdminUser.id.in_(issuer_ids)).all() if issuer_ids else []
+    issuer_map = {str(user_id): (name or email or str(user_id)) for user_id, name, email in users}
+
+    payload = {
+        "rows": [
+            _serialize_invoice(
+                row,
+                request_track=req.track_number,
+                issuer_name=issuer_map.get(str(row.issued_by_admin_user_id)) if row.issued_by_admin_user_id else None,
+            )
+            for row in rows
+        ],
+        "total": len(rows),
+    }
+    record_pii_access_event(
+        db,
+        actor_role=role,
+        actor_subject=str(admin.get("sub") or admin.get("email") or ""),
+        actor_ip=extract_client_ip(http_request),
+        action="READ_REQUEST_INVOICE_LIST",
+        scope="INVOICE",
+        request_id=req.id,
+        details={"rows": int(len(rows)), "track_number": req.track_number},
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+        persist_now=True,
+    )
+    return payload
+
+
 @router.get("/{invoice_id}")
 def get_invoice(
     invoice_id: str,

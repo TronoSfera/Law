@@ -106,6 +106,66 @@ class HttpHardeningTests(unittest.TestCase):
         }
         self.assertEqual(_performance_label(Request(scope)), "public_request_status_route")
 
+    def test_performance_label_maps_admin_chat_messages_window(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/admin/chat/requests/123/messages-window",
+            "raw_path": b"/api/admin/chat/requests/123/messages-window",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        self.assertEqual(_performance_label(Request(scope)), "admin_chat_messages_window")
+
+    def test_performance_label_maps_public_chat_messages_window(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/public/chat/requests/TRK-1/messages-window",
+            "raw_path": b"/api/public/chat/requests/TRK-1/messages-window",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        self.assertEqual(_performance_label(Request(scope)), "public_chat_messages_window")
+
+    def test_performance_label_maps_admin_metrics_overview(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/admin/metrics/overview",
+            "raw_path": b"/api/admin/metrics/overview",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        self.assertEqual(_performance_label(Request(scope)), "admin_metrics_overview")
+
+    def test_performance_label_maps_admin_metrics_overview_sla(self):
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/admin/metrics/overview-sla",
+            "raw_path": b"/api/admin/metrics/overview-sla",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+        self.assertEqual(_performance_label(Request(scope)), "admin_metrics_overview_sla")
+
     def test_non_file_paths_keep_deny_framing(self):
         scope = {
             "type": "http",

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
@@ -19,8 +20,11 @@ from app.models.topic_data_template import TopicDataTemplate
 from app.services.notifications import EVENT_REQUEST_DATA as NOTIFICATION_EVENT_REQUEST_DATA, notify_request_event, unread_admin_summary
 from app.services.request_read_markers import EVENT_REQUEST_DATA, mark_unread_for_client
 from app.services.chat_secure_service import (
+    clamp_chat_window_limit,
+    DEFAULT_CHAT_WINDOW_LIMIT,
     create_admin_or_lawyer_message,
     get_chat_activity_summary,
+    list_messages_for_request_window,
     list_messages_for_request,
     mark_messages_delivered_for_staff,
     mark_messages_read_for_staff,
@@ -154,6 +158,21 @@ def _slugify_key(raw: str) -> str:
     return (slug or "data-field")[:80]
 
 
+def _serialize_live_attachment(row: Attachment) -> dict:
+    return {
+        "id": str(row.id),
+        "request_id": str(row.request_id),
+        "message_id": str(row.message_id) if row.message_id else None,
+        "file_name": row.file_name,
+        "mime_type": row.mime_type,
+        "size_bytes": int(row.size_bytes or 0),
+        "s3_key": row.s3_key,
+        "immutable": bool(row.immutable),
+        "created_at": _iso_or_none(row.created_at),
+        "updated_at": _iso_or_none(row.updated_at),
+    }
+
+
 def _normalize_value_type(raw: str | None) -> str:
     value = str(raw or "text").strip().lower()
     if value not in ALLOWED_VALUE_TYPES:
@@ -269,6 +288,42 @@ def list_request_messages(
     return payload
 
 
+@router.get("/requests/{request_id}/messages-window")
+def list_request_messages_window(
+    request_id: str,
+    http_request: FastapiRequest,
+    before_count: int = 0,
+    limit: int = DEFAULT_CHAT_WINDOW_LIMIT,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    req = _request_for_id_or_404(db, request_id)
+    _ensure_lawyer_can_view_request_or_403(admin, req)
+    mark_messages_read_for_staff(db, request_id=req.id)
+    rows, total, has_more, loaded_count = list_messages_for_request_window(
+        db,
+        req.id,
+        limit=limit,
+        before_count=before_count,
+    )
+    payload = {
+        "rows": serialize_messages_for_request(db, req.id, rows),
+        "total": total,
+        "has_more": has_more,
+        "loaded_count": loaded_count,
+        "limit": clamp_chat_window_limit(limit),
+    }
+    _audit_admin_chat_read(
+        db,
+        admin=admin,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_MESSAGES",
+        details={"rows": len(rows), "window": True},
+    )
+    return payload
+
+
 @router.post("/requests/{request_id}/messages", status_code=201)
 def create_request_message(
     request_id: str,
@@ -318,6 +373,29 @@ def get_request_live_state(
     latest_activity_iso = _iso_or_none(latest_activity_at)
     cursor_dt = _parse_cursor(cursor)
     has_updates = bool(latest_activity_at and (cursor_dt is None or latest_activity_at > cursor_dt))
+    delta_messages = []
+    delta_attachments = []
+    if has_updates and cursor_dt is not None:
+        message_rows = (
+            db.query(Message)
+            .filter(
+                Message.request_id == req.id,
+                func.coalesce(Message.updated_at, Message.created_at) > cursor_dt,
+            )
+            .order_by(Message.created_at.asc(), Message.id.asc())
+            .all()
+        )
+        attachment_rows = (
+            db.query(Attachment)
+            .filter(
+                Attachment.request_id == req.id,
+                func.coalesce(Attachment.updated_at, Attachment.created_at) > cursor_dt,
+            )
+            .order_by(Attachment.created_at.asc(), Attachment.id.asc())
+            .all()
+        )
+        delta_messages = serialize_messages_for_request(db, req.id, message_rows)
+        delta_attachments = [_serialize_live_attachment(row) for row in attachment_rows]
 
     actor_sub = str(admin.get("sub") or "").strip() or "unknown"
     actor_role = str(admin.get("role") or "").strip().upper() or "UNKNOWN"
@@ -331,6 +409,8 @@ def get_request_live_state(
         "attachment_count": int(summary.get("attachment_count") or 0),
         "latest_message_at": _iso_or_none(_as_utc_datetime(summary.get("latest_message_at"))),
         "latest_attachment_at": _iso_or_none(_as_utc_datetime(summary.get("latest_attachment_at"))),
+        "messages": delta_messages,
+        "attachments": delta_attachments,
         "typing": typing_rows,
         "unread": unread_admin_summary(
             db,

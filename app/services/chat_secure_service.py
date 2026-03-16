@@ -16,6 +16,8 @@ from app.services.notifications import EVENT_MESSAGE as NOTIFICATION_EVENT_MESSA
 from app.services.request_read_markers import EVENT_MESSAGE, mark_unread_for_client, mark_unread_for_lawyer
 
 MAX_CHAT_MESSAGE_LEN = 12_000
+DEFAULT_CHAT_WINDOW_LIMIT = 50
+MAX_CHAT_WINDOW_LIMIT = 200
 CHAT_PARTICIPANT_ADMIN_IDS_KEY = "chat_participant_admin_ids"
 
 
@@ -35,6 +37,45 @@ def list_messages_for_request(db: Session, request_id: Any) -> list[Message]:
         .order_by(Message.created_at.asc(), Message.id.asc())
         .all()
     )
+
+
+def clamp_chat_window_limit(limit: int | None) -> int:
+    if limit is None:
+        return DEFAULT_CHAT_WINDOW_LIMIT
+    try:
+        normalized = int(limit)
+    except (TypeError, ValueError):
+        normalized = DEFAULT_CHAT_WINDOW_LIMIT
+    return max(1, min(normalized, MAX_CHAT_WINDOW_LIMIT))
+
+
+def list_messages_for_request_window(
+    db: Session,
+    request_id: Any,
+    *,
+    limit: int | None,
+    before_count: int = 0,
+) -> tuple[list[Message], int, bool, int]:
+    window_limit = clamp_chat_window_limit(limit)
+    loaded_count = max(0, int(before_count or 0))
+    base_query = db.query(Message).filter(Message.request_id == request_id)
+    total = int(base_query.count() or 0)
+    if total <= 0 or loaded_count >= total:
+        return [], total, False, loaded_count
+
+    remaining = total - loaded_count
+    window_size = min(window_limit, remaining)
+    offset = max(total - loaded_count - window_size, 0)
+    rows = (
+        base_query
+        .order_by(Message.created_at.asc(), Message.id.asc())
+        .offset(offset)
+        .limit(window_size)
+        .all()
+    )
+    next_loaded_count = loaded_count + len(rows)
+    has_more = offset > 0
+    return rows, total, has_more, next_loaded_count
 
 
 def _iso_or_none(value: datetime | None) -> str | None:
