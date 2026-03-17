@@ -225,6 +225,7 @@ def serialize_message(row: Message, *, body: str | None = None, body_loaded: boo
         "id": str(row.id),
         "request_id": str(row.request_id),
         "author_type": row.author_type,
+        "author_admin_user_id": str(row.author_admin_user_id) if row.author_admin_user_id else None,
         "author_name": row.author_name,
         "body": body,
         "body_loaded": bool(body_loaded),
@@ -277,6 +278,16 @@ def _normalize_admin_uuid(value: str | None) -> str | None:
         return None
     try:
         return str(uuid.UUID(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_admin_uuid_value(value: str | None) -> uuid.UUID | None:
+    normalized = _normalize_admin_uuid(value)
+    if not normalized:
+        return None
+    try:
+        return uuid.UUID(normalized)
     except (TypeError, ValueError):
         return None
 
@@ -525,6 +536,7 @@ def create_admin_or_lawyer_message(
     row = Message(
         request_id=request.id,
         author_type=author_type,
+        author_admin_user_id=_normalize_admin_uuid_value(actor_admin_user_id),
         author_name=str(actor_name or "").strip() or author_type,
         body=message_body,
         responsible=responsible,

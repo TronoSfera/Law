@@ -3688,6 +3688,8 @@
   function RequestWorkspace({
     viewerRole,
     viewerUserId,
+    viewerUserEmail,
+    viewerUserName,
     loading,
     trackNumber,
     requestData,
@@ -4848,7 +4850,17 @@
       const authorType = String(payload?.author_type || "").trim().toUpperCase();
       if (!authorType) return false;
       if (viewerRoleCode === "CLIENT") return authorType === "CLIENT";
-      return authorType !== "CLIENT";
+      if (authorType === "CLIENT") return false;
+      const authorAdminUserId = String(payload?.author_admin_user_id || "").trim();
+      const currentViewerUserId = String(viewerUserId || "").trim();
+      if (authorAdminUserId && currentViewerUserId) return authorAdminUserId === currentViewerUserId;
+      const authorName = String(payload?.author_name || "").trim().toLowerCase();
+      const viewerName = String(viewerUserName || "").trim().toLowerCase();
+      const viewerEmail = String(viewerUserEmail || "").trim().toLowerCase();
+      if (authorName && (viewerName && authorName === viewerName || viewerEmail && authorName === viewerEmail)) {
+        return true;
+      }
+      return !viewerName && !viewerEmail ? authorType !== "CLIENT" : false;
     };
     const renderMessageMeta = (payload) => {
       const timeLabel = fmtTimeOnly(payload?.created_at);
@@ -5108,7 +5120,8 @@
         const serviceMessageContent = resolveServiceMessageContent(entry.payload);
         const requestDataInteractive = isRequestDataMessage && (canRequestData || canFillRequestData);
         const bubbleClass = "chat-message-bubble" + (isRequestDataMessage ? " chat-request-data-bubble" : "") + (entry.payload?.request_data_all_filled ? " all-filled" : "") + (isRequestDataMessage && canFillRequestData ? " request-data-message-btn" : "");
-        const itemClass = "chat-message " + (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing") + (isRequestDataMessage && canFillRequestData ? " request-data-item" + (entry.payload?.request_data_all_filled ? " done" : "") : "");
+        const isOutgoing = isOutgoingForViewer(entry.payload);
+        const itemClass = "chat-message " + (isOutgoing ? "outgoing" : "incoming") + (isRequestDataMessage && canFillRequestData ? " request-data-item" + (entry.payload?.request_data_all_filled ? " done" : "") : "");
         return /* @__PURE__ */ React.createElement("li", { key: entry.key, className: itemClass }, /* @__PURE__ */ React.createElement("div", { className: "chat-message-author" }, String(entry.payload?.author_name || entry.payload?.author_type || "\u0421\u0438\u0441\u0442\u0435\u043C\u0430")), /* @__PURE__ */ React.createElement(
           "div",
           {
@@ -10210,6 +10223,8 @@
         {
           viewerRole: role,
           viewerUserId: userId,
+          viewerUserEmail: email,
+          viewerUserName: dictionaries.users?.find((item) => String(item?.id || "") === String(userId || ""))?.name || "",
           loading: requestModal.loading,
           trackNumber: requestModal.trackNumber,
           requestData: requestModal.requestData,

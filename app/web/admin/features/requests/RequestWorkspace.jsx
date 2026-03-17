@@ -14,6 +14,8 @@ import {
 export function RequestWorkspace({
   viewerRole,
   viewerUserId,
+  viewerUserEmail,
+  viewerUserName,
   loading,
   trackNumber,
   requestData,
@@ -1297,7 +1299,17 @@ export function RequestWorkspace({
     const authorType = String(payload?.author_type || "").trim().toUpperCase();
     if (!authorType) return false;
     if (viewerRoleCode === "CLIENT") return authorType === "CLIENT";
-    return authorType !== "CLIENT";
+    if (authorType === "CLIENT") return false;
+    const authorAdminUserId = String(payload?.author_admin_user_id || "").trim();
+    const currentViewerUserId = String(viewerUserId || "").trim();
+    if (authorAdminUserId && currentViewerUserId) return authorAdminUserId === currentViewerUserId;
+    const authorName = String(payload?.author_name || "").trim().toLowerCase();
+    const viewerName = String(viewerUserName || "").trim().toLowerCase();
+    const viewerEmail = String(viewerUserEmail || "").trim().toLowerCase();
+    if (authorName && ((viewerName && authorName === viewerName) || (viewerEmail && authorName === viewerEmail))) {
+      return true;
+    }
+    return !viewerName && !viewerEmail ? authorType !== "CLIENT" : false;
   };
 
   const renderMessageMeta = (payload) => {
@@ -1719,9 +1731,10 @@ export function RequestWorkspace({
                           (isRequestDataMessage ? " chat-request-data-bubble" : "") +
                           (entry.payload?.request_data_all_filled ? " all-filled" : "") +
                           (isRequestDataMessage && canFillRequestData ? " request-data-message-btn" : "");
+                        const isOutgoing = isOutgoingForViewer(entry.payload);
                         const itemClass =
                           "chat-message " +
-                          (String(entry.payload?.author_type || "").toUpperCase() === "CLIENT" ? "incoming" : "outgoing") +
+                          (isOutgoing ? "outgoing" : "incoming") +
                           (isRequestDataMessage && canFillRequestData ? " request-data-item" + (entry.payload?.request_data_all_filled ? " done" : "") : "");
                         return (
                           <li key={entry.key} className={itemClass}>

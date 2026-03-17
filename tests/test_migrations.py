@@ -114,7 +114,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0035_workspace_perf_indexes")
+        self.assertEqual(version, "0036_message_author_admin_id")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -214,8 +214,13 @@ class MigrationTests(unittest.TestCase):
         attachment_indexes = {index["name"] for index in self.inspector.get_indexes("attachments")}
         invoice_indexes = {index["name"] for index in self.inspector.get_indexes("invoices")}
         self.assertIn("ix_messages_request_created_id", message_indexes)
+        self.assertIn("ix_messages_author_admin_user_id", message_indexes)
         self.assertIn("ix_attachments_request_created_id", attachment_indexes)
         self.assertIn("ix_invoices_request_issued_id", invoice_indexes)
+
+    def test_messages_contains_author_admin_user_id_column(self):
+        columns = {column["name"] for column in self.inspector.get_columns("messages")}
+        self.assertIn("author_admin_user_id", columns)
 
     def test_data_retention_policies_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("data_retention_policies")}

@@ -3999,6 +3999,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
               <RequestWorkspace
                 viewerRole={role}
                 viewerUserId={userId}
+                viewerUserEmail={email}
+                viewerUserName={dictionaries.users?.find((item) => String(item?.id || "") === String(userId || ""))?.name || ""}
                 loading={requestModal.loading}
                 trackNumber={requestModal.trackNumber}
                 requestData={requestModal.requestData}

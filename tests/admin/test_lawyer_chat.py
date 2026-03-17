@@ -552,6 +552,7 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         )
         self.assertEqual(own_create.status_code, 201)
         self.assertEqual(own_create.json()["author_type"], "LAWYER")
+        self.assertEqual(own_create.json().get("author_admin_user_id"), self_id)
 
         unassigned_create = self.chat_client.post(
             f"/api/admin/chat/requests/{unassigned_id}/messages",

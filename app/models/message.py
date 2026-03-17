@@ -16,6 +16,7 @@ class Message(Base, UUIDMixin, TimestampMixin):
     )
     request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     author_type: Mapped[str] = mapped_column(String(20), nullable=False)  # CLIENT|LAWYER|SYSTEM
+    author_admin_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     author_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     immutable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
