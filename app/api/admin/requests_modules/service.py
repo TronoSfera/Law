@@ -365,21 +365,11 @@ def get_request_service(request_id: str, db: Session, admin: dict) -> dict[str, 
     if not req:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     ensure_lawyer_can_view_request_or_403(admin, req)
-    changed = False
-    if str(admin.get("role") or "").upper() == "LAWYER" and clear_unread_for_lawyer(req):
-        changed = True
-        db.add(req)
-    read_count = mark_admin_notifications_read(
-        db,
-        admin_user_id=admin.get("sub"),
-        request_id=req.id,
-        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
-    )
-    if read_count:
-        changed = True
-    if changed:
-        db.commit()
-        db.refresh(req)
+    _apply_request_open_side_effects(db, req, admin, mark_chat_read=False)
+    return _serialize_request_row(req)
+
+
+def _serialize_request_row(req: Request) -> dict[str, Any]:
     return {
         "id": str(req.id),
         "track_number": req.track_number,
@@ -405,6 +395,27 @@ def get_request_service(request_id: str, db: Session, admin: dict) -> dict[str, 
         "created_at": req.created_at.isoformat() if req.created_at else None,
         "updated_at": req.updated_at.isoformat() if req.updated_at else None,
     }
+
+
+def _apply_request_open_side_effects(db: Session, req: Request, admin: dict, *, mark_chat_read: bool) -> None:
+    changed = False
+    if str(admin.get("role") or "").upper() == "LAWYER" and clear_unread_for_lawyer(req):
+        changed = True
+        db.add(req)
+    read_count = mark_admin_notifications_read(
+        db,
+        admin_user_id=admin.get("sub"),
+        request_id=req.id,
+        responsible=str(admin.get("email") or "").strip() or "Администратор системы",
+    )
+    if read_count:
+        changed = True
+    if mark_chat_read and mark_messages_read_for_staff(db, request_id=req.id, commit=False):
+        changed = True
+    if changed:
+        db.commit()
+        if str(admin.get("role") or "").upper() == "LAWYER":
+            db.refresh(req)
 
 
 def _serialize_request_attachment(row: Attachment) -> dict[str, Any]:
@@ -449,13 +460,14 @@ def _serialize_request_invoice(row: Invoice) -> dict[str, Any]:
 
 
 def get_request_workspace_service(request_id: str, db: Session, admin: dict) -> dict[str, Any]:
-    request_payload = get_request_service(request_id, db, admin)
     request_uuid = request_uuid_or_400(request_id)
     req = db.get(Request, request_uuid)
     if req is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    ensure_lawyer_can_view_request_or_403(admin, req)
 
-    mark_messages_read_for_staff(db, request_id=req.id)
+    _apply_request_open_side_effects(db, req, admin, mark_chat_read=True)
+    request_payload = _serialize_request_row(req)
     message_rows, messages_total, messages_has_more, messages_loaded_count = list_messages_for_request_window(
         db,
         req.id,
@@ -501,7 +513,7 @@ def get_request_workspace_service(request_id: str, db: Session, admin: dict) -> 
             "paid_total": paid_total,
             "last_paid_at": latest_paid_at.isoformat() if latest_paid_at else request_payload.get("paid_at"),
         },
-        "status_route": get_request_status_route_service(request_id, db, admin),
+        "status_route": get_request_status_route_service(request_id, db, admin, request_row=req),
     }
 
 

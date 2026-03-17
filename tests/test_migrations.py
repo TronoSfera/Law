@@ -114,7 +114,7 @@ class MigrationTests(unittest.TestCase):
     def test_alembic_version_is_set(self):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        self.assertEqual(version, "0034_request_assigned_lawyer_idx")
+        self.assertEqual(version, "0035_workspace_perf_indexes")
 
     def test_responsible_column_exists_in_all_domain_tables(self):
         tables = {
@@ -208,6 +208,14 @@ class MigrationTests(unittest.TestCase):
     def test_requests_contains_assigned_lawyer_index(self):
         indexes = {index["name"] for index in self.inspector.get_indexes("requests")}
         self.assertIn("ix_requests_assigned_lawyer_id", indexes)
+
+    def test_workspace_payload_tables_contain_ordering_indexes(self):
+        message_indexes = {index["name"] for index in self.inspector.get_indexes("messages")}
+        attachment_indexes = {index["name"] for index in self.inspector.get_indexes("attachments")}
+        invoice_indexes = {index["name"] for index in self.inspector.get_indexes("invoices")}
+        self.assertIn("ix_messages_request_created_id", message_indexes)
+        self.assertIn("ix_attachments_request_created_id", attachment_indexes)
+        self.assertIn("ix_invoices_request_issued_id", invoice_indexes)
 
     def test_data_retention_policies_contains_core_columns(self):
         columns = {column["name"] for column in self.inspector.get_columns("data_retention_policies")}

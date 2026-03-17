@@ -363,14 +363,19 @@ def mark_admin_notifications_read(
         query = query.filter(Notification.request_id == request_id)
     if notification_id is not None:
         query = query.filter(Notification.id == notification_id)
-    rows = query.all()
     now = _as_utc_now()
-    for row in rows:
-        row.is_read = True
-        row.read_at = now
-        row.responsible = responsible
-        db.add(row)
-    return len(rows)
+    return int(
+        query.update(
+            {
+                Notification.is_read: True,
+                Notification.read_at: now,
+                Notification.responsible: responsible,
+                Notification.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+        or 0
+    )
 
 
 def mark_client_notifications_read(
@@ -393,14 +398,19 @@ def mark_client_notifications_read(
         query = query.filter(Notification.request_id == request_id)
     if notification_id is not None:
         query = query.filter(Notification.id == notification_id)
-    rows = query.all()
     now = _as_utc_now()
-    for row in rows:
-        row.is_read = True
-        row.read_at = now
-        row.responsible = responsible
-        db.add(row)
-    return len(rows)
+    return int(
+        query.update(
+            {
+                Notification.is_read: True,
+                Notification.read_at: now,
+                Notification.responsible: responsible,
+                Notification.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+        or 0
+    )
 
 
 def list_admin_notifications(

@@ -72,6 +72,14 @@
 - 2026-03-16: при первом прогоне long-chat сценария выяснилось, что `chat-service` работал на старом контейнере без актуальных `X-Perf-*` headers; после rebuild `chat-service` server timing для `messages-window` подтвержден на живом контуре.
 - 2026-03-16: `PERF-06` продвинут дальше - SQL-first window теперь покрывает не только `created_newest`, но и `sort_mode=lawyer`, а boolean-фильтр `deadline_alert` переносится в SQL до загрузки строк.
 - 2026-03-16: добавлен контейнерный регресс `test_requests_kanban_lawyer_sort_uses_limit_without_losing_total`, подтверждающий `limit/truncated/total` для `sort_mode=lawyer`.
+- 2026-03-17: по продовым замерам dashboard все еще создает сетевое давление пачкой справочников на первом маунте; admin UI перестроен так, чтобы на дефолтном входе сначала грузить `dashboard + totp`, а `bootstrapReferenceData()` откладывать до idle.
+- 2026-03-17: `UserAvatar` переведен на `loading="lazy"`, `decoding="async"` и low fetch priority для крупных аватаров, чтобы тяжелые изображения юристов меньше конкурировали с API на первом экране dashboard.
+- 2026-03-17: для `workspace` добавлены составные индексы `messages(request_id, created_at, id)`, `attachments(request_id, created_at, id)`, `invoices(request_id, issued_at, id)`; это должно снизить стоимость order-by выборок при открытии заявки.
+- 2026-03-17: добавлена миграция `0035_workspace_perf_indexes`, обновлен `tests.test_migrations`, контейнерный прогон миграций пройден.
+- 2026-03-17: avatar pipeline исправлен архитектурно: оригинал аватара больше не переписывается, рядом создается `thumb.webp`, а admin avatar URLs для small/medium render идут через `variant=thumb`.
+- 2026-03-17: admin avatar proxy умеет по `variant=thumb` отдавать сжатый вариант и, если его еще нет, достраивать его на лету из оригинала; public featured staff URLs тоже переключены на `?variant=thumb` и умеют так же достраивать thumb на лету.
+- 2026-03-17: `workspace` упрощен server-side: убрано дублирующее `get_request_service() + db.get(Request)` внутри одного запроса, read-mark side effects сведены в один проход, `mark_admin_notifications_read` переведен на bulk update, `status_route` повторно использует уже загруженный `Request`.
+- 2026-03-17: контейнерные регрессы после avatar/workspace правок пройдены: `tests.test_uploads_s3`, `tests.test_featured_staff_public`, `tests.admin.test_lawyer_chat`.
 
 ## Дальше
 

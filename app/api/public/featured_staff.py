@@ -13,12 +13,23 @@ from app.models.admin_user import AdminUser
 from app.models.landing_featured_staff import LandingFeaturedStaff
 from app.models.topic import Topic
 from app.services.s3_storage import get_s3_storage
+from app.api.admin.uploads import (
+    AVATAR_THUMB_MAX_SIZE_PX,
+    _avatar_variant_key,
+    _read_object_body_or_400,
+    _render_avatar_to_webp_or_400,
+    _write_object_bytes_or_500,
+)
 
 router = APIRouter()
 
 
-def _featured_avatar_proxy_path(admin_user_id: str) -> str:
-    return "/api/public/featured-staff/avatar/" + str(admin_user_id)
+def _featured_avatar_proxy_path(admin_user_id: str, variant: str | None = "thumb") -> str:
+    path = "/api/public/featured-staff/avatar/" + str(admin_user_id)
+    normalized_variant = str(variant or "").strip().lower()
+    if normalized_variant:
+        return path + "?variant=" + normalized_variant
+    return path
 
 
 @router.get("")
@@ -58,7 +69,7 @@ def list_featured_staff(
         raw_avatar_url = str(user.avatar_url or "").strip()
         avatar_url = raw_avatar_url
         if raw_avatar_url.startswith("s3://"):
-            avatar_url = _featured_avatar_proxy_path(str(user.id))
+            avatar_url = _featured_avatar_proxy_path(str(user.id), variant="thumb")
         result.append(
             {
                 "id": str(slot.id),
@@ -80,6 +91,7 @@ def list_featured_staff(
 @router.get("/avatar/{admin_user_id}")
 def get_featured_staff_avatar(
     admin_user_id: str,
+    variant: str | None = Query("thumb"),
     db: Session = Depends(get_db),
 ):
     try:
@@ -110,10 +122,31 @@ def get_featured_staff_avatar(
     if not key.startswith("avatars/" + str(user_uuid) + "/"):
         raise HTTPException(status_code=404, detail="Аватар не найден")
 
+    target_key = key
+    if str(variant or "").strip().lower() == "thumb":
+        try:
+            target_key = _avatar_variant_key(key, "thumb")
+        except HTTPException:
+            target_key = key
+
+    storage = get_s3_storage()
     try:
-        obj = get_s3_storage().get_object(key)
+        obj = storage.get_object(target_key)
     except ClientError:
-        raise HTTPException(status_code=404, detail="Аватар не найден")
+        if target_key != key:
+            try:
+                original_obj = storage.get_object(key)
+            except ClientError:
+                raise HTTPException(status_code=404, detail="Аватар не найден")
+            try:
+                source = _read_object_body_or_400(original_obj)
+                optimized = _render_avatar_to_webp_or_400(source, max_size_px=AVATAR_THUMB_MAX_SIZE_PX)
+                _write_object_bytes_or_500(storage, key=target_key, content=optimized, mime_type="image/webp")
+                obj = storage.get_object(target_key)
+            except HTTPException:
+                obj = original_obj
+        else:
+            raise HTTPException(status_code=404, detail="Аватар не найден")
 
     body = obj.get("Body")
     if body is None or not hasattr(body, "iter_chunks"):

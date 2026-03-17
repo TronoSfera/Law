@@ -119,7 +119,7 @@ class FeaturedStaffPublicTests(unittest.TestCase):
         self.assertEqual(len(payload.get("items") or []), 1)
         row = payload["items"][0]
         self.assertEqual(row.get("admin_user_id"), user_id)
-        self.assertEqual(row.get("avatar_url"), "/api/public/featured-staff/avatar/" + user_id)
+        self.assertEqual(row.get("avatar_url"), "/api/public/featured-staff/avatar/" + user_id + "?variant=thumb")
 
     def test_featured_staff_avatar_proxy_streams_s3_avatar(self):
         user_id, avatar_key = self._seed_featured_lawyer(enabled=True)

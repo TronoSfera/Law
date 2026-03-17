@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Numeric, String, Text
+from sqlalchemy import DateTime, Index, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,9 @@ from app.models.common import TimestampMixin, UUIDMixin
 
 class Invoice(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "invoices"
+    __table_args__ = (
+        Index("ix_invoices_request_issued_id", "request_id", "issued_at", "id"),
+    )
 
     request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)

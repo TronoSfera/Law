@@ -225,13 +225,20 @@ export function avatarColor(seed) {
   return palette[hash % palette.length];
 }
 
-export function resolveAvatarSrc(avatarUrl, accessToken) {
+export function resolveAvatarSrc(avatarUrl, accessToken, size) {
   const raw = String(avatarUrl || "").trim();
   if (!raw) return "";
   if (raw.startsWith("s3://")) {
     const key = raw.slice("s3://".length);
     if (!key || !accessToken) return "";
-    return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken);
+    const useThumb = Number(size || 0) > 0 && Number(size || 0) <= 160;
+    return (
+      "/api/admin/uploads/object/" +
+      encodeURIComponent(key) +
+      "?token=" +
+      encodeURIComponent(accessToken) +
+      (useThumb ? "&variant=thumb" : "")
+    );
   }
   return raw;
 }

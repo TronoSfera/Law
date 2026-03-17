@@ -92,6 +92,7 @@ def _mark_counterparty_delivery(
     request_id: Any,
     recipient: str,
     mark_read: bool,
+    commit: bool = True,
 ) -> bool:
     side = str(recipient or "").strip().upper()
     if side not in {"CLIENT", "STAFF"}:
@@ -138,7 +139,7 @@ def _mark_counterparty_delivery(
         if read_count:
             changed = True
 
-    if changed:
+    if changed and commit:
         db.commit()
     return changed
 
@@ -155,8 +156,8 @@ def mark_messages_delivered_for_staff(db: Session, *, request_id: Any) -> bool:
     return _mark_counterparty_delivery(db, request_id=request_id, recipient="STAFF", mark_read=False)
 
 
-def mark_messages_read_for_staff(db: Session, *, request_id: Any) -> bool:
-    return _mark_counterparty_delivery(db, request_id=request_id, recipient="STAFF", mark_read=True)
+def mark_messages_read_for_staff(db: Session, *, request_id: Any, commit: bool = True) -> bool:
+    return _mark_counterparty_delivery(db, request_id=request_id, recipient="STAFF", mark_read=True, commit=commit)
 
 
 def serialize_message(row: Message) -> dict[str, Any]:

@@ -213,12 +213,15 @@ def get_request_status_route_service(
     request_id: str,
     db: Session,
     admin: dict,
+    request_row: Request | None = None,
 ) -> dict[str, Any]:
-    request_uuid = request_uuid_or_400(request_id)
-    req = db.get(Request, request_uuid)
-    if not req:
-        raise HTTPException(status_code=404, detail="Заявка не найдена")
-    ensure_lawyer_can_view_request_or_403(admin, req)
+    req = request_row
+    if req is None:
+        request_uuid = request_uuid_or_400(request_id)
+        req = db.get(Request, request_uuid)
+        if not req:
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+        ensure_lawyer_can_view_request_or_403(admin, req)
 
     topic_code = str(req.topic_code or "").strip()
     current_status = str(req.status_code or "").strip()

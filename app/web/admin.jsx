@@ -274,12 +274,19 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     useEffect(() => setBroken(false), [avatarUrl]);
     const initials = userInitials(name, email);
     const bg = avatarColor(name || email || initials);
-    const src = resolveAvatarSrc(avatarUrl, accessToken);
+    const src = resolveAvatarSrc(avatarUrl, accessToken, size);
     const canShowImage = Boolean(src && !broken);
     return (
       <span className="avatar" style={{ width: size + "px", height: size + "px", backgroundColor: bg }}>
         {canShowImage ? (
-          <img src={src} alt={name || email || "avatar"} onError={() => setBroken(true)} />
+          <img
+            src={src}
+            alt={name || email || "avatar"}
+            loading="lazy"
+            decoding="async"
+            fetchPriority={size >= 64 ? "low" : "auto"}
+            onError={() => setBroken(true)}
+          />
         ) : (
           <span>{initials}</span>
         )}
@@ -3534,13 +3541,34 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     useEffect(() => {
       if (!token || !role) return;
       let cancelled = false;
+      let deferredBootstrapCleanup = null;
+      const scheduleDeferredBootstrap = () => {
+        if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+          const handle = window.requestIdleCallback(() => {
+            if (!cancelled) bootstrapReferenceData(token, role);
+          }, { timeout: 1500 });
+          return () => {
+            if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(handle);
+          };
+        }
+        const handle = window.setTimeout(() => {
+          if (!cancelled) bootstrapReferenceData(token, role);
+        }, 250);
+        return () => window.clearTimeout(handle);
+      };
       (async () => {
+        if (!isRequestWorkspaceRoute && !routeInfo.section) {
+          if (!cancelled) await loadDashboard(token);
+          if (!cancelled) await loadTotpStatus(token);
+          if (!cancelled) deferredBootstrapCleanup = scheduleDeferredBootstrap();
+          return;
+        }
         bootstrapReferenceData(token, role);
-        if (!cancelled && !isRequestWorkspaceRoute && !routeInfo.section) await loadDashboard(token);
         if (!cancelled) await loadTotpStatus(token);
       })();
       return () => {
         cancelled = true;
+        if (typeof deferredBootstrapCleanup === "function") deferredBootstrapCleanup();
       };
     }, [bootstrapReferenceData, isRequestWorkspaceRoute, loadDashboard, loadTotpStatus, role, routeInfo.section, token]);
 

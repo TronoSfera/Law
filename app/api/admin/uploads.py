@@ -34,6 +34,7 @@ from app.services.s3_storage import build_object_key, get_s3_storage
 router = APIRouter()
 
 AVATAR_MAX_SIZE_PX = 512
+AVATAR_THUMB_MAX_SIZE_PX = 160
 AVATAR_WEBP_QUALITY = 80
 _AVATAR_RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
 
@@ -109,6 +110,10 @@ def _read_object_bytes_or_400(storage, key: str) -> bytes:
         obj = storage.get_object(key)
     except ClientError:
         raise HTTPException(status_code=400, detail="Файл не найден в хранилище")
+    return _read_object_body_or_400(obj)
+
+
+def _read_object_body_or_400(obj: dict) -> bytes:
     body = obj.get("Body")
     if hasattr(body, "read"):
         data = body.read()
@@ -143,14 +148,27 @@ def _write_object_bytes_or_500(storage, *, key: str, content: bytes, mime_type: 
     raise HTTPException(status_code=500, detail="Хранилище не поддерживает запись объектов")
 
 
-def _normalize_avatar_to_webp_or_400(storage, *, key: str) -> tuple[int, str]:
-    source = _read_object_bytes_or_400(storage, key)
+def _avatar_variant_key(key: str, variant: str) -> str:
+    raw = str(key or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Некорректный ключ аватара")
+    normalized_variant = str(variant or "").strip().lower()
+    if normalized_variant != "thumb":
+        raise HTTPException(status_code=400, detail="Неподдерживаемый вариант аватара")
+    prefix, _, file_name = raw.rpartition("/")
+    if not prefix or not file_name:
+        raise HTTPException(status_code=400, detail="Некорректный ключ аватара")
+    base_name = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+    return prefix + "/" + base_name + "__thumb.webp"
+
+
+def _render_avatar_to_webp_or_400(source: bytes, *, max_size_px: int) -> bytes:
     try:
         with Image.open(io.BytesIO(source)) as image:
             image = ImageOps.exif_transpose(image)
             image.load()
-            if max(image.size) > AVATAR_MAX_SIZE_PX:
-                image.thumbnail((AVATAR_MAX_SIZE_PX, AVATAR_MAX_SIZE_PX), resample=_AVATAR_RESAMPLE)
+            if max(image.size) > max_size_px:
+                image.thumbnail((max_size_px, max_size_px), resample=_AVATAR_RESAMPLE)
             if image.mode != "RGB":
                 image = image.convert("RGB")
             out = io.BytesIO()
@@ -162,8 +180,15 @@ def _normalize_avatar_to_webp_or_400(storage, *, key: str) -> tuple[int, str]:
         raise HTTPException(status_code=400, detail="Не удалось обработать изображение аватара")
     if not optimized:
         raise HTTPException(status_code=400, detail="Не удалось обработать изображение аватара")
-    _write_object_bytes_or_500(storage, key=key, content=optimized, mime_type="image/webp")
-    return int(len(optimized)), "image/webp"
+    return optimized
+
+
+def _write_avatar_variant_or_400(storage, *, source_key: str, variant: str, max_size_px: int) -> tuple[str, int, str]:
+    source = _read_object_bytes_or_400(storage, source_key)
+    optimized = _render_avatar_to_webp_or_400(source, max_size_px=max_size_px)
+    target_key = _avatar_variant_key(source_key, variant)
+    _write_object_bytes_or_500(storage, key=target_key, content=optimized, mime_type="image/webp")
+    return target_key, int(len(optimized)), "image/webp"
 
 
 def _serialize_attachment(row: Attachment) -> dict:
@@ -401,7 +426,12 @@ def upload_complete(
             if user is None:
                 raise HTTPException(status_code=404, detail="Пользователь не найден")
             _ensure_object_key_prefix_or_400(payload.key, f"avatars/{user.id}/")
-            optimized_size, optimized_mime = _normalize_avatar_to_webp_or_400(storage, key=payload.key)
+            thumb_key, optimized_size, optimized_mime = _write_avatar_variant_or_400(
+                storage,
+                source_key=payload.key,
+                variant="thumb",
+                max_size_px=AVATAR_THUMB_MAX_SIZE_PX,
+            )
             user.avatar_url = f"s3://{payload.key}"
             user.responsible = responsible
             db.add(user)
@@ -415,10 +445,12 @@ def upload_complete(
                 allowed=True,
                 object_key=payload.key,
                 details={
-                    "mime_type": optimized_mime,
-                    "size_bytes": int(optimized_size),
                     "source_mime_type": payload.mime_type,
                     "source_size_bytes": int(actual_size),
+                    "variant": "thumb",
+                    "variant_key": thumb_key,
+                    "variant_mime_type": optimized_mime,
+                    "variant_size_bytes": int(optimized_size),
                 },
                 responsible=responsible,
             )
@@ -466,9 +498,11 @@ def get_object_proxy(
     object_key: str,
     http_request: FastapiRequest,
     token: str = Query(...),
+    variant: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     key = str(object_key or "").strip()
+    requested_variant = str(variant or "").strip().lower()
     scope = "UNKNOWN"
     scoped_uuid: uuid.UUID | None = None
     actor_role = "UNKNOWN"
@@ -521,10 +555,25 @@ def get_object_proxy(
                 raise HTTPException(status_code=404, detail="Файл не найден")
             ensure_attachment_download_allowed_or_4xx(attachment)
 
-        try:
-            obj = get_s3_storage().get_object(key)
-        except ClientError:
-            raise HTTPException(status_code=404, detail="Файл не найден")
+        storage = get_s3_storage()
+        if scope == "avatars" and requested_variant == "thumb":
+            thumb_key = _avatar_variant_key(key, "thumb")
+            try:
+                obj = storage.get_object(thumb_key)
+            except ClientError:
+                try:
+                    source_obj = storage.get_object(key)
+                except ClientError:
+                    raise HTTPException(status_code=404, detail="Файл не найден")
+                source = _read_object_body_or_400(source_obj)
+                optimized = _render_avatar_to_webp_or_400(source, max_size_px=AVATAR_THUMB_MAX_SIZE_PX)
+                _write_object_bytes_or_500(storage, key=thumb_key, content=optimized, mime_type="image/webp")
+                obj = storage.get_object(thumb_key)
+        else:
+            try:
+                obj = storage.get_object(key)
+            except ClientError:
+                raise HTTPException(status_code=404, detail="Файл не найден")
 
         record_file_security_event(
             db,
@@ -536,7 +585,7 @@ def get_object_proxy(
             allowed=True,
             object_key=key,
             request_id=scoped_uuid if scope == "requests" else None,
-            details={},
+            details={"variant": requested_variant or None},
             responsible=responsible,
             persist_now=True,
         )

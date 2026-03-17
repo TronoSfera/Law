@@ -165,12 +165,18 @@ class UploadsS3Tests(unittest.TestCase):
             )
             self.assertEqual(done_resp.status_code, 200)
             self.assertEqual(done_resp.json()["avatar_url"], f"s3://{key}")
+            thumb_key = key.rsplit(".", 1)[0] + "__thumb.webp"
+            self.assertIn(thumb_key, fake_s3.objects)
 
             token = headers["Authorization"].replace("Bearer ", "")
             view_resp = self.client.get(f"/api/admin/uploads/object/{key}?token={token}")
             self.assertEqual(view_resp.status_code, 200)
-            self.assertNotEqual(view_resp.content, _AVATAR_PNG_1X1)
-            self.assertIn("image/webp", view_resp.headers.get("content-type", ""))
+            self.assertEqual(view_resp.content, _AVATAR_PNG_1X1)
+            self.assertIn("image/png", view_resp.headers.get("content-type", ""))
+            thumb_resp = self.client.get(f"/api/admin/uploads/object/{key}?token={token}&variant=thumb")
+            self.assertEqual(thumb_resp.status_code, 200)
+            self.assertNotEqual(thumb_resp.content, _AVATAR_PNG_1X1)
+            self.assertIn("image/webp", thumb_resp.headers.get("content-type", ""))
 
         with self.SessionLocal() as db:
             refreshed = db.get(AdminUser, UUID(user_id))

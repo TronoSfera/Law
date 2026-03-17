@@ -2293,6 +2293,10 @@
       currentImportantDateAt: "",
       pendingStatusChangePreset: null,
       messages: [],
+      messagesHasMore: false,
+      messagesLoadingMore: false,
+      messagesLoadedCount: 0,
+      messagesTotal: 0,
       attachments: [],
       messageDraft: "",
       selectedFiles: [],
@@ -2505,13 +2509,14 @@
     for (let i = 0; i < text.length; i += 1) hash = hash * 31 + text.charCodeAt(i) >>> 0;
     return palette[hash % palette.length];
   }
-  function resolveAvatarSrc(avatarUrl, accessToken) {
+  function resolveAvatarSrc(avatarUrl, accessToken, size) {
     const raw = String(avatarUrl || "").trim();
     if (!raw) return "";
     if (raw.startsWith("s3://")) {
       const key = raw.slice("s3://".length);
       if (!key || !accessToken) return "";
-      return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken);
+      const useThumb = Number(size || 0) > 0 && Number(size || 0) <= 160;
+      return "/api/admin/uploads/object/" + encodeURIComponent(key) + "?token=" + encodeURIComponent(accessToken) + (useThumb ? "&variant=thumb" : "");
     }
     return raw;
   }
@@ -3694,6 +3699,8 @@
     currentImportantDateAt,
     pendingStatusChangePreset,
     messages,
+    messagesHasMore,
+    messagesLoadingMore,
     attachments,
     messageDraft,
     selectedFiles,
@@ -3701,6 +3708,7 @@
     status,
     onMessageChange,
     onSendMessage,
+    onLoadOlderMessages,
     onFilesSelect,
     onRemoveSelectedFile,
     onClearSelectedFiles,
@@ -5066,7 +5074,16 @@
         disabled: loading || fileUploading,
         style: { position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }
       }
-    ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList, ref: chatListRef }, chatTimelineItems.length ? chatTimelineItems.map(
+    ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, messagesHasMore ? /* @__PURE__ */ React.createElement("div", { className: "request-chat-history-actions" }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        className: "btn secondary",
+        onClick: onLoadOlderMessages,
+        disabled: loading || fileUploading || messagesLoadingMore
+      },
+      messagesLoadingMore ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0438\u0441\u0442\u043E\u0440\u0438\u0438..." : "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F"
+    )) : null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList, ref: chatListRef }, chatTimelineItems.length ? chatTimelineItems.map(
       (entry) => entry.type === "date" ? /* @__PURE__ */ React.createElement("li", { key: entry.key, className: "chat-date-divider" }, /* @__PURE__ */ React.createElement("span", null, entry.label)) : entry.type === "file" ? /* @__PURE__ */ React.createElement(
         "li",
         {
@@ -6250,7 +6267,11 @@
             requestData: null,
             financeSummary: null,
             invoices: [],
-            statusRouteNodes: []
+            statusRouteNodes: [],
+            messagesHasMore: false,
+            messagesLoadingMore: false,
+            messagesLoadedCount: 0,
+            messagesTotal: 0
           }));
         }
         try {
@@ -6312,6 +6333,10 @@
             availableStatuses: Array.isArray(statusRouteData?.available_statuses) ? statusRouteData.available_statuses : [],
             currentImportantDateAt: String(statusRouteData?.current_important_date_at || rowData?.important_date_at || ""),
             messages: normalizedMessages,
+            messagesHasMore: Boolean(workspaceData?.messages_has_more),
+            messagesLoadingMore: false,
+            messagesLoadedCount: Number(workspaceData?.messages_loaded_count || normalizedMessages.length || 0),
+            messagesTotal: Number(workspaceData?.messages_total || normalizedMessages.length || 0),
             attachments,
             selectedFiles: [],
             fileUploading: false
@@ -6330,6 +6355,10 @@
             availableStatuses: [],
             currentImportantDateAt: "",
             messages: [],
+            messagesHasMore: false,
+            messagesLoadingMore: false,
+            messagesLoadedCount: 0,
+            messagesTotal: 0,
             attachments: [],
             selectedFiles: [],
             fileUploading: false
@@ -6478,17 +6507,57 @@
             download_url: resolveAdminObjectSrc2(item?.s3_key, token)
           }));
           if (nextMessages.length || nextAttachments.length) {
-            setRequestModal((prev) => ({
-              ...prev,
-              messages: mergeRowsById(prev.messages, nextMessages),
-              attachments: mergeRowsById(prev.attachments, nextAttachments)
-            }));
+            setRequestModal((prev) => {
+              const mergedMessages = mergeRowsById(prev.messages, nextMessages);
+              const previousCount = Array.isArray(prev.messages) ? prev.messages.length : 0;
+              const addedCount = Math.max(0, mergedMessages.length - previousCount);
+              return {
+                ...prev,
+                messages: mergedMessages,
+                messagesLoadedCount: Number(prev.messagesLoadedCount || previousCount) + addedCount,
+                messagesTotal: Number(prev.messagesTotal || previousCount) + addedCount,
+                attachments: mergeRowsById(prev.attachments, nextAttachments)
+              };
+            });
           }
         }
         return payload || { has_updates: false, typing: [], cursor: null };
       },
       [api, requestModal.requestId, resolveAdminObjectSrc2, token, users]
     );
+    const loadOlderRequestMessages = useCallback(async () => {
+      const requestId = String(requestModal.requestId || "").trim();
+      const loadedCount = Number(requestModal.messagesLoadedCount || 0);
+      if (!api || !requestId || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
+      setRequestModal((prev) => ({ ...prev, messagesLoadingMore: true }));
+      try {
+        const payload = await api(
+          "/api/admin/chat/requests/" + requestId + "/messages-window?before_count=" + encodeURIComponent(String(loadedCount))
+        );
+        const nextMessages = normalizeMessageAuthors(payload?.rows || [], users);
+        setRequestModal((prev) => ({
+          ...prev,
+          messagesLoadingMore: false,
+          messages: mergeRowsById(nextMessages, prev.messages),
+          messagesHasMore: Boolean(payload?.has_more),
+          messagesLoadedCount: Number(payload?.loaded_count || prev.messagesLoadedCount || 0),
+          messagesTotal: Number(payload?.total || prev.messagesTotal || 0)
+        }));
+        return payload || null;
+      } catch (error) {
+        setRequestModal((prev) => ({ ...prev, messagesLoadingMore: false }));
+        if (typeof setStatus === "function") setStatus("requestModal", "\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u0438\u0441\u0442\u043E\u0440\u0438\u0438: " + error.message, "error");
+        return null;
+      }
+    }, [
+      api,
+      requestModal.messagesHasMore,
+      requestModal.messagesLoadedCount,
+      requestModal.messagesLoadingMore,
+      requestModal.requestId,
+      setStatus,
+      users
+    ]);
     const setRequestTyping = useCallback(
       async ({ typing } = {}) => {
         const requestId = requestModal.requestId;
@@ -6604,6 +6673,7 @@
       submitRequestStatusChange,
       submitRequestModalMessage,
       probeRequestLive,
+      loadOlderRequestMessages,
       setRequestTyping,
       loadRequestDataTemplates,
       loadRequestDataBatch,
@@ -7074,9 +7144,19 @@
       useEffect(() => setBroken(false), [avatarUrl]);
       const initials = userInitials(name, email);
       const bg = avatarColor(name || email || initials);
-      const src = resolveAvatarSrc(avatarUrl, accessToken);
+      const src = resolveAvatarSrc(avatarUrl, accessToken, size);
       const canShowImage = Boolean(src && !broken);
-      return /* @__PURE__ */ React.createElement("span", { className: "avatar", style: { width: size + "px", height: size + "px", backgroundColor: bg } }, canShowImage ? /* @__PURE__ */ React.createElement("img", { src, alt: name || email || "avatar", onError: () => setBroken(true) }) : /* @__PURE__ */ React.createElement("span", null, initials));
+      return /* @__PURE__ */ React.createElement("span", { className: "avatar", style: { width: size + "px", height: size + "px", backgroundColor: bg } }, canShowImage ? /* @__PURE__ */ React.createElement(
+        "img",
+        {
+          src,
+          alt: name || email || "avatar",
+          loading: "lazy",
+          decoding: "async",
+          fetchPriority: size >= 64 ? "low" : "auto",
+          onError: () => setBroken(true)
+        }
+      ) : /* @__PURE__ */ React.createElement("span", null, initials));
     }
     function LoginScreen({ onSubmit, status }) {
       const [email, setEmail] = useState("");
@@ -7505,6 +7585,7 @@
       const [email, setEmail] = useState("");
       const [userId, setUserId] = useState("");
       const [activeSection, setActiveSection] = useState(initialSection);
+      const dashboardLoadRef = useRef(0);
       const [dashboardData, setDashboardData] = useState({
         scope: "",
         cards: [],
@@ -7625,6 +7706,7 @@
         submitRequestStatusChange,
         submitRequestModalMessage,
         probeRequestLive,
+        loadOlderRequestMessages,
         setRequestTyping,
         loadRequestDataTemplates,
         loadRequestDataBatch,
@@ -8412,34 +8494,36 @@
       }, [configActiveKey, dictionaries.topics, loadTable, statusDesignerTopicCode]);
       const loadDashboard = useCallback(
         async (tokenOverride) => {
+          const loadId = Date.now();
+          dashboardLoadRef.current = loadId;
           setStatus("dashboard", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...", "");
           try {
-            const data = await api("/api/admin/metrics/overview", {}, tokenOverride);
-            const scope = String(data.scope || role || "");
-            const cards = scope === "LAWYER" ? [
-              { label: "\u041C\u043E\u0438 \u0437\u0430\u044F\u0432\u043A\u0438", value: data.assigned_total ?? 0 },
-              { label: "\u041C\u043E\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0435", value: data.active_assigned_total ?? 0 },
-              { label: "\u041D\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: data.unassigned_total ?? 0 },
-              { label: "\u041C\u043E\u0438 \u043D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0435", value: data.my_unread_notifications_total ?? data.my_unread_updates ?? 0 },
-              { label: "\u041F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E SLA", value: data.sla_overdue ?? 0 }
+            const buildDashboardCards = (scope2, payload) => scope2 === "LAWYER" ? [
+              { label: "\u041C\u043E\u0438 \u0437\u0430\u044F\u0432\u043A\u0438", value: payload.assigned_total ?? 0 },
+              { label: "\u041C\u043E\u0438 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0435", value: payload.active_assigned_total ?? 0 },
+              { label: "\u041D\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: payload.unassigned_total ?? 0 },
+              { label: "\u041C\u043E\u0438 \u043D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0435", value: payload.my_unread_notifications_total ?? payload.my_unread_updates ?? 0 },
+              { label: "\u041F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E SLA", value: payload.sla_overdue ?? 0 }
             ] : [
-              { label: "\u041D\u043E\u0432\u044B\u0435", value: data.new ?? 0 },
-              { label: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: data.assigned_total ?? 0 },
-              { label: "\u041D\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: data.unassigned_total ?? 0 },
-              { label: "\u041F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E SLA", value: data.sla_overdue ?? 0 },
-              { label: "\u041C\u043E\u0438 \u043D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0435", value: data.my_unread_notifications_total ?? data.my_unread_updates ?? 0 },
-              { label: "\u0412\u044B\u0440\u0443\u0447\u043A\u0430 (\u043C\u0435\u0441.)", value: Number(data.month_revenue ?? 0).toFixed(2) },
-              { label: "\u0420\u0430\u0441\u0445\u043E\u0434\u044B (\u043C\u0435\u0441.)", value: Number(data.month_expenses ?? 0).toFixed(2) },
-              { label: "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u044E\u0440\u0438\u0441\u0442\u0430\u043C\u0438", value: data.unread_for_lawyers ?? 0 },
-              { label: "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u0430\u043C\u0438", value: data.unread_for_clients ?? 0 }
+              { label: "\u041D\u043E\u0432\u044B\u0435", value: payload.new ?? 0 },
+              { label: "\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: payload.assigned_total ?? 0 },
+              { label: "\u041D\u0435\u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044B\u0435", value: payload.unassigned_total ?? 0 },
+              { label: "\u041F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E SLA", value: payload.sla_overdue ?? 0 },
+              { label: "\u041C\u043E\u0438 \u043D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0435", value: payload.my_unread_notifications_total ?? payload.my_unread_updates ?? 0 },
+              { label: "\u0412\u044B\u0440\u0443\u0447\u043A\u0430 (\u043C\u0435\u0441.)", value: Number(payload.month_revenue ?? 0).toFixed(2) },
+              { label: "\u0420\u0430\u0441\u0445\u043E\u0434\u044B (\u043C\u0435\u0441.)", value: Number(payload.month_expenses ?? 0).toFixed(2) },
+              { label: "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u044E\u0440\u0438\u0441\u0442\u0430\u043C\u0438", value: payload.unread_for_lawyers ?? 0 },
+              { label: "\u041D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u0430\u043C\u0438", value: payload.unread_for_clients ?? 0 }
             ];
+            const data = await api("/api/admin/metrics/overview?include_sla=false", {}, tokenOverride);
+            const scope = String(data.scope || role || "");
             const localized = {};
             Object.entries(data.by_status || {}).forEach(([code, count]) => {
               localized[statusLabel(code)] = count;
             });
             setDashboardData({
               scope,
-              cards,
+              cards: buildDashboardCards(scope, data),
               byStatus: localized,
               lawyerLoads: data.lawyer_loads || [],
               myUnreadByEvent: data.my_unread_by_event || {},
@@ -8453,6 +8537,17 @@
               monthExpenses: Number(data.month_expenses || 0)
             });
             setStatus("dashboard", "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B", "ok");
+            void (async () => {
+              try {
+                const slaData = await api("/api/admin/metrics/overview-sla", {}, tokenOverride);
+                if (dashboardLoadRef.current !== loadId) return;
+                setDashboardData((prev) => ({
+                  ...prev,
+                  cards: buildDashboardCards(String(prev.scope || scope || ""), { ...data, ...slaData })
+                }));
+              } catch (_) {
+              }
+            })();
           } catch (error) {
             setStatus("dashboard", "\u041E\u0448\u0438\u0431\u043A\u0430: " + error.message, "error");
           }
@@ -9670,13 +9765,34 @@
       useEffect(() => {
         if (!token || !role) return;
         let cancelled = false;
+        let deferredBootstrapCleanup = null;
+        const scheduleDeferredBootstrap = () => {
+          if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+            const handle2 = window.requestIdleCallback(() => {
+              if (!cancelled) bootstrapReferenceData(token, role);
+            }, { timeout: 1500 });
+            return () => {
+              if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(handle2);
+            };
+          }
+          const handle = window.setTimeout(() => {
+            if (!cancelled) bootstrapReferenceData(token, role);
+          }, 250);
+          return () => window.clearTimeout(handle);
+        };
         (async () => {
+          if (!isRequestWorkspaceRoute && !routeInfo.section) {
+            if (!cancelled) await loadDashboard(token);
+            if (!cancelled) await loadTotpStatus(token);
+            if (!cancelled) deferredBootstrapCleanup = scheduleDeferredBootstrap();
+            return;
+          }
           bootstrapReferenceData(token, role);
-          if (!cancelled && !isRequestWorkspaceRoute && !routeInfo.section) await loadDashboard(token);
           if (!cancelled) await loadTotpStatus(token);
         })();
         return () => {
           cancelled = true;
+          if (typeof deferredBootstrapCleanup === "function") deferredBootstrapCleanup();
         };
       }, [bootstrapReferenceData, isRequestWorkspaceRoute, loadDashboard, loadTotpStatus, role, routeInfo.section, token]);
       useEffect(() => {
@@ -10033,6 +10149,8 @@
           currentImportantDateAt: requestModal.currentImportantDateAt || "",
           pendingStatusChangePreset: requestModal.pendingStatusChangePreset,
           messages: requestModal.messages || [],
+          messagesHasMore: Boolean(requestModal.messagesHasMore),
+          messagesLoadingMore: Boolean(requestModal.messagesLoadingMore),
           attachments: requestModal.attachments || [],
           messageDraft: requestModal.messageDraft || "",
           selectedFiles: requestModal.selectedFiles || [],
@@ -10040,6 +10158,7 @@
           status: getStatus("requestModal"),
           onMessageChange: updateRequestModalMessageDraft,
           onSendMessage: submitRequestModalMessage,
+          onLoadOlderMessages: loadOlderRequestMessages,
           onFilesSelect: appendRequestModalFiles,
           onRemoveSelectedFile: removeRequestModalFile,
           onClearSelectedFiles: clearRequestModalFiles,
