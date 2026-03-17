@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from time import perf_counter
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -18,7 +20,7 @@ from app.models.request import Request
 from app.models.request_service_request import RequestServiceRequest
 from app.schemas.admin import RequestAdminCreate, RequestAdminPatch
 from app.services.chat_secure_service import (
-    DEFAULT_CHAT_WINDOW_LIMIT,
+    get_chat_activity_summary,
     list_messages_for_request_window,
     mark_messages_read_for_staff,
     serialize_messages_for_request,
@@ -53,6 +55,9 @@ from .permissions import (
     request_uuid_or_400,
 )
 from .status_flow import apply_request_special_filters, get_request_status_route_service, split_request_special_filters
+
+_WORKSPACE_LOG = logging.getLogger("uvicorn.error")
+INITIAL_WORKSPACE_CHAT_WINDOW_LIMIT = 20
 
 
 def query_requests_service(uq: UniversalQuery, db: Session, admin: dict) -> dict[str, Any]:
@@ -459,36 +464,76 @@ def _serialize_request_invoice(row: Invoice) -> dict[str, Any]:
     }
 
 
-def get_request_workspace_service(request_id: str, db: Session, admin: dict) -> dict[str, Any]:
+def get_request_workspace_service(request_id: str, db: Session, admin: dict, *, include_related: bool = True) -> dict[str, Any]:
+    started_at = perf_counter()
     request_uuid = request_uuid_or_400(request_id)
     req = db.get(Request, request_uuid)
     if req is None:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     ensure_lawyer_can_view_request_or_403(admin, req)
 
+    side_effects_started_at = perf_counter()
     _apply_request_open_side_effects(db, req, admin, mark_chat_read=True)
+    side_effects_ms = (perf_counter() - side_effects_started_at) * 1000.0
+
+    serialize_request_started_at = perf_counter()
     request_payload = _serialize_request_row(req)
-    message_rows, messages_total, messages_has_more, messages_loaded_count = list_messages_for_request_window(
+    request_row_ms = (perf_counter() - serialize_request_started_at) * 1000.0
+
+    messages_started_at = perf_counter()
+    message_rows, messages_has_more = list_messages_for_request_window(
         db,
         req.id,
-        limit=DEFAULT_CHAT_WINDOW_LIMIT,
+        limit=INITIAL_WORKSPACE_CHAT_WINDOW_LIMIT,
         before_count=0,
     )
-    attachment_rows = (
-        db.query(Attachment)
-        .filter(Attachment.request_id == req.id)
-        .order_by(Attachment.created_at.asc(), Attachment.id.asc())
-        .all()
+    messages_query_ms = (perf_counter() - messages_started_at) * 1000.0
+
+    serialize_messages_started_at = perf_counter()
+    serialized_messages = serialize_messages_for_request(
+        db,
+        req.id,
+        message_rows,
+        request_extra_fields=req.extra_fields,
+        include_bodies=False,
     )
-    role = str(admin.get("role") or "").upper()
+    serialize_messages_ms = (perf_counter() - serialize_messages_started_at) * 1000.0
+    messages_total = int(get_chat_activity_summary(db, req.id).get("message_count") or len(message_rows))
+    messages_loaded_count = len(message_rows)
+
+    attachment_rows: list[Attachment] = []
     invoice_rows: list[Invoice] = []
-    if role in {"ADMIN", "LAWYER"}:
-        invoice_rows = (
-            db.query(Invoice)
-            .filter(Invoice.request_id == req.id)
-            .order_by(Invoice.issued_at.desc(), Invoice.id.desc())
+    status_route_payload: dict[str, Any] = {
+        "nodes": [],
+        "history": [],
+        "available_statuses": [],
+        "current_important_date_at": request_payload.get("important_date_at"),
+    }
+    attachments_query_ms = 0.0
+    invoices_query_ms = 0.0
+    status_route_ms = 0.0
+    if include_related:
+        attachments_started_at = perf_counter()
+        attachment_rows = (
+            db.query(Attachment)
+            .filter(Attachment.request_id == req.id)
+            .order_by(Attachment.created_at.asc(), Attachment.id.asc())
             .all()
         )
+        attachments_query_ms = (perf_counter() - attachments_started_at) * 1000.0
+        role = str(admin.get("role") or "").upper()
+        if role in {"ADMIN", "LAWYER"}:
+            invoices_started_at = perf_counter()
+            invoice_rows = (
+                db.query(Invoice)
+                .filter(Invoice.request_id == req.id)
+                .order_by(Invoice.issued_at.desc(), Invoice.id.desc())
+                .all()
+            )
+            invoices_query_ms = (perf_counter() - invoices_started_at) * 1000.0
+        status_route_started_at = perf_counter()
+        status_route_payload = get_request_status_route_service(request_id, db, admin, request_row=req)
+        status_route_ms = (perf_counter() - status_route_started_at) * 1000.0
 
     paid_invoices = [row for row in invoice_rows if str(row.status or "").upper() == "PAID"]
     paid_total = round(sum(float(row.amount or 0) for row in paid_invoices), 2)
@@ -499,9 +544,9 @@ def get_request_workspace_service(request_id: str, db: Session, admin: dict) -> 
         if latest_paid_at is None or row.paid_at > latest_paid_at:
             latest_paid_at = row.paid_at
 
-    return {
+    payload = {
         "request": request_payload,
-        "messages": serialize_messages_for_request(db, req.id, message_rows),
+        "messages": serialized_messages,
         "messages_total": messages_total,
         "messages_has_more": messages_has_more,
         "messages_loaded_count": messages_loaded_count,
@@ -513,8 +558,29 @@ def get_request_workspace_service(request_id: str, db: Session, admin: dict) -> 
             "paid_total": paid_total,
             "last_paid_at": latest_paid_at.isoformat() if latest_paid_at else request_payload.get("paid_at"),
         },
-        "status_route": get_request_status_route_service(request_id, db, admin, request_row=req),
+        "status_route": status_route_payload,
     }
+    total_ms = (perf_counter() - started_at) * 1000.0
+    _WORKSPACE_LOG.info(
+        "workspace request_id=%s include_related=%s total_ms=%.2f side_effects_ms=%.2f request_row_ms=%.2f "
+        "messages_query_ms=%.2f serialize_messages_ms=%.2f attachments_query_ms=%.2f invoices_query_ms=%.2f "
+        "status_route_ms=%.2f messages=%s attachments=%s invoices=%s messages_total=%s",
+        str(req.id),
+        bool(include_related),
+        total_ms,
+        side_effects_ms,
+        request_row_ms,
+        messages_query_ms,
+        serialize_messages_ms,
+        attachments_query_ms,
+        invoices_query_ms,
+        status_route_ms,
+        len(message_rows),
+        len(attachment_rows),
+        len(invoice_rows),
+        messages_total,
+    )
+    return payload
 
 
 def claim_request_service(request_id: str, db: Session, admin: dict) -> dict[str, Any]:

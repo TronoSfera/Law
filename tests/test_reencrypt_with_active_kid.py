@@ -130,7 +130,7 @@ class ReencryptWithKidTests(unittest.TestCase):
             )
             db.flush()
             db.execute(
-                text("UPDATE messages SET body = :body WHERE id = (SELECT id FROM messages ORDER BY created_at DESC LIMIT 1)"),
+                text("UPDATE messages SET body = :body WHERE rowid = (SELECT rowid FROM messages ORDER BY created_at DESC LIMIT 1)"),
                 {"body": _legacy_chat_token("legacy body", old_secret)},
             )
 
@@ -177,10 +177,13 @@ class ReencryptWithKidTests(unittest.TestCase):
             invoice_token = db.execute(text("SELECT payer_details_encrypted FROM invoices LIMIT 1")).scalar_one()
             admin_token = db.execute(text("SELECT totp_secret_encrypted FROM admin_users LIMIT 1")).scalar_one()
             message_token = db.execute(text("SELECT body FROM messages LIMIT 1")).scalar_one()
+            request_row = db.execute(text("SELECT extra_fields FROM requests LIMIT 1")).scalar_one()
 
         self.assertEqual(extract_requisites_kid(str(invoice_token)), "k2")
         self.assertEqual(extract_requisites_kid(str(admin_token)), "k2")
+        self.assertTrue(str(message_token).startswith("chatenc:v3:"))
         self.assertEqual(extract_message_kid(str(message_token)), "k2")
+        self.assertIn("chat_crypto", str(request_row))
 
 
 if __name__ == "__main__":

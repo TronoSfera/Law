@@ -1761,7 +1761,9 @@ export function RequestWorkspace({
                               {serviceMessageContent ? (
                                 serviceMessageContent.text ? <p className="chat-message-text">{serviceMessageContent.text}</p> : null
                               ) : (
-                                <p className="chat-message-text">{String(entry.payload?.body || "")}</p>
+                                <p className="chat-message-text">
+                                  {entry.payload?.body_loaded === false ? "Загрузка сообщения..." : String(entry.payload?.body || "")}
+                                </p>
                               )}
                             </>
                           )}

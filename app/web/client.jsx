@@ -27,6 +27,22 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     return sortRowsByCreatedAt(Array.from(merged.values()));
   }
 
+  function getOldestMessageCursor(rows) {
+    const sorted = sortRowsByCreatedAt(Array.isArray(rows) ? rows : []);
+    const first = sorted[0];
+    if (!first) return null;
+    const beforeId = String(first.id || "").trim();
+    const beforeCreatedAt = String(first.created_at || first.updated_at || "").trim();
+    if (!beforeId || !beforeCreatedAt) return null;
+    return { beforeId, beforeCreatedAt };
+  }
+
+  function collectDeferredMessageIds(rows) {
+    return (Array.isArray(rows) ? rows : [])
+      .filter((row) => row && typeof row === "object" && row.body_loaded === false && String(row.id || "").trim())
+      .map((row) => String(row.id).trim());
+  }
+
   function StatusLine({ status }) {
     return <p className={"status" + (status?.kind ? " " + status.kind : "")}>{status?.message || ""}</p>;
   }
@@ -599,6 +615,38 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
       return completeData;
     }, [apiJson, buildStorageUploadError, requestModal.requestId, runUploadStepWithRetry]);
 
+    const hydratePublicMessageBodies = useCallback(
+      async (trackNumber, rows) => {
+        const track = String(trackNumber || "").trim().toUpperCase();
+        const ids = collectDeferredMessageIds(rows);
+        if (!track || !ids.length) return null;
+        try {
+          const payload = await apiJson(
+            "/api/public/chat/requests/" + encodeURIComponent(track) + "/message-bodies",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids }),
+            },
+            "Не удалось загрузить тексты сообщений"
+          );
+          const nextRows = Array.isArray(payload?.rows) ? payload.rows : [];
+          if (!nextRows.length) return payload || null;
+          setRequestModal((prev) => {
+            if (String(prev.trackNumber || "").trim().toUpperCase() !== track) return prev;
+            return {
+              ...prev,
+              messages: mergeRowsById(prev.messages, nextRows),
+            };
+          });
+          return payload || null;
+        } catch (_) {
+          return null;
+        }
+      },
+      [apiJson]
+    );
+
     const loadRequestWorkspace = useCallback(
       async (trackNumber, showLoading) => {
         const track = String(trackNumber || "").trim().toUpperCase();
@@ -608,7 +656,11 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
         }
         const [requestData, messagesData, attachmentsData, invoicesData, statusRouteData, serviceRequestsData] = await Promise.all([
           apiJson("/api/public/requests/" + encodeURIComponent(track), null, "Не удалось открыть заявку"),
-          apiJson("/api/public/chat/requests/" + encodeURIComponent(track) + "/messages-window", null, "Не удалось загрузить сообщения"),
+          apiJson(
+            "/api/public/chat/requests/" + encodeURIComponent(track) + "/messages-window?include_body=false",
+            null,
+            "Не удалось загрузить сообщения"
+          ),
           apiJson("/api/public/requests/" + encodeURIComponent(track) + "/attachments", null, "Не удалось загрузить файлы"),
           apiJson("/api/public/requests/" + encodeURIComponent(track) + "/invoices", null, "Не удалось загрузить счета"),
           apiJson("/api/public/requests/" + encodeURIComponent(track) + "/status-route", null, "Не удалось загрузить маршрут статусов"),
@@ -652,37 +704,49 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
           messages: Array.isArray(messagesData?.rows) ? messagesData.rows : [],
           messagesHasMore: Boolean(messagesData?.has_more),
           messagesLoadingMore: false,
-          messagesLoadedCount: Number(messagesData?.loaded_count || 0),
-          messagesTotal: Number(messagesData?.total || 0),
+          messagesLoadedCount: Array.isArray(messagesData?.rows) ? messagesData.rows.length : 0,
+          messagesTotal: Number(messagesData?.total || (Array.isArray(messagesData?.rows) ? messagesData.rows.length : 0)),
           attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
           fileUploading: false,
         }));
+        void hydratePublicMessageBodies(track, Array.isArray(messagesData?.rows) ? messagesData.rows : []);
       },
-      [apiJson]
+      [apiJson, hydratePublicMessageBodies]
     );
 
     const loadOlderPublicMessages = useCallback(async () => {
       const track = String(activeTrack || requestModal.trackNumber || "").trim().toUpperCase();
-      const loadedCount = Number(requestModal.messagesLoadedCount || 0);
+      const cursor = getOldestMessageCursor(requestModal.messages);
       if (!track || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
       setRequestModal((prev) => ({ ...prev, messagesLoadingMore: true }));
       try {
+        const query = new URLSearchParams({ include_body: "false" });
+        if (cursor?.beforeId && cursor?.beforeCreatedAt) {
+          query.set("before_id", cursor.beforeId);
+          query.set("before_created_at", cursor.beforeCreatedAt);
+        } else {
+          query.set("before_count", String(Number(requestModal.messagesLoadedCount || 0)));
+        }
         const payload = await apiJson(
-          "/api/public/chat/requests/" +
-            encodeURIComponent(track) +
-            "/messages-window?before_count=" +
-            encodeURIComponent(String(loadedCount)),
+          "/api/public/chat/requests/" + encodeURIComponent(track) + "/messages-window?" + query.toString(),
           null,
           "Не удалось загрузить историю сообщений"
         );
+        const nextRows = Array.isArray(payload?.rows) ? payload.rows : [];
         setRequestModal((prev) => ({
           ...prev,
           messagesLoadingMore: false,
-          messages: mergeRowsById(payload?.rows || [], prev.messages),
-          messagesHasMore: Boolean(payload?.has_more),
-          messagesLoadedCount: Number(payload?.loaded_count || prev.messagesLoadedCount || 0),
-          messagesTotal: Number(payload?.total || prev.messagesTotal || 0),
+          ...(function () {
+            const merged = mergeRowsById(nextRows, prev.messages);
+            return {
+              messages: merged,
+              messagesHasMore: Boolean(payload?.has_more),
+              messagesLoadedCount: merged.length,
+              messagesTotal: Number(prev.messagesTotal || merged.length || 0),
+            };
+          })(),
         }));
+        void hydratePublicMessageBodies(track, nextRows);
         return payload || null;
       } catch (error) {
         setRequestModal((prev) => ({ ...prev, messagesLoadingMore: false }));
@@ -697,6 +761,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
       requestModal.messagesLoadingMore,
       requestModal.trackNumber,
       setPageStatus,
+      hydratePublicMessageBodies,
     ]);
 
     const refreshRequestsList = useCallback(async () => {

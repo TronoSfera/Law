@@ -12,7 +12,13 @@ os.environ.setdefault("S3_SECRET_KEY", "test")
 os.environ.setdefault("S3_BUCKET", "test")
 
 from app.core.config import settings
-from app.services.chat_crypto import decrypt_message_body, encrypt_message_body, extract_message_kid
+from app.services.chat_crypto import (
+    decrypt_message_body,
+    decrypt_message_body_for_request,
+    encrypt_message_body,
+    encrypt_message_body_for_request,
+    extract_message_kid,
+)
 from app.services.invoice_crypto import (
     active_requisites_kid,
     decrypt_requisites,
@@ -109,6 +115,24 @@ class CryptoKidRotationTests(unittest.TestCase):
         self.assertTrue(token.startswith("chatenc:v2:"))
         self.assertEqual(extract_message_kid(token), "k2")
         self.assertEqual(decrypt_message_body(token), "legacy message")
+
+    def test_chat_request_crypto_uses_per_chat_v3_format(self):
+        settings.DATA_ENCRYPTION_SECRET = ""
+        settings.DATA_ENCRYPTION_ACTIVE_KID = "k2"
+        settings.DATA_ENCRYPTION_KEYS = "k2=new-data-secret-bbbbbbbbbbbbbbbb"
+        settings.CHAT_ENCRYPTION_SECRET = ""
+        settings.CHAT_ENCRYPTION_ACTIVE_KID = "k2"
+        settings.CHAT_ENCRYPTION_KEYS = "k2=new-chat-secret-cccccccccccccccc"
+
+        token, extra_fields, changed = encrypt_message_body_for_request("request scoped", request_extra_fields={})
+        self.assertTrue(changed)
+        self.assertTrue(str(token).startswith("chatenc:v3:"))
+        self.assertEqual(extract_message_kid(token), "k2")
+        self.assertTrue(bool((extra_fields or {}).get("chat_crypto")))
+        self.assertEqual(
+            decrypt_message_body_for_request(token, request_extra_fields=extra_fields),
+            "request scoped",
+        )
 
 
 if __name__ == "__main__":

@@ -384,24 +384,50 @@ class AdminLawyerChatTests(AdminUniversalCrudBase):
         self.assertEqual(own_workspace.status_code, 200)
         payload = own_workspace.json()
         self.assertEqual(str((payload.get("request") or {}).get("id")), own_id)
-        self.assertEqual(len(payload.get("messages") or []), 50)
+        self.assertEqual(len(payload.get("messages") or []), 20)
         self.assertTrue(bool(payload.get("messages_has_more")))
         self.assertEqual(int(payload.get("messages_total") or 0), 55)
-        self.assertEqual(int(payload.get("messages_loaded_count") or 0), 50)
+        self.assertEqual(int(payload.get("messages_loaded_count") or 0), 20)
+        self.assertTrue(all(item.get("body_loaded") is False for item in (payload.get("messages") or [])))
         self.assertEqual(len(payload.get("attachments") or []), 1)
         self.assertIn("status_route", payload)
         self.assertIn("finance_summary", payload)
 
+        lean_workspace = self.client.get(f"/api/admin/requests/{own_id}/workspace?include_related=false", headers=headers)
+        self.assertEqual(lean_workspace.status_code, 200)
+        lean_payload = lean_workspace.json()
+        self.assertEqual(str((lean_payload.get("request") or {}).get("id")), own_id)
+        self.assertEqual(len(lean_payload.get("messages") or []), 20)
+        self.assertEqual(len(lean_payload.get("attachments") or []), 0)
+        self.assertEqual(len(lean_payload.get("invoices") or []), 0)
+        self.assertEqual((lean_payload.get("status_route") or {}).get("nodes") or [], [])
+
+        body_batch = self.chat_client.post(
+            f"/api/admin/chat/requests/{own_id}/message-bodies",
+            headers=headers,
+            json={"ids": [item["id"] for item in (payload.get("messages") or [])[:3]]},
+        )
+        self.assertEqual(body_batch.status_code, 200)
+        self.assertEqual(len(body_batch.json().get("rows") or []), 3)
+        self.assertTrue(all(item.get("body_loaded") for item in (body_batch.json().get("rows") or [])))
+
+        oldest_loaded = (payload.get("messages") or [])[0]
+
         older_messages = self.chat_client.get(
             f"/api/admin/chat/requests/{own_id}/messages-window",
             headers=headers,
-            params={"before_count": 50, "limit": 10},
+            params={
+                "before_id": str(oldest_loaded.get("id") or ""),
+                "before_created_at": str(oldest_loaded.get("created_at") or ""),
+                "limit": 10,
+                "include_body": "false",
+            },
         )
         self.assertEqual(older_messages.status_code, 200)
         older_payload = older_messages.json()
-        self.assertEqual(len(older_payload.get("rows") or []), 5)
-        self.assertFalse(bool(older_payload.get("has_more")))
-        self.assertEqual(int(older_payload.get("loaded_count") or 0), 55)
+        self.assertEqual(len(older_payload.get("rows") or []), 10)
+        self.assertTrue(bool(older_payload.get("has_more")))
+        self.assertTrue(all(item.get("body_loaded") is False for item in (older_payload.get("rows") or [])))
 
         foreign_workspace = self.client.get(f"/api/admin/requests/{foreign_id}/workspace", headers=headers)
         self.assertEqual(foreign_workspace.status_code, 403)

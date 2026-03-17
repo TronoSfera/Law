@@ -24,7 +24,8 @@ from app.services.chat_secure_service import (
     list_messages_for_request,
     mark_messages_delivered_for_client,
     mark_messages_read_for_client,
-    serialize_message,
+    serialize_message_for_request,
+    serialize_message_bodies_for_request,
     serialize_messages_for_request,
 )
 from app.services.request_read_markers import EVENT_REQUEST_DATA, mark_unread_for_lawyer
@@ -175,6 +176,27 @@ def _ensure_view_access_or_403(session: dict, req: Request) -> None:
     raise HTTPException(status_code=404, detail="Заявка не найдена")
 
 
+def _normalize_message_ids(raw: object, *, field_name: str = "ids", limit: int = 200) -> list[UUID]:
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail=f'Поле "{field_name}" должно быть списком')
+    seen: set[UUID] = set()
+    out: list[UUID] = []
+    for item in raw:
+        try:
+            value = UUID(str(item or ""))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f'Некорректное поле "{field_name}"')
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+        if len(out) >= limit:
+            break
+    if not out:
+        raise HTTPException(status_code=400, detail="Нужно передать хотя бы один идентификатор сообщения")
+    return out
+
+
 @router.get("/requests/{track_number}/messages")
 def list_messages_by_track(
     track_number: str,
@@ -186,7 +208,13 @@ def list_messages_by_track(
     _ensure_view_access_or_403(session, req)
     mark_messages_read_for_client(db, request_id=req.id)
     rows = list_messages_for_request(db, req.id)
-    payload = serialize_messages_for_request(db, req.id, rows)
+    payload = serialize_messages_for_request(
+        db,
+        req.id,
+        rows,
+        request_extra_fields=req.extra_fields,
+        include_bodies=True,
+    )
     _audit_public_chat_read(
         db,
         session=session,
@@ -202,25 +230,36 @@ def list_messages_by_track(
 def list_messages_window_by_track(
     track_number: str,
     http_request: FastapiRequest,
+    before_id: str | None = None,
+    before_created_at: str | None = None,
     before_count: int = 0,
     limit: int = DEFAULT_CHAT_WINDOW_LIMIT,
+    include_body: bool = True,
     db: Session = Depends(get_db),
     session: dict = Depends(get_public_session),
 ):
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
     mark_messages_read_for_client(db, request_id=req.id)
-    rows, total, has_more, loaded_count = list_messages_for_request_window(
+    rows, has_more = list_messages_for_request_window(
         db,
         req.id,
         limit=limit,
+        before_id=before_id,
+        before_created_at=before_created_at,
         before_count=before_count,
     )
+    message_total = int(get_chat_activity_summary(db, req.id).get("message_count") or len(rows))
     payload = {
-        "rows": serialize_messages_for_request(db, req.id, rows),
-        "total": total,
+        "rows": serialize_messages_for_request(
+            db,
+            req.id,
+            rows,
+            request_extra_fields=req.extra_fields,
+            include_bodies=bool(include_body),
+        ),
         "has_more": has_more,
-        "loaded_count": loaded_count,
+        "total": message_total,
         "limit": clamp_chat_window_limit(limit),
     }
     _audit_public_chat_read(
@@ -232,6 +271,44 @@ def list_messages_window_by_track(
         details={"rows": len(rows), "window": True},
     )
     return payload
+
+
+@router.post("/requests/{track_number}/message-bodies")
+def load_message_bodies_by_track(
+    track_number: str,
+    payload: dict,
+    http_request: FastapiRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    req = _request_for_track_or_404(db, track_number)
+    _ensure_view_access_or_403(session, req)
+    message_ids = _normalize_message_ids((payload or {}).get("ids"))
+    rows = (
+        db.query(Message)
+        .filter(Message.request_id == req.id, Message.id.in_(message_ids))
+        .order_by(Message.created_at.asc(), Message.id.asc())
+        .all()
+    )
+    rows_by_id = {str(row.id): row for row in rows}
+    ordered_rows = [rows_by_id[str(message_id)] for message_id in message_ids if str(message_id) in rows_by_id]
+    result = {
+        "rows": serialize_message_bodies_for_request(
+            db,
+            req.id,
+            ordered_rows,
+            request_extra_fields=req.extra_fields,
+        )
+    }
+    _audit_public_chat_read(
+        db,
+        session=session,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_MESSAGES",
+        details={"rows": len(ordered_rows), "body_batch": True},
+    )
+    return result
 
 
 @router.post("/requests/{track_number}/messages", status_code=201)
@@ -246,7 +323,7 @@ def create_message_by_track(
     req = _request_for_track_or_404(db, track_number)
     _ensure_view_access_or_403(session, req)
     row = create_client_message(db, request=req, body=payload.body)
-    return serialize_message(row)
+    return serialize_message_for_request(row, request_extra_fields=req.extra_fields)
 
 
 @router.get("/requests/{track_number}/live")
@@ -286,7 +363,13 @@ def get_live_chat_state_by_track(
             .order_by(Attachment.created_at.asc(), Attachment.id.asc())
             .all()
         )
-        delta_messages = serialize_messages_for_request(db, req.id, message_rows)
+        delta_messages = serialize_messages_for_request(
+            db,
+            req.id,
+            message_rows,
+            request_extra_fields=req.extra_fields,
+            include_bodies=True,
+        )
         delta_attachments = [_serialize_public_attachment(row) for row in attachment_rows]
 
     subject = _require_view_session_or_403(session)
@@ -492,6 +575,12 @@ def save_data_request_values(
         db.rollback()
 
     messages = list_messages_for_request(db, req.id)
-    serialized = serialize_messages_for_request(db, req.id, messages)
+    serialized = serialize_messages_for_request(
+        db,
+        req.id,
+        messages,
+        request_extra_fields=req.extra_fields,
+        include_bodies=True,
+    )
     current = next((item for item in serialized if str(item.get("id")) == str(message_uuid)), None)
     return {"updated": updated, "message": current}

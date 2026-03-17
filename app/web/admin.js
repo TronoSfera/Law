@@ -5124,7 +5124,7 @@
               }
             } : void 0
           },
-          String(entry.payload?.message_kind || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, serviceMessageContent?.title ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, String(entry.payload?.body || ""))),
+          String(entry.payload?.message_kind || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, serviceMessageContent?.title ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, entry.payload?.body_loaded === false ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F..." : String(entry.payload?.body || ""))),
           (() => {
             if (String(entry.payload?.message_kind || "") === "REQUEST_DATA") return null;
             const messageId = String(entry.payload?.id || "").trim();
@@ -6131,6 +6131,18 @@
     });
     return sortRowsByCreatedAt(Array.from(merged.values()));
   }
+  function getOldestMessageCursor(rows) {
+    const sorted = sortRowsByCreatedAt(Array.isArray(rows) ? rows : []);
+    const first = sorted[0];
+    if (!first) return null;
+    const beforeId = String(first.id || "").trim();
+    const beforeCreatedAt = String(first.created_at || first.updated_at || "").trim();
+    if (!beforeId || !beforeCreatedAt) return null;
+    return { beforeId, beforeCreatedAt };
+  }
+  function collectDeferredMessageIds(rows) {
+    return (Array.isArray(rows) ? rows : []).filter((row) => row && typeof row === "object" && row.body_loaded === false && String(row.id || "").trim()).map((row) => String(row.id).trim());
+  }
   function normalizeMessageAuthors(rows, users) {
     const usersByEmail = new Map(
       (Array.isArray(users) ? users : []).filter((user) => user && user.email).map((user) => [String(user.email).toLowerCase(), String(user.name || user.email)])
@@ -6145,6 +6157,30 @@
       }
       return item;
     });
+  }
+  function buildFinanceSummaryFromInvoices(financeSummaryData, rowData, invoices) {
+    if (financeSummaryData && typeof financeSummaryData === "object") return financeSummaryData;
+    const paidInvoices = (Array.isArray(invoices) ? invoices : []).filter(
+      (item) => String(item?.status || "").toUpperCase() === "PAID"
+    );
+    const paidTotal = paidInvoices.reduce((acc, item) => {
+      const amount = Number(item?.amount || 0);
+      return Number.isFinite(amount) ? acc + amount : acc;
+    }, 0);
+    const latestPaidAt = paidInvoices.reduce((latest, item) => {
+      const raw = item?.paid_at;
+      const ts = raw ? new Date(raw).getTime() : Number.NaN;
+      if (!Number.isFinite(ts)) return latest;
+      if (!latest) return String(raw);
+      const latestTs = new Date(latest).getTime();
+      return ts > latestTs ? String(raw) : latest;
+    }, "");
+    return {
+      request_cost: rowData?.request_cost ?? null,
+      effective_rate: rowData?.effective_rate ?? null,
+      paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
+      last_paid_at: latestPaidAt || rowData?.paid_at || null
+    };
   }
   function useRequestWorkspace(options) {
     const { useCallback, useRef, useState } = React;
@@ -6161,6 +6197,32 @@
       setRequestModal(createRequestModalState());
       requestOpenGuardRef.current = { requestId: "", ts: 0 };
     }, []);
+    const hydrateRequestMessageBodies = useCallback(
+      async (requestId, rows) => {
+        const targetRequestId = String(requestId || "").trim();
+        const ids = collectDeferredMessageIds(rows);
+        if (!api || !targetRequestId || !ids.length) return null;
+        try {
+          const payload = await api("/api/admin/chat/requests/" + targetRequestId + "/message-bodies", {
+            method: "POST",
+            body: { ids }
+          });
+          const nextRows = Array.isArray(payload?.rows) ? payload.rows : [];
+          if (!nextRows.length) return payload || null;
+          setRequestModal((prev) => {
+            if (String(prev.requestId || "") !== targetRequestId) return prev;
+            return {
+              ...prev,
+              messages: mergeRowsById(prev.messages, nextRows)
+            };
+          });
+          return payload || null;
+        } catch (_) {
+          return null;
+        }
+      },
+      [api]
+    );
     const updateRequestModalMessageDraft = useCallback((event) => {
       const value = event.target.value;
       setRequestModal((prev) => ({ ...prev, messageDraft: value }));
@@ -6275,12 +6337,10 @@
           }));
         }
         try {
-          const workspaceData = await api("/api/admin/requests/" + requestId + "/workspace");
+          const workspaceData = await api("/api/admin/requests/" + requestId + "/workspace?include_related=false");
           const row = workspaceData?.request || null;
           const messagesData = { rows: workspaceData?.messages || [] };
-          const attachmentsData = { rows: workspaceData?.attachments || [] };
           const statusRouteData = workspaceData?.status_route || { nodes: [] };
-          const invoicesData = { rows: workspaceData?.invoices || [] };
           const financeSummaryData = workspaceData?.finance_summary || null;
           const usersById = new Map(users.filter((user) => user && user.id).map((user) => [String(user.id), user]));
           const rowData = row && typeof row === "object" ? { ...row } : row;
@@ -6294,40 +6354,15 @@
               }
             }
           }
-          const attachments = (attachmentsData.rows || []).map((item) => ({
-            ...item,
-            download_url: resolveAdminObjectSrc2(item.s3_key, token)
-          }));
           const normalizedMessages = normalizeMessageAuthors(messagesData.rows || [], users);
-          const invoices = Array.isArray(invoicesData?.rows) ? invoicesData.rows : [];
-          const paidInvoices = invoices.filter(
-            (item) => String(item?.status || "").toUpperCase() === "PAID"
-          );
-          const paidTotal = paidInvoices.reduce((acc, item) => {
-            const amount = Number(item?.amount || 0);
-            return Number.isFinite(amount) ? acc + amount : acc;
-          }, 0);
-          const latestPaidAt = paidInvoices.reduce((latest, item) => {
-            const raw = item?.paid_at;
-            const ts = raw ? new Date(raw).getTime() : Number.NaN;
-            if (!Number.isFinite(ts)) return latest;
-            if (!latest) return String(raw);
-            const latestTs = new Date(latest).getTime();
-            return ts > latestTs ? String(raw) : latest;
-          }, "");
           setRequestModal((prev) => ({
             ...prev,
             loading: false,
             requestId: rowData?.id || requestId,
             trackNumber: String(rowData?.track_number || ""),
             requestData: rowData,
-            financeSummary: financeSummaryData || {
-              request_cost: rowData?.request_cost ?? null,
-              effective_rate: rowData?.effective_rate ?? null,
-              paid_total: Math.round((paidTotal + Number.EPSILON) * 100) / 100,
-              last_paid_at: latestPaidAt || rowData?.paid_at || null
-            },
-            invoices,
+            financeSummary: buildFinanceSummaryFromInvoices(financeSummaryData, rowData, []),
+            invoices: [],
             statusRouteNodes: Array.isArray(statusRouteData?.nodes) ? statusRouteData.nodes : [],
             statusHistory: Array.isArray(statusRouteData?.history) ? statusRouteData.history : [],
             availableStatuses: Array.isArray(statusRouteData?.available_statuses) ? statusRouteData.available_statuses : [],
@@ -6337,10 +6372,35 @@
             messagesLoadingMore: false,
             messagesLoadedCount: Number(workspaceData?.messages_loaded_count || normalizedMessages.length || 0),
             messagesTotal: Number(workspaceData?.messages_total || normalizedMessages.length || 0),
-            attachments,
+            attachments: [],
             selectedFiles: [],
             fileUploading: false
           }));
+          void hydrateRequestMessageBodies(requestId, normalizedMessages);
+          void Promise.all([
+            api("/api/admin/uploads/request-attachments/" + requestId),
+            api("/api/admin/invoices/by-request/" + requestId),
+            api("/api/admin/requests/" + requestId + "/status-route")
+          ]).then(([attachmentsData, invoicesData, nextStatusRouteData]) => {
+            const attachments = (attachmentsData?.rows || []).map((item) => ({
+              ...item,
+              download_url: resolveAdminObjectSrc2(item.s3_key, token)
+            }));
+            const invoices = Array.isArray(invoicesData?.rows) ? invoicesData.rows : [];
+            setRequestModal((prev) => {
+              if (String(prev.requestId || "") !== String(requestId)) return prev;
+              return {
+                ...prev,
+                attachments,
+                invoices,
+                financeSummary: buildFinanceSummaryFromInvoices(prev.financeSummary, prev.requestData, invoices),
+                statusRouteNodes: Array.isArray(nextStatusRouteData?.nodes) ? nextStatusRouteData.nodes : [],
+                statusHistory: Array.isArray(nextStatusRouteData?.history) ? nextStatusRouteData.history : [],
+                availableStatuses: Array.isArray(nextStatusRouteData?.available_statuses) ? nextStatusRouteData.available_statuses : [],
+                currentImportantDateAt: String(nextStatusRouteData?.current_important_date_at || prev.currentImportantDateAt || "")
+              };
+            });
+          }).catch(() => null);
           if (showLoading && typeof setStatus === "function") setStatus("requestModal", "", "");
         } catch (error) {
           setRequestModal((prev) => ({
@@ -6366,7 +6426,7 @@
           if (typeof setStatus === "function") setStatus("requestModal", "\u041E\u0448\u0438\u0431\u043A\u0430: " + error.message, "error");
         }
       },
-      [api, resolveAdminObjectSrc2, setStatus, token, users]
+      [api, hydrateRequestMessageBodies, resolveAdminObjectSrc2, setStatus, token, users]
     );
     const refreshRequestModal = useCallback(async () => {
       if (!requestModal.requestId) return;
@@ -6527,22 +6587,33 @@
     );
     const loadOlderRequestMessages = useCallback(async () => {
       const requestId = String(requestModal.requestId || "").trim();
-      const loadedCount = Number(requestModal.messagesLoadedCount || 0);
+      const cursor = getOldestMessageCursor(requestModal.messages);
       if (!api || !requestId || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
       setRequestModal((prev) => ({ ...prev, messagesLoadingMore: true }));
       try {
-        const payload = await api(
-          "/api/admin/chat/requests/" + requestId + "/messages-window?before_count=" + encodeURIComponent(String(loadedCount))
-        );
+        const query = new URLSearchParams({ include_body: "false" });
+        if (cursor?.beforeId && cursor?.beforeCreatedAt) {
+          query.set("before_id", cursor.beforeId);
+          query.set("before_created_at", cursor.beforeCreatedAt);
+        } else {
+          query.set("before_count", String(Number(requestModal.messagesLoadedCount || 0)));
+        }
+        const payload = await api("/api/admin/chat/requests/" + requestId + "/messages-window?" + query.toString());
         const nextMessages = normalizeMessageAuthors(payload?.rows || [], users);
         setRequestModal((prev) => ({
           ...prev,
           messagesLoadingMore: false,
-          messages: mergeRowsById(nextMessages, prev.messages),
-          messagesHasMore: Boolean(payload?.has_more),
-          messagesLoadedCount: Number(payload?.loaded_count || prev.messagesLoadedCount || 0),
-          messagesTotal: Number(payload?.total || prev.messagesTotal || 0)
+          ...(function() {
+            const merged = mergeRowsById(nextMessages, prev.messages);
+            return {
+              messages: merged,
+              messagesHasMore: Boolean(payload?.has_more),
+              messagesLoadedCount: merged.length,
+              messagesTotal: Number(prev.messagesTotal || merged.length || 0)
+            };
+          })()
         }));
+        void hydrateRequestMessageBodies(requestId, nextMessages);
         return payload || null;
       } catch (error) {
         setRequestModal((prev) => ({ ...prev, messagesLoadingMore: false }));
@@ -6556,6 +6627,7 @@
       requestModal.messagesLoadingMore,
       requestModal.requestId,
       setStatus,
+      hydrateRequestMessageBodies,
       users
     ]);
     const setRequestTyping = useCallback(

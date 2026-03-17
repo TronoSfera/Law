@@ -28,7 +28,8 @@ from app.services.chat_secure_service import (
     list_messages_for_request,
     mark_messages_delivered_for_staff,
     mark_messages_read_for_staff,
-    serialize_message,
+    serialize_message_for_request,
+    serialize_message_bodies_for_request,
     serialize_messages_for_request,
 )
 from app.services.chat_presence import list_typing_presence, set_typing_presence
@@ -140,6 +141,24 @@ def _parse_uuid_or_400(raw: str, field_name: str) -> UUID:
         return UUID(str(raw))
     except ValueError:
         raise HTTPException(status_code=400, detail=f'Некорректное поле "{field_name}"')
+
+
+def _normalize_message_ids(raw: object, *, field_name: str = "ids", limit: int = 200) -> list[UUID]:
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail=f'Поле "{field_name}" должно быть списком')
+    seen: set[UUID] = set()
+    out: list[UUID] = []
+    for item in raw:
+        value = _parse_uuid_or_400(str(item or ""), field_name)
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+        if len(out) >= limit:
+            break
+    if not out:
+        raise HTTPException(status_code=400, detail="Нужно передать хотя бы один идентификатор сообщения")
+    return out
 
 
 def _slugify_key(raw: str) -> str:
@@ -276,7 +295,16 @@ def list_request_messages(
     _ensure_lawyer_can_view_request_or_403(admin, req)
     mark_messages_read_for_staff(db, request_id=req.id)
     rows = list_messages_for_request(db, req.id)
-    payload = {"rows": serialize_messages_for_request(db, req.id, rows), "total": len(rows)}
+    payload = {
+        "rows": serialize_messages_for_request(
+            db,
+            req.id,
+            rows,
+            request_extra_fields=req.extra_fields,
+            include_bodies=True,
+        ),
+        "total": len(rows),
+    }
     _audit_admin_chat_read(
         db,
         admin=admin,
@@ -292,25 +320,36 @@ def list_request_messages(
 def list_request_messages_window(
     request_id: str,
     http_request: FastapiRequest,
+    before_id: str | None = None,
+    before_created_at: str | None = None,
     before_count: int = 0,
     limit: int = DEFAULT_CHAT_WINDOW_LIMIT,
+    include_body: bool = True,
     db: Session = Depends(get_db),
     admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
     req = _request_for_id_or_404(db, request_id)
     _ensure_lawyer_can_view_request_or_403(admin, req)
     mark_messages_read_for_staff(db, request_id=req.id)
-    rows, total, has_more, loaded_count = list_messages_for_request_window(
+    rows, has_more = list_messages_for_request_window(
         db,
         req.id,
         limit=limit,
+        before_id=before_id,
+        before_created_at=before_created_at,
         before_count=before_count,
     )
+    message_total = int(get_chat_activity_summary(db, req.id).get("message_count") or len(rows))
     payload = {
-        "rows": serialize_messages_for_request(db, req.id, rows),
-        "total": total,
+        "rows": serialize_messages_for_request(
+            db,
+            req.id,
+            rows,
+            request_extra_fields=req.extra_fields,
+            include_bodies=bool(include_body),
+        ),
         "has_more": has_more,
-        "loaded_count": loaded_count,
+        "total": message_total,
         "limit": clamp_chat_window_limit(limit),
     }
     _audit_admin_chat_read(
@@ -322,6 +361,44 @@ def list_request_messages_window(
         details={"rows": len(rows), "window": True},
     )
     return payload
+
+
+@router.post("/requests/{request_id}/message-bodies")
+def load_request_message_bodies(
+    request_id: str,
+    payload: dict,
+    http_request: FastapiRequest,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
+):
+    req = _request_for_id_or_404(db, request_id)
+    _ensure_lawyer_can_view_request_or_403(admin, req)
+    message_ids = _normalize_message_ids((payload or {}).get("ids"))
+    rows = (
+        db.query(Message)
+        .filter(Message.request_id == req.id, Message.id.in_(message_ids))
+        .order_by(Message.created_at.asc(), Message.id.asc())
+        .all()
+    )
+    rows_by_id = {str(row.id): row for row in rows}
+    ordered_rows = [rows_by_id[str(message_id)] for message_id in message_ids if str(message_id) in rows_by_id]
+    result = {
+        "rows": serialize_message_bodies_for_request(
+            db,
+            req.id,
+            ordered_rows,
+            request_extra_fields=req.extra_fields,
+        )
+    }
+    _audit_admin_chat_read(
+        db,
+        admin=admin,
+        http_request=http_request,
+        req=req,
+        action="READ_CHAT_MESSAGES",
+        details={"rows": len(ordered_rows), "body_batch": True},
+    )
+    return result
 
 
 @router.post("/requests/{request_id}/messages", status_code=201)
@@ -354,7 +431,7 @@ def create_request_message(
         actor_name=actor_name,
         actor_admin_user_id=actor_admin_user_id,
     )
-    return serialize_message(row)
+    return serialize_message_for_request(row, request_extra_fields=req.extra_fields)
 
 
 @router.get("/requests/{request_id}/live")
@@ -394,7 +471,13 @@ def get_request_live_state(
             .order_by(Attachment.created_at.asc(), Attachment.id.asc())
             .all()
         )
-        delta_messages = serialize_messages_for_request(db, req.id, message_rows)
+        delta_messages = serialize_messages_for_request(
+            db,
+            req.id,
+            message_rows,
+            request_extra_fields=req.extra_fields,
+            include_bodies=True,
+        )
         delta_attachments = [_serialize_live_attachment(row) for row in attachment_rows]
 
     actor_sub = str(admin.get("sub") or "").strip() or "unknown"
@@ -935,7 +1018,13 @@ def upsert_data_request_batch(
 
     db.commit()
     fresh_messages = list_messages_for_request(db, req.id)
-    serialized = serialize_messages_for_request(db, req.id, fresh_messages)
+    serialized = serialize_messages_for_request(
+        db,
+        req.id,
+        fresh_messages,
+        request_extra_fields=req.extra_fields,
+        include_bodies=True,
+    )
     payload_row = next((item for item in serialized if str(item.get("id")) == str(message_uuid)), None)
     if payload_row is None:
         raise HTTPException(status_code=500, detail="Не удалось сформировать сообщение запроса")

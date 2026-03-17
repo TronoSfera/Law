@@ -1,10 +1,11 @@
 .PHONY: \
 	help \
 	local-up local-down local-logs local-migrate local-test local-seed local-seed-statuses local-seed-catalog \
+	local-reencrypt-active-kid \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
 	prod-seed-statuses prod-seed-catalog \
 	prod-secrets-generate prod-secrets-apply prod-secrets-generate-env prod-secrets-apply-env \
-	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid \
+	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid prod-reencrypt-active-kid \
 	security-smoke prod-security-audit prod-security-scheduler-up prod-security-scheduler-logs \
 	prod-cert-init prod-cert-renew \
 	check-prod-files check-cert-files \
@@ -37,6 +38,7 @@ help:
 	@echo "  local-seed        - Seed quotes (local)"
 	@echo "  local-seed-statuses - Seed legal flow statuses (local)"
 	@echo "  local-seed-catalog  - Seed quotes + legal flow statuses (local)"
+	@echo "  local-reencrypt-active-kid - Re-encrypt historical chat/invoice/admin secrets using active KID (local)"
 	@echo "  prod-up           - Start production stack (nginx 80/443 + TLS certs already issued)"
 	@echo "  prod-down         - Stop production stack"
 	@echo "  prod-logs         - Tail production logs"
@@ -48,6 +50,7 @@ help:
 	@echo "  prod-secrets-apply    - Generate + apply rotated internal secrets to running prod stack"
 	@echo "  prod-secrets-generate-env - Generate rotated secrets from current .env into .env.secure"
 	@echo "  prod-secrets-apply-env    - Generate + apply rotated secrets directly for current .env"
+	@echo "  prod-reencrypt-active-kid - Re-encrypt historical chat/invoice/admin secrets using active KID (prod)"
 	@echo "  prod-minio-tls-init   - Generate internal CA and MinIO TLS certs (deploy/tls/minio)"
 	@echo "  incident-checklist    - Create PDn incident checklist markdown report"
 	@echo "  security-smoke        - Run security smoke checks and create report"
@@ -94,6 +97,9 @@ local-seed-statuses:
 local-seed-catalog:
 	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_quotes
 	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.upsert_statuses_legal_flow
+
+local-reencrypt-active-kid:
+	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.reencrypt_with_active_kid --apply
 
 check-prod-files:
 	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)
@@ -177,7 +183,10 @@ rotate-encryption-kid:
 	./scripts/ops/rotate_encryption_kid.sh --env-file .env
 
 reencrypt-active-kid:
-	docker compose exec -T backend python -m app.scripts.reencrypt_with_active_kid --apply
+	$(MAKE) local-reencrypt-active-kid
+
+prod-reencrypt-active-kid: check-prod-files
+	$(PROD_COMPOSE) exec -T backend python -m app.scripts.reencrypt_with_active_kid --apply
 
 # Initial certificate bootstrap:
 # 1) Start stack with edge nginx on port 80 only.

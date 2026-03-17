@@ -1,24 +1,29 @@
 from __future__ import annotations
 
+import logging
+from time import perf_counter
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.request import Request
 from app.models.request_data_requirement import RequestDataRequirement
+from app.services.chat_crypto import decrypt_message_body_for_request
 from app.services.notifications import EVENT_MESSAGE as NOTIFICATION_EVENT_MESSAGE, notify_request_event
 from app.services.request_read_markers import EVENT_MESSAGE, mark_unread_for_client, mark_unread_for_lawyer
 
 MAX_CHAT_MESSAGE_LEN = 12_000
 DEFAULT_CHAT_WINDOW_LIMIT = 50
 MAX_CHAT_WINDOW_LIMIT = 200
+MAX_CHAT_BODY_BATCH = 200
 CHAT_PARTICIPANT_ADMIN_IDS_KEY = "chat_participant_admin_ids"
+_CHAT_WORKSPACE_LOG = logging.getLogger("uvicorn.error")
 
 
 def _normalize_message_body(body: str | None) -> str:
@@ -49,19 +54,75 @@ def clamp_chat_window_limit(limit: int | None) -> int:
     return max(1, min(normalized, MAX_CHAT_WINDOW_LIMIT))
 
 
+def clamp_chat_body_batch_limit(limit: int | None) -> int:
+    if limit is None:
+        return MAX_CHAT_BODY_BATCH
+    try:
+        normalized = int(limit)
+    except (TypeError, ValueError):
+        normalized = MAX_CHAT_BODY_BATCH
+    return max(1, min(normalized, MAX_CHAT_BODY_BATCH))
+
+
+def _parse_window_message_uuid(raw: str | None) -> uuid.UUID | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_window_datetime(raw: str | None) -> datetime | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def list_messages_for_request_window(
     db: Session,
     request_id: Any,
     *,
     limit: int | None,
+    before_id: str | None = None,
+    before_created_at: str | None = None,
     before_count: int = 0,
-) -> tuple[list[Message], int, bool, int]:
+) -> tuple[list[Message], bool]:
     window_limit = clamp_chat_window_limit(limit)
-    loaded_count = max(0, int(before_count or 0))
     base_query = db.query(Message).filter(Message.request_id == request_id)
+    before_uuid = _parse_window_message_uuid(before_id)
+    before_dt = _parse_window_datetime(before_created_at)
+
+    if before_uuid is not None and before_dt is not None:
+        base_query = base_query.filter(
+            or_(
+                Message.created_at < before_dt,
+                and_(Message.created_at == before_dt, Message.id < before_uuid),
+            )
+        )
+        rows_desc = (
+            base_query
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(window_limit + 1)
+            .all()
+        )
+        has_more = len(rows_desc) > window_limit
+        rows = list(reversed(rows_desc[:window_limit]))
+        return rows, has_more
+
+    loaded_count = max(0, int(before_count or 0))
     total = int(base_query.count() or 0)
     if total <= 0 or loaded_count >= total:
-        return [], total, False, loaded_count
+        return [], False
 
     remaining = total - loaded_count
     window_size = min(window_limit, remaining)
@@ -73,9 +134,8 @@ def list_messages_for_request_window(
         .limit(window_size)
         .all()
     )
-    next_loaded_count = loaded_count + len(rows)
     has_more = offset > 0
-    return rows, total, has_more, next_loaded_count
+    return rows, has_more
 
 
 def _iso_or_none(value: datetime | None) -> str | None:
@@ -160,13 +220,14 @@ def mark_messages_read_for_staff(db: Session, *, request_id: Any, commit: bool =
     return _mark_counterparty_delivery(db, request_id=request_id, recipient="STAFF", mark_read=True, commit=commit)
 
 
-def serialize_message(row: Message) -> dict[str, Any]:
+def serialize_message(row: Message, *, body: str | None = None, body_loaded: bool = True) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "request_id": str(row.request_id),
         "author_type": row.author_type,
         "author_name": row.author_name,
-        "body": row.body,
+        "body": body,
+        "body_loaded": bool(body_loaded),
         "message_kind": "TEXT",
         "request_data_items": [],
         "request_data_all_filled": False,
@@ -184,6 +245,30 @@ def _truncate_request_data_label(label: str, limit: int = 18) -> str:
     if len(text) <= limit:
         return text
     return text[: max(3, limit - 3)].rstrip() + "..."
+
+
+def _message_uuid_list(rows: list[Message]) -> list[uuid.UUID]:
+    out: list[uuid.UUID] = []
+    for row in rows:
+        message_id = getattr(row, "id", None)
+        if isinstance(message_id, uuid.UUID):
+            out.append(message_id)
+    return out
+
+
+def _request_data_message_ids(db: Session, request_id: Any, message_ids: list[uuid.UUID]) -> set[str]:
+    if not message_ids:
+        return set()
+    rows = (
+        db.query(RequestDataRequirement.request_message_id)
+        .filter(
+            RequestDataRequirement.request_id == request_id,
+            RequestDataRequirement.request_message_id.in_(message_ids),
+        )
+        .distinct()
+        .all()
+    )
+    return {str(item[0]) for item in rows if item and item[0] is not None}
 
 
 def _normalize_admin_uuid(value: str | None) -> str | None:
@@ -218,13 +303,17 @@ def _register_chat_participant(request: Request, admin_user_id: str | None) -> N
     request.extra_fields = extra
 
 
-def serialize_messages_for_request(db: Session, request_id: Any, rows: list[Message]) -> list[dict[str, Any]]:
-    message_ids = []
-    for row in rows:
-        try:
-            message_ids.append(row.id)
-        except Exception:
-            continue
+def serialize_messages_for_request(
+    db: Session,
+    request_id: Any,
+    rows: list[Message],
+    *,
+    request_extra_fields: dict[str, Any] | None = None,
+    include_bodies: bool = True,
+) -> list[dict[str, Any]]:
+    started_at = perf_counter()
+    message_ids = _message_uuid_list(rows)
+    requirements_started_at = perf_counter()
     requirements = (
         db.query(RequestDataRequirement)
         .filter(
@@ -241,6 +330,7 @@ def serialize_messages_for_request(db: Session, request_id: Any, rows: list[Mess
         if message_ids
         else []
     )
+    requirements_ms = (perf_counter() - requirements_started_at) * 1000.0
     by_message_id: dict[str, list[RequestDataRequirement]] = {}
     for item in requirements:
         mid = str(item.request_message_id or "").strip()
@@ -260,13 +350,28 @@ def serialize_messages_for_request(db: Session, request_id: Any, rows: list[Mess
             continue
     attachment_map: dict[str, Attachment] = {}
     if file_attachment_ids:
+        attachment_lookup_started_at = perf_counter()
         attachment_rows = db.query(Attachment).filter(Attachment.id.in_(file_attachment_ids)).all()
         attachment_map = {str(row.id): row for row in attachment_rows}
+        attachment_lookup_ms = (perf_counter() - attachment_lookup_started_at) * 1000.0
+    else:
+        attachment_lookup_ms = 0.0
 
     out: list[dict[str, Any]] = []
     for row in rows:
-        payload = serialize_message(row)
         linked = by_message_id.get(str(row.id), [])
+        is_request_data = bool(linked)
+        if is_request_data:
+            body_value = "Запрос"
+            body_loaded = True
+        elif include_bodies:
+            body_value = decrypt_message_body_for_request(row.body, request_extra_fields=request_extra_fields)
+            body_loaded = True
+        else:
+            body_value = None
+            body_loaded = False
+
+        payload = serialize_message(row, body=body_value, body_loaded=body_loaded)
         if linked:
             linked_sorted = sorted(
                 linked,
@@ -315,7 +420,54 @@ def serialize_messages_for_request(db: Session, request_id: Any, rows: list[Mess
         else:
             payload["message_kind"] = "TEXT"
         out.append(payload)
+    total_ms = (perf_counter() - started_at) * 1000.0
+    _CHAT_WORKSPACE_LOG.info(
+        "serialize_messages request_id=%s total_ms=%.2f requirements_ms=%.2f attachment_lookup_ms=%.2f rows=%s requirements=%s file_requirements=%s",
+        str(request_id),
+        total_ms,
+        requirements_ms,
+        attachment_lookup_ms,
+        len(rows),
+        len(requirements),
+        len(file_attachment_ids),
+    )
     return out
+
+
+def serialize_message_bodies_for_request(
+    db: Session,
+    request_id: Any,
+    rows: list[Message],
+    *,
+    request_extra_fields: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    request_data_ids = _request_data_message_ids(db, request_id, _message_uuid_list(rows))
+    payload: list[dict[str, Any]] = []
+    for row in rows:
+        row_id = str(row.id)
+        if row_id in request_data_ids:
+            payload.append({"id": row_id, "body": "Запрос", "body_loaded": True})
+            continue
+        payload.append(
+            {
+                "id": row_id,
+                "body": decrypt_message_body_for_request(row.body, request_extra_fields=request_extra_fields),
+                "body_loaded": True,
+            }
+        )
+    return payload
+
+
+def serialize_message_for_request(
+    row: Message,
+    *,
+    request_extra_fields: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return serialize_message(
+        row,
+        body=decrypt_message_body_for_request(row.body, request_extra_fields=request_extra_fields),
+        body_loaded=True,
+    )
 
 
 def create_client_message(

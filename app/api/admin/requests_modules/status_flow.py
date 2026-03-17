@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from time import perf_counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -28,6 +30,8 @@ from app.services.status_transition_requirements import validate_transition_requ
 
 from .common import normalize_important_date_or_default, parse_datetime_safe
 from .permissions import ensure_lawyer_can_manage_request_or_403, ensure_lawyer_can_view_request_or_403, request_uuid_or_400
+
+_STATUS_ROUTE_LOG = logging.getLogger("uvicorn.error")
 
 
 def terminal_status_codes(db: Session) -> set[str]:
@@ -215,6 +219,7 @@ def get_request_status_route_service(
     admin: dict,
     request_row: Request | None = None,
 ) -> dict[str, Any]:
+    started_at = perf_counter()
     req = request_row
     if req is None:
         request_uuid = request_uuid_or_400(request_id)
@@ -226,12 +231,14 @@ def get_request_status_route_service(
     topic_code = str(req.topic_code or "").strip()
     current_status = str(req.status_code or "").strip()
 
+    history_started_at = perf_counter()
     history_rows = (
         db.query(StatusHistory)
         .filter(StatusHistory.request_id == req.id)
         .order_by(StatusHistory.created_at.asc())
         .all()
     )
+    history_ms = (perf_counter() - history_started_at) * 1000.0
 
     known_codes: set[str] = set()
     if current_status:
@@ -244,23 +251,27 @@ def get_request_status_route_service(
         if to_code:
             known_codes.add(to_code)
     statuses_map: dict[str, dict[str, Any]] = {}
+    enabled_statuses_started_at = perf_counter()
     all_enabled_status_rows = (
         db.query(Status, StatusGroup)
         .outerjoin(StatusGroup, StatusGroup.id == Status.status_group_id)
         .filter(Status.enabled.is_(True))
         .all()
     )
+    enabled_statuses_ms = (perf_counter() - enabled_statuses_started_at) * 1000.0
     for status_row, _group_row in all_enabled_status_rows:
         code = str(status_row.code or "").strip()
         if code:
             known_codes.add(code)
     if known_codes:
+        statuses_meta_started_at = perf_counter()
         status_rows = (
             db.query(Status, StatusGroup)
             .outerjoin(StatusGroup, StatusGroup.id == Status.status_group_id)
             .filter(Status.code.in_(list(known_codes)))
             .all()
         )
+        statuses_meta_ms = (perf_counter() - statuses_meta_started_at) * 1000.0
         statuses_map = {
             str(status_row.code): {
                 "name": str(status_row.name or status_row.code),
@@ -271,7 +282,10 @@ def get_request_status_route_service(
             }
             for status_row, group_row in status_rows
         }
+    else:
+        statuses_meta_ms = 0.0
 
+    transitions_started_at = perf_counter()
     transition_rows = (
         db.query(TopicStatusTransition)
         .filter(
@@ -283,6 +297,7 @@ def get_request_status_route_service(
         if topic_code
         else []
     )
+    transitions_ms = (perf_counter() - transitions_started_at) * 1000.0
     transition_sla_by_edge: dict[tuple[str, str], int] = {}
     outgoing_by_status: dict[str, list[str]] = {}
     incoming_sla_by_status: dict[str, int] = {}
@@ -479,7 +494,7 @@ def get_request_status_route_service(
             }
         )
 
-    return {
+    payload = {
         "request_id": str(req.id),
         "track_number": req.track_number,
         "topic_code": req.topic_code,
@@ -489,3 +504,19 @@ def get_request_status_route_service(
         "history": list(reversed(history_entries)),
         "nodes": nodes,
     }
+    total_ms = (perf_counter() - started_at) * 1000.0
+    _STATUS_ROUTE_LOG.info(
+        "status_route request_id=%s total_ms=%.2f history_ms=%.2f enabled_statuses_ms=%.2f statuses_meta_ms=%.2f "
+        "transitions_ms=%.2f history_rows=%s known_codes=%s transition_rows=%s nodes=%s",
+        str(req.id),
+        total_ms,
+        history_ms,
+        enabled_statuses_ms,
+        statuses_meta_ms,
+        transitions_ms,
+        len(history_rows),
+        len(known_codes),
+        len(transition_rows),
+        len(nodes),
+    )
+    return payload

@@ -12,7 +12,10 @@
 - `app/api/admin/requests_modules/kanban.py`: kanban aggregation and filters.
 - `app/api/admin/crud_modules/`: generic CRUD/query layer.
 - `app/services/`: shared domain services, including chat serialization/security.
+  - `app/services/chat_crypto.py`: versioned chat crypto (`v1/v2` backward-compatible read, `v3` per-chat AEAD write path).
+  - `app/services/chat_secure_service.py`: chat paging, explicit decrypt, message body batches, live delta.
 - `app/models/`: SQLAlchemy models.
+  - `app/models/message.py`: plaintext no longer auto-decrypts from ORM; chat body encryption happens on flush, read decrypt is explicit.
 - `app/core/`: config, middleware, security hardening.
 
 ### Frontend Areas
@@ -31,3 +34,4 @@
 - Kanban performance: `app/api/admin/requests_modules/kanban.py`.
 - Generic query endpoints used by request modal: `app/api/admin/crud_modules/service.py`, `app/api/admin/invoices.py`.
 - Chat serialization and live updates: `app/services/chat_secure_service.py`, public/admin chat routers.
+- Chat crypto and migration safety: `app/services/chat_crypto.py`, `app/scripts/reencrypt_with_active_kid.py`, `tests/test_crypto_kid_rotation.py`, `tests/test_reencrypt_with_active_kid.py`.

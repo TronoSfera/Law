@@ -199,6 +199,8 @@
     currentImportantDateAt,
     pendingStatusChangePreset,
     messages,
+    messagesHasMore,
+    messagesLoadingMore,
     attachments,
     messageDraft,
     selectedFiles,
@@ -206,6 +208,7 @@
     status,
     onMessageChange,
     onSendMessage,
+    onLoadOlderMessages,
     onFilesSelect,
     onRemoveSelectedFile,
     onClearSelectedFiles,
@@ -1571,7 +1574,16 @@
         disabled: loading || fileUploading,
         style: { position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }
       }
-    ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList, ref: chatListRef }, chatTimelineItems.length ? chatTimelineItems.map(
+    ), chatTab === "chat" ? /* @__PURE__ */ React.createElement(React.Fragment, null, messagesHasMore ? /* @__PURE__ */ React.createElement("div", { className: "request-chat-history-actions" }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        className: "btn secondary",
+        onClick: onLoadOlderMessages,
+        disabled: loading || fileUploading || messagesLoadingMore
+      },
+      messagesLoadingMore ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0438\u0441\u0442\u043E\u0440\u0438\u0438..." : "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F"
+    )) : null, /* @__PURE__ */ React.createElement("ul", { className: "simple-list request-modal-list request-chat-list", id: idMap.messagesList, ref: chatListRef }, chatTimelineItems.length ? chatTimelineItems.map(
       (entry) => entry.type === "date" ? /* @__PURE__ */ React.createElement("li", { key: entry.key, className: "chat-date-divider" }, /* @__PURE__ */ React.createElement("span", null, entry.label)) : entry.type === "file" ? /* @__PURE__ */ React.createElement(
         "li",
         {
@@ -1612,7 +1624,7 @@
               }
             } : void 0
           },
-          String(entry.payload?.message_kind || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, serviceMessageContent?.title ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, String(entry.payload?.body || ""))),
+          String(entry.payload?.message_kind || "") === "REQUEST_DATA" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "chat-request-data-head" }, "\u0417\u0430\u043F\u0440\u043E\u0441"), renderRequestDataMessageItems(entry.payload)) : /* @__PURE__ */ React.createElement(React.Fragment, null, serviceMessageContent?.title ? /* @__PURE__ */ React.createElement("div", { className: "chat-service-head" }, serviceMessageContent.title) : null, serviceMessageContent ? serviceMessageContent.text ? /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, serviceMessageContent.text) : null : /* @__PURE__ */ React.createElement("p", { className: "chat-message-text" }, entry.payload?.body_loaded === false ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F..." : String(entry.payload?.body || ""))),
           (() => {
             if (String(entry.payload?.message_kind || "") === "REQUEST_DATA") return null;
             const messageId = String(entry.payload?.id || "").trim();
@@ -2237,6 +2249,10 @@
       currentImportantDateAt: "",
       pendingStatusChangePreset: null,
       messages: [],
+      messagesHasMore: false,
+      messagesLoadingMore: false,
+      messagesLoadedCount: 0,
+      messagesTotal: 0,
       attachments: [],
       messageDraft: "",
       selectedFiles: [],
@@ -2266,6 +2282,18 @@
         if (key) merged.set(key, row);
       });
       return sortRowsByCreatedAt(Array.from(merged.values()));
+    }
+    function getOldestMessageCursor(rows) {
+      const sorted = sortRowsByCreatedAt(Array.isArray(rows) ? rows : []);
+      const first = sorted[0];
+      if (!first) return null;
+      const beforeId = String(first.id || "").trim();
+      const beforeCreatedAt = String(first.created_at || first.updated_at || "").trim();
+      if (!beforeId || !beforeCreatedAt) return null;
+      return { beforeId, beforeCreatedAt };
+    }
+    function collectDeferredMessageIds(rows) {
+      return (Array.isArray(rows) ? rows : []).filter((row) => row && typeof row === "object" && row.body_loaded === false && String(row.id || "").trim()).map((row) => String(row.id).trim());
     }
     function StatusLine({ status }) {
       return /* @__PURE__ */ React.createElement("p", { className: "status" + (status?.kind ? " " + status.kind : "") }, status?.message || "");
@@ -2701,6 +2729,37 @@
         });
         return completeData;
       }, [apiJson, buildStorageUploadError, requestModal.requestId, runUploadStepWithRetry]);
+      const hydratePublicMessageBodies = useCallback(
+        async (trackNumber, rows) => {
+          const track = String(trackNumber || "").trim().toUpperCase();
+          const ids = collectDeferredMessageIds(rows);
+          if (!track || !ids.length) return null;
+          try {
+            const payload = await apiJson(
+              "/api/public/chat/requests/" + encodeURIComponent(track) + "/message-bodies",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids })
+              },
+              "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0442\u0435\u043A\u0441\u0442\u044B \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439"
+            );
+            const nextRows = Array.isArray(payload?.rows) ? payload.rows : [];
+            if (!nextRows.length) return payload || null;
+            setRequestModal((prev) => {
+              if (String(prev.trackNumber || "").trim().toUpperCase() !== track) return prev;
+              return {
+                ...prev,
+                messages: mergeRowsById(prev.messages, nextRows)
+              };
+            });
+            return payload || null;
+          } catch (_) {
+            return null;
+          }
+        },
+        [apiJson]
+      );
       const loadRequestWorkspace = useCallback(
         async (trackNumber, showLoading) => {
           const track = String(trackNumber || "").trim().toUpperCase();
@@ -2710,7 +2769,11 @@
           }
           const [requestData, messagesData, attachmentsData, invoicesData, statusRouteData, serviceRequestsData] = await Promise.all([
             apiJson("/api/public/requests/" + encodeURIComponent(track), null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443"),
-            apiJson("/api/public/chat/requests/" + encodeURIComponent(track) + "/messages", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F"),
+            apiJson(
+              "/api/public/chat/requests/" + encodeURIComponent(track) + "/messages-window?include_body=false",
+              null,
+              "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F"
+            ),
             apiJson("/api/public/requests/" + encodeURIComponent(track) + "/attachments", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B\u044B"),
             apiJson("/api/public/requests/" + encodeURIComponent(track) + "/invoices", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u0447\u0435\u0442\u0430"),
             apiJson("/api/public/requests/" + encodeURIComponent(track) + "/status-route", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043C\u0430\u0440\u0448\u0440\u0443\u0442 \u0441\u0442\u0430\u0442\u0443\u0441\u043E\u0432"),
@@ -2749,13 +2812,67 @@
             availableStatuses: [],
             currentImportantDateAt: String(statusRouteData?.current_important_date_at || requestData?.important_date_at || ""),
             invoices,
-            messages: Array.isArray(messagesData) ? messagesData : [],
+            messages: Array.isArray(messagesData?.rows) ? messagesData.rows : [],
+            messagesHasMore: Boolean(messagesData?.has_more),
+            messagesLoadingMore: false,
+            messagesLoadedCount: Array.isArray(messagesData?.rows) ? messagesData.rows.length : 0,
+            messagesTotal: Number(messagesData?.total || (Array.isArray(messagesData?.rows) ? messagesData.rows.length : 0)),
             attachments: Array.isArray(attachmentsData) ? attachmentsData : [],
             fileUploading: false
           }));
+          void hydratePublicMessageBodies(track, Array.isArray(messagesData?.rows) ? messagesData.rows : []);
         },
-        [apiJson]
+        [apiJson, hydratePublicMessageBodies]
       );
+      const loadOlderPublicMessages = useCallback(async () => {
+        const track = String(activeTrack || requestModal.trackNumber || "").trim().toUpperCase();
+        const cursor = getOldestMessageCursor(requestModal.messages);
+        if (!track || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
+        setRequestModal((prev) => ({ ...prev, messagesLoadingMore: true }));
+        try {
+          const query = new URLSearchParams({ include_body: "false" });
+          if (cursor?.beforeId && cursor?.beforeCreatedAt) {
+            query.set("before_id", cursor.beforeId);
+            query.set("before_created_at", cursor.beforeCreatedAt);
+          } else {
+            query.set("before_count", String(Number(requestModal.messagesLoadedCount || 0)));
+          }
+          const payload = await apiJson(
+            "/api/public/chat/requests/" + encodeURIComponent(track) + "/messages-window?" + query.toString(),
+            null,
+            "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044E \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439"
+          );
+          const nextRows = Array.isArray(payload?.rows) ? payload.rows : [];
+          setRequestModal((prev) => ({
+            ...prev,
+            messagesLoadingMore: false,
+            ...(function() {
+              const merged = mergeRowsById(nextRows, prev.messages);
+              return {
+                messages: merged,
+                messagesHasMore: Boolean(payload?.has_more),
+                messagesLoadedCount: merged.length,
+                messagesTotal: Number(prev.messagesTotal || merged.length || 0)
+              };
+            })()
+          }));
+          void hydratePublicMessageBodies(track, nextRows);
+          return payload || null;
+        } catch (error) {
+          setRequestModal((prev) => ({ ...prev, messagesLoadingMore: false }));
+          setPageStatus(error?.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044E \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439", "error");
+          return null;
+        }
+      }, [
+        activeTrack,
+        apiJson,
+        requestModal.messagesHasMore,
+        requestModal.messagesLoadedCount,
+        requestModal.messagesLoadingMore,
+        requestModal.trackNumber,
+        setPageStatus,
+        hydratePublicMessageBodies
+      ]);
       const refreshRequestsList = useCallback(async () => {
         const data = await apiJson("/api/public/requests/my", null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u044F\u0432\u043E\u043A");
         const rows = Array.isArray(data?.rows) ? data.rows : [];
@@ -2777,6 +2894,10 @@
               statusRouteNodes: [],
               statusHistory: [],
               messages: [],
+              messagesHasMore: false,
+              messagesLoadingMore: false,
+              messagesLoadedCount: 0,
+              messagesTotal: 0,
               attachments: [],
               fileUploading: false,
               selectedFiles: [],
@@ -2977,11 +3098,18 @@
             const nextMessages = Array.isArray(payload?.messages) ? payload.messages : [];
             const nextAttachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
             if (nextMessages.length || nextAttachments.length) {
-              setRequestModal((prev) => ({
-                ...prev,
-                messages: mergeRowsById(prev.messages, nextMessages),
-                attachments: mergeRowsById(prev.attachments, nextAttachments)
-              }));
+              setRequestModal((prev) => {
+                const mergedMessages = mergeRowsById(prev.messages, nextMessages);
+                const previousCount = Array.isArray(prev.messages) ? prev.messages.length : 0;
+                const addedCount = Math.max(0, mergedMessages.length - previousCount);
+                return {
+                  ...prev,
+                  messages: mergedMessages,
+                  messagesLoadedCount: Number(prev.messagesLoadedCount || previousCount) + addedCount,
+                  messagesTotal: Number(prev.messagesTotal || previousCount) + addedCount,
+                  attachments: mergeRowsById(prev.attachments, nextAttachments)
+                };
+              });
             }
           }
           return payload || { has_updates: false, typing: [], cursor: null };
@@ -3148,6 +3276,8 @@
           currentImportantDateAt: requestModal.currentImportantDateAt || "",
           pendingStatusChangePreset: null,
           messages: requestModal.messages || [],
+          messagesHasMore: Boolean(requestModal.messagesHasMore),
+          messagesLoadingMore: Boolean(requestModal.messagesLoadingMore),
           attachments: requestModal.attachments || [],
           messageDraft: requestModal.messageDraft || "",
           selectedFiles: requestModal.selectedFiles || [],
@@ -3155,6 +3285,7 @@
           status,
           onMessageChange: updateMessageDraft,
           onSendMessage: submitMessage,
+          onLoadOlderMessages: loadOlderPublicMessages,
           onFilesSelect: appendFiles,
           onRemoveSelectedFile: removeFile,
           onClearSelectedFiles: clearFiles,

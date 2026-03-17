@@ -108,10 +108,11 @@ def get_request(
 def get_request_workspace(
     request_id: str,
     http_request: FastapiRequest,
+    include_related: bool = Query(default=True),
     db: Session = Depends(get_db),
     admin=Depends(require_role("ADMIN", "LAWYER", "CURATOR")),
 ):
-    payload = get_request_workspace_service(request_id, db, admin)
+    payload = get_request_workspace_service(request_id, db, admin, include_related=include_related)
     request_payload = payload.get("request") or {}
     record_pii_access_event(
         db,

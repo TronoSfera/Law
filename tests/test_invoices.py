@@ -27,6 +27,7 @@ from app.models.invoice import Invoice
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.request import Request
+from app.services.chat_crypto import decrypt_message_body_for_request
 from app.services.invoice_crypto import decrypt_requisites
 
 
@@ -190,7 +191,10 @@ class InvoiceApiTests(unittest.TestCase):
             self.assertEqual(decrypted["kpp"], "770001001")
             message = db.query(Message).filter(Message.request_id == UUID(self.request_a_id)).order_by(Message.created_at.desc()).first()
             self.assertIsNotNone(message)
-            self.assertEqual(message.body, "Счет на оплату")
+            self.assertEqual(
+                decrypt_message_body_for_request(message.body, request_extra_fields=row_request.extra_fields if (row_request := db.get(Request, UUID(self.request_a_id))) else {}),
+                "Счет на оплату",
+            )
             attachment = (
                 db.query(Attachment)
                 .filter(Attachment.request_id == UUID(self.request_a_id), Attachment.message_id == message.id)

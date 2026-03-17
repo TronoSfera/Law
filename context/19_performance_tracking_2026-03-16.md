@@ -22,7 +22,7 @@
 | PERF-04 | Собрать единый endpoint карточки заявки | in_progress | P0 | PERF-01 |
 | PERF-05 | Выделить узкие request-scoped endpoints для вложений и счетов | completed | P0 | PERF-04 |
 | PERF-06 | Переписать kanban на SQL-first фильтрацию/limit | in_progress | P0 | PERF-01, PERF-02 |
-| PERF-07 | Ограничить initial chat payload и добавить догрузку истории | in_progress | P1 | PERF-03, PERF-04 |
+| PERF-07 | Ограничить initial chat payload и добавить догрузку истории | completed | P1 | PERF-03, PERF-04 |
 | PERF-08 | Добавить нужные вспомогательные индексы и повторный profiling | planned | P1 | PERF-01 |
 
 ## PERF-01
@@ -80,6 +80,17 @@
 - 2026-03-17: admin avatar proxy умеет по `variant=thumb` отдавать сжатый вариант и, если его еще нет, достраивать его на лету из оригинала; public featured staff URLs тоже переключены на `?variant=thumb` и умеют так же достраивать thumb на лету.
 - 2026-03-17: `workspace` упрощен server-side: убрано дублирующее `get_request_service() + db.get(Request)` внутри одного запроса, read-mark side effects сведены в один проход, `mark_admin_notifications_read` переведен на bulk update, `status_route` повторно использует уже загруженный `Request`.
 - 2026-03-17: контейнерные регрессы после avatar/workspace правок пройдены: `tests.test_uploads_s3`, `tests.test_featured_staff_public`, `tests.admin.test_lawyer_chat`.
+- 2026-03-17: для admin UI первый `workspace` переведен в lean-режим: `/api/admin/requests/{id}/workspace?include_related=false` теперь отдает только заявку, чат-окно и базовый finance summary, а `attachments / invoices / status-route` догружаются фоном отдельными endpoint. Это режет количество SQL round-trip в критическом пути на проде с медленной БД.
+- 2026-03-17: добавлена внутренняя инструментализация `workspace/status-route/serialize_messages` через `uvicorn.error`, чтобы видеть step-by-step ms в контейнерных логах без отдельного profiler.
+- 2026-03-17: живой локальный профиль подтвердил bottleneck: почти весь `workspace` уходит в `messages_query_ms`, а не в `status-route` или дополнительных запросах. На чате в `2000` сообщений: при initial window `50` `messages_query_ms ~569 ms`, после уменьшения initial window до `20` `messages_query_ms ~239 ms`.
+- 2026-03-17: корневая причина находится в загрузке `Message` rows с `EncryptedChatText`: дешифровка `Message.body` выполняется на materialize каждого ORM row и дает почти линейную стоимость по числу сообщений в initial window.
+- 2026-03-17: chat crypto переработан без ослабления защиты: новые сообщения пишутся в `chatenc:v3` с `per-chat` data key, завернутым master chat key в `Request.extra_fields.chat_crypto`; чтение `v1/v2` сохранено для обратной совместимости.
+- 2026-03-17: `Message.body` больше не auto-decrypt в ORM. Шифрование тела выполняется на `before_flush`, а дешифровка вынесена в `chat_secure_service` и вызывается только там, где действительно нужен текст сообщения.
+- 2026-03-17: admin/public `messages-window` переведены на cursor-параметры `before_id + before_created_at` с сохранением fallback `before_count` для совместимости; UI admin/client переключен на cursor path.
+- 2026-03-17: initial chat payload для admin workspace и public cabinet стал metadata-first: `workspace/messages-window` могут отдавать `body_loaded=false`, а тексты догружаются отдельным `message-bodies` batch endpoint только для реально показанных сообщений.
+- 2026-03-17: добавлены новые endpoint `POST /api/admin/chat/requests/{id}/message-bodies` и `POST /api/public/chat/requests/{track}/message-bodies` с тем же RBAC/session-scope, что и чтение чата.
+- 2026-03-17: reencrypt path обновлен под новый `v3` формат - `app/scripts/reencrypt_with_active_kid.py` теперь мигрирует legacy chat rows в request-scoped AEAD и одновременно заполняет `Request.extra_fields.chat_crypto`.
+- 2026-03-17: контейнерный регресс нового chat stack пройден: `tests.test_reencrypt_with_active_kid`, `tests.test_public_cabinet`, `tests.admin.test_lawyer_chat`, `tests.test_invoices`, `tests.test_crypto_kid_rotation`, `tests.test_http_hardening` (`45 tests OK`).
 
 ## Дальше
 

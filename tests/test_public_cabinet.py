@@ -26,6 +26,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.request import Request
+from app.services.chat_crypto import decrypt_message_body_for_request
 from app.models.request_data_requirement import RequestDataRequirement
 from app.models.status_history import StatusHistory
 from app.services.chat_presence import clear_presence_for_tests, set_typing_presence
@@ -217,9 +218,12 @@ class PublicCabinetTests(unittest.TestCase):
             self.assertIsNotNone(row)
             self.assertEqual(row.request_id, request_id)
             self.assertEqual(row.author_type, "CLIENT")
-            self.assertEqual(row.body, "Добрый день, есть вопрос по документам.")
             req = db.get(Request, request_id)
             self.assertIsNotNone(req)
+            self.assertEqual(
+                decrypt_message_body_for_request(row.body, request_extra_fields=req.extra_fields),
+                "Добрый день, есть вопрос по документам.",
+            )
             self.assertEqual(req.responsible, "Клиент")
             self.assertTrue(req.lawyer_has_unread_updates)
             self.assertEqual(req.lawyer_unread_event_type, "MESSAGE")
@@ -288,17 +292,32 @@ class PublicCabinetTests(unittest.TestCase):
         listed_window = self.chat_client.get(
             "/api/public/chat/requests/TRK-CHAT-001/messages-window",
             cookies=cookies,
-            params={"limit": 2},
+            params={"limit": 2, "include_body": "false"},
         )
         self.assertEqual(listed_window.status_code, 200)
         window_payload = listed_window.json()
         self.assertEqual(len(window_payload.get("rows") or []), 2)
         self.assertTrue(bool(window_payload.get("has_more")))
-        self.assertEqual(int(window_payload.get("loaded_count") or 0), 2)
-        self.assertEqual(int(window_payload.get("total") or 0), 5)
+        self.assertTrue(all(item.get("body_loaded") is False for item in (window_payload.get("rows") or [])))
+
+        body_batch = self.chat_client.post(
+            "/api/public/chat/requests/TRK-CHAT-001/message-bodies",
+            cookies=cookies,
+            json={"ids": [item["id"] for item in (window_payload.get("rows") or [])]},
+        )
+        self.assertEqual(body_batch.status_code, 200)
+        self.assertEqual(len(body_batch.json().get("rows") or []), 2)
+        self.assertTrue(all(item.get("body_loaded") for item in (body_batch.json().get("rows") or [])))
 
         denied = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-001/messages", cookies=self._public_cookies("TRK-OTHER"))
         self.assertEqual(denied.status_code, 404)
+
+        denied_batch = self.chat_client.post(
+            "/api/public/chat/requests/TRK-CHAT-001/message-bodies",
+            cookies=self._public_cookies("TRK-OTHER"),
+            json={"ids": [item["id"] for item in (window_payload.get("rows") or [])]},
+        )
+        self.assertEqual(denied_batch.status_code, 404)
 
     def test_public_chat_marks_delivery_and_read_receipts_for_staff_messages(self):
         with self.SessionLocal() as db:
@@ -369,8 +388,11 @@ class PublicCabinetTests(unittest.TestCase):
 
         with self.SessionLocal() as db:
             raw_encrypted = db.execute(text("SELECT body FROM messages ORDER BY created_at DESC LIMIT 1")).scalar_one()
-            self.assertTrue(str(raw_encrypted).startswith("chatenc:"))
+            self.assertTrue(str(raw_encrypted).startswith("chatenc:v3:"))
             self.assertNotEqual(str(raw_encrypted), payload_body)
+            request_row = db.query(Request).filter(Request.track_number == "TRK-CHAT-ENC").first()
+            self.assertIsNotNone(request_row)
+            self.assertTrue(bool((request_row.extra_fields or {}).get("chat_crypto")))
 
         listed = self.chat_client.get("/api/public/chat/requests/TRK-CHAT-ENC/messages", cookies=cookies)
         self.assertEqual(listed.status_code, 200)
