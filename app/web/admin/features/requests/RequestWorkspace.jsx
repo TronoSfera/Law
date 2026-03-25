@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   detectAttachmentPreviewKind,
   fmtAmount,
@@ -53,11 +54,11 @@ export function RequestWorkspace({
   onConsumePendingStatusChangePreset,
   onLiveProbe,
   onTypingSignal,
+  liveStreamUrl,
   domIds,
   AttachmentPreviewModalComponent,
   StatusLineComponent,
 }) {
-  const { useEffect, useMemo, useRef, useState } = React;
   const [preview, setPreview] = useState({ open: false, url: "", fileName: "", mimeType: "" });
   const [chatTab, setChatTab] = useState("chat");
   const [dropActive, setDropActive] = useState(false);
@@ -129,6 +130,7 @@ export function RequestWorkspace({
   const typingHeartbeatRef = useRef(null);
   const typingActiveRef = useRef(false);
   const lastAutoScrollCursorRef = useRef("");
+  const sseActiveRef = useRef(false);
   const idMap = useMemo(
     () => ({
       messagesList: "request-modal-messages",
@@ -518,6 +520,51 @@ export function RequestWorkspace({
     liveCursorRef.current = localActivityCursor || "";
   }, [localActivityCursor, row?.id]);
 
+  // SSE real-time: при получении события инициируем немедленный probe
+  useEffect(() => {
+    if (!liveStreamUrl || !row || typeof onLiveProbe !== "function" || typeof window.EventSource === "undefined") {
+      sseActiveRef.current = false;
+      return undefined;
+    }
+    let es = null;
+    let reconnectTimer = null;
+    let unmounted = false;
+
+    const connect = () => {
+      if (unmounted) return;
+      es = new window.EventSource(liveStreamUrl, { withCredentials: true });
+      es.onopen = () => { sseActiveRef.current = true; };
+      es.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === "message") {
+            // Немедленный probe вместо ожидания таймера
+            if (liveTimerRef.current) { clearTimeout(liveTimerRef.current); liveTimerRef.current = null; }
+            onLiveProbe({ cursor: liveCursorRef.current }).then((payload) => {
+              const cursor = String(payload?.cursor || "").trim();
+              if (cursor) liveCursorRef.current = cursor;
+            }).catch(() => {});
+          }
+        } catch (_) {}
+      };
+      es.onerror = () => {
+        sseActiveRef.current = false;
+        es.close();
+        if (!unmounted) {
+          reconnectTimer = setTimeout(connect, 5000);
+        }
+      };
+    };
+
+    connect();
+    return () => {
+      unmounted = true;
+      sseActiveRef.current = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) es.close();
+    };
+  }, [liveStreamUrl, row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!row || typeof onLiveProbe !== "function") {
       setTypingPeers([]);
@@ -554,7 +601,7 @@ export function RequestWorkspace({
       } finally {
         liveInFlightRef.current = false;
         const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-        const baseInterval = hidden ? 8000 : 2500;
+        const baseInterval = sseActiveRef.current ? 30000 : (hidden ? 8000 : 2500);
         const failStep = Math.min(5, Math.max(0, liveFailCountRef.current));
         const backoffInterval = failStep > 0 ? Math.min(30000, baseInterval * Math.pow(2, failStep - 1)) : baseInterval;
         scheduleNext(backoffInterval);

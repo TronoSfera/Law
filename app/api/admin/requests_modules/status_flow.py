@@ -19,6 +19,7 @@ from app.models.topic_status_transition import TopicStatusTransition
 from app.schemas.admin import RequestStatusChange
 from app.schemas.universal import FilterClause, UniversalQuery
 from app.services.billing_flow import apply_billing_transition_effects
+from app.services.email_service import send_status_change_notification
 from app.services.notifications import (
     EVENT_STATUS as NOTIFICATION_EVENT_STATUS,
     notify_request_event,
@@ -203,6 +204,17 @@ def change_request_status_service(
     db.add(req)
     db.commit()
     db.refresh(req)
+
+    client_email = str(getattr(req, "client_email", "") or "").strip()
+    if client_email:
+        status_name = str(getattr(status_row, "name", None) or next_status)
+        send_status_change_notification(
+            client_email=client_email,
+            track_number=str(req.track_number or ""),
+            status_name=status_name,
+            comment=comment,
+        )
+
     return {
         "status": "ok",
         "request_id": str(req.id),

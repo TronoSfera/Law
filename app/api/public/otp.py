@@ -173,9 +173,11 @@ def _rate_limit_or_429(
     for key in keys:
         result = limiter.hit(key, limit=limit, window_seconds=window)
         if not result.allowed:
+            retry_after = max(result.retry_after_seconds, 1)
             raise HTTPException(
                 status_code=429,
-                detail=f"Слишком много OTP-запросов. Повторите через {max(result.retry_after_seconds, 1)} сек.",
+                detail=f"Слишком много OTP-запросов. Повторите через {retry_after} сек.",
+                headers={"Retry-After": str(retry_after)},
             )
 
 

@@ -1,8 +1,8 @@
+import { useCallback } from "react";
 import { ADMIN_AUTH_REDIRECT_REASON_KEY, LS_TOKEN } from "../shared/constants.js";
 import { translateApiError } from "../shared/utils.js";
 
 export function useAdminApi(token) {
-  const { useCallback } = React;
 
   return useCallback(
     async (path, options, tokenOverride) => {

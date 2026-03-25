@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { KANBAN_GROUPS } from "../../shared/constants.js";
 import { FilterIcon, RefreshIcon } from "../../shared/icons.jsx";
 import { fallbackStatusGroup, fmtKanbanDate, resolveDeadlineTone, statusLabel } from "../../shared/utils.js";
@@ -23,7 +24,6 @@ export function KanbanBoard({
   FilterToolbarComponent,
   StatusLineComponent,
 }) {
-  const { useMemo, useState } = React;
   const [draggingId, setDraggingId] = useState("");
   const [dragOverGroup, setDragOverGroup] = useState("");
 

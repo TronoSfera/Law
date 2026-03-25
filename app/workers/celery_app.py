@@ -18,5 +18,6 @@ celery_app.conf.beat_schedule = {
     "cleanup_expired_otps": {"task": "app.workers.tasks.security.cleanup_expired_otps", "schedule": 3600.0},
     "cleanup_pii_retention": {"task": "app.workers.tasks.security.cleanup_pii_retention", "schedule": 86400.0},
     "cleanup_stale_uploads": {"task": "app.workers.tasks.uploads.cleanup_stale_uploads", "schedule": 86400.0},
+    "reset_stale_scan_pending": {"task": "app.workers.tasks.uploads.reset_stale_scan_pending", "schedule": 900.0},
 }
 celery_app.conf.timezone = "Europe/Moscow"

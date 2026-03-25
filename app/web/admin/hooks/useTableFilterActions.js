@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { createTableState } from "../shared/state.js";
 
 export function useTableFilterActions({
@@ -10,8 +11,6 @@ export function useTableFilterActions({
   setTableState,
   tablesRef,
 }) {
-  const { useCallback } = React;
-
   const applyFilterModal = useCallback(
     async (event) => {
       if (event && typeof event.preventDefault === "function") event.preventDefault();

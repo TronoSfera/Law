@@ -17,6 +17,7 @@ from app.models.request_data_requirement import RequestDataRequirement
 from app.services.chat_crypto import decrypt_message_body_for_request
 from app.services.notifications import EVENT_MESSAGE as NOTIFICATION_EVENT_MESSAGE, notify_request_event
 from app.services.request_read_markers import EVENT_MESSAGE, mark_unread_for_client, mark_unread_for_lawyer
+from app.services.chat_pubsub import publish_chat_event
 
 MAX_CHAT_MESSAGE_LEN = 12_000
 DEFAULT_CHAT_WINDOW_LIMIT = 50
@@ -512,6 +513,7 @@ def create_client_message(
     db.add(request)
     db.commit()
     db.refresh(row)
+    publish_chat_event(str(request.id))
     return row
 
 
@@ -558,6 +560,7 @@ def create_admin_or_lawyer_message(
     db.add(request)
     db.commit()
     db.refresh(row)
+    publish_chat_event(str(request.id))
     return row
 
 

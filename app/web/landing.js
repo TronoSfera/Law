@@ -768,6 +768,132 @@
     }
   });
 
+  // ── U-10: Scroll reveal ─────────────────────────────────────────────────
+  function initScrollReveal() {
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) {
+      document.querySelectorAll(".reveal").forEach(function (el) {
+        el.classList.add("is-visible");
+      });
+      return;
+    }
+    if (!("IntersectionObserver" in window)) {
+      document.querySelectorAll(".reveal").forEach(function (el) {
+        el.classList.add("is-visible");
+      });
+      return;
+    }
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
+    );
+    document.querySelectorAll(".reveal").forEach(function (el) {
+      observer.observe(el);
+    });
+  }
+
+  // ── U-10: Animated counters ─────────────────────────────────────────────
+  function initCounters() {
+    var prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var counters = document.querySelectorAll("[data-count]");
+    if (!counters.length) return;
+
+    function animateCounter(el) {
+      var target = parseInt(el.getAttribute("data-count"), 10);
+      var suffix = el.getAttribute("data-count-suffix") || "";
+      if (isNaN(target)) return;
+      var duration = 1600;
+      var start = null;
+      el.classList.add("counting");
+
+      function step(ts) {
+        if (!start) start = ts;
+        var progress = Math.min((ts - start) / duration, 1);
+        // easeOutExpo
+        var eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+        var current = Math.floor(eased * target);
+        el.textContent = current + suffix;
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          el.textContent = target + suffix;
+          el.classList.remove("counting");
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    if (!("IntersectionObserver" in window) || prefersReduced) {
+      counters.forEach(function (el) {
+        var target = el.getAttribute("data-count");
+        var suffix = el.getAttribute("data-count-suffix") || "";
+        el.textContent = target + suffix;
+      });
+      return;
+    }
+
+    var counterObserver = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            animateCounter(entry.target);
+            counterObserver.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.6 }
+    );
+    counters.forEach(function (el) {
+      counterObserver.observe(el);
+    });
+  }
+
+  // ── U-10: Floating CTA (mobile) ─────────────────────────────────────────
+  function initFloatCta() {
+    var floatCta = document.getElementById("float-cta");
+    var hero = document.querySelector(".hero");
+    if (!floatCta || !hero) return;
+
+    function checkVisibility() {
+      var heroBottom = hero.getBoundingClientRect().bottom;
+      var shouldShow = heroBottom < 0;
+      floatCta.classList.toggle("is-visible", shouldShow);
+      floatCta.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+    }
+
+    window.addEventListener("scroll", checkVisibility, { passive: true });
+    checkVisibility();
+  }
+
+  // ── U-10: Hero headline word animation ──────────────────────────────────
+  function initHeroWordAnimation() {
+    var prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) return;
+    var h1 = document.querySelector(".hero h1");
+    if (!h1) return;
+    var text = h1.textContent || "";
+    var words = text.split(/(\s+)/);
+    var html = "";
+    var wordIndex = 0;
+    words.forEach(function (part) {
+      if (/^\s+$/.test(part)) {
+        html += part;
+      } else {
+        var delay = (wordIndex * 0.07).toFixed(2);
+        html += '<span class="hero-word" style="animation-delay:' + delay + 's">' + part + "</span>";
+        wordIndex++;
+      }
+    });
+    h1.innerHTML = html;
+  }
+
   loadAuthConfig();
   bindRuPhoneMask(requestPhoneInput);
   bindRuPhoneMask(accessPhoneInput);
@@ -775,4 +901,8 @@
   loadQuotes();
   loadFeaturedStaff();
   initTopbarNav();
+  initHeroWordAnimation();
+  initScrollReveal();
+  initCounters();
+  initFloatCta();
 })();

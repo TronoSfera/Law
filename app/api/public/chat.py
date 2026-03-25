@@ -1,8 +1,11 @@
 from __future__ import annotations
+import asyncio
+import json
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -14,6 +17,7 @@ from app.models.request import Request
 from app.models.request_data_requirement import RequestDataRequirement
 from app.schemas.public import PublicMessageCreate
 from app.services.chat_presence import list_typing_presence, set_typing_presence
+from app.services.chat_pubsub import subscribe_chat_events
 from app.services.notifications import EVENT_REQUEST_DATA as NOTIFICATION_EVENT_REQUEST_DATA, notify_request_event, unread_client_summary
 from app.services.chat_secure_service import (
     DEFAULT_CHAT_WINDOW_LIMIT,
@@ -584,3 +588,34 @@ def save_data_request_values(
     )
     current = next((item for item in serialized if str(item.get("id")) == str(message_uuid)), None)
     return {"updated": updated, "message": current}
+
+
+@router.get("/requests/{track_number}/stream")
+async def stream_chat_events_by_track(
+    track_number: str,
+    http_request: FastapiRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_public_session),
+):
+    """SSE-поток событий чата. Клиент подписывается и получает push при новых сообщениях."""
+    enforce_public_origin_or_403(http_request, endpoint="/api/public/chat/requests/{track_number}/stream")
+    req = _request_for_track_or_404(db, track_number)
+    _ensure_view_access_or_403(session, req)
+    request_id = str(req.id)
+
+    async def event_generator():
+        # Сразу отправляем connected-событие
+        yield f"data: {json.dumps({'type': 'connected', 'request_id': request_id})}\n\n"
+        async for event in subscribe_chat_events(request_id):
+            if await http_request.is_disconnected():
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # отключаем буферизацию nginx
+        },
+    )

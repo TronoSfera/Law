@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { KANBAN_GROUPS } from "../shared/constants.js";
 import { createTableState } from "../shared/state.js";
 
@@ -66,7 +67,6 @@ function normalizeKanbanColumns(rows, columns) {
 }
 
 export function useKanban({ api, setStatus, setTableState, tablesRef }) {
-  const { useCallback, useState } = React;
 
   const [kanbanData, setKanbanData] = useState({
     rows: [],

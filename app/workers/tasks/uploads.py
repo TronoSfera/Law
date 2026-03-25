@@ -1,11 +1,44 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import func
 
 from app.db.session import SessionLocal
 from app.models.attachment import Attachment
 from app.models.request import Request
 from app.workers.celery_app import celery_app
+
+_STALE_PENDING_MINUTES = 15
+
+
+@celery_app.task(name="app.workers.tasks.uploads.reset_stale_scan_pending")
+def reset_stale_scan_pending() -> dict:
+    """Mark attachments stuck in PENDING scan for too long as ERROR."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=_STALE_PENDING_MINUTES)
+        stale = (
+            db.query(Attachment)
+            .filter(
+                Attachment.scan_status == "PENDING",
+                Attachment.created_at < cutoff,
+            )
+            .all()
+        )
+        for att in stale:
+            att.scan_status = "ERROR"
+            att.scan_error = f"Scan timed out: stuck in PENDING for >{_STALE_PENDING_MINUTES} min"
+            att.scanned_at = datetime.now(timezone.utc)
+            db.add(att)
+        if stale:
+            db.commit()
+        return {"reset_count": len(stale)}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 @celery_app.task(name="app.workers.tasks.uploads.cleanup_stale_uploads")

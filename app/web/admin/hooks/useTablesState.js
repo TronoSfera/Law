@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createTableState } from "../shared/state.js";
 
 function createInitialTablesState() {
@@ -20,7 +21,6 @@ function createInitialTablesState() {
 }
 
 export function useTablesState() {
-  const { useCallback, useEffect, useRef, useState } = React;
 
   const [tables, setTables] = useState(createInitialTablesState);
   const [tableCatalog, setTableCatalog] = useState([]);

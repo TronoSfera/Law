@@ -4,6 +4,7 @@ import hashlib
 import os
 import socket
 import struct
+import time
 from datetime import datetime, timezone
 from typing import Iterable
 from uuid import UUID
@@ -135,12 +136,17 @@ def _clamav_scan_bytes(data: bytes) -> tuple[bool, str | None]:
     host = str(getattr(settings, "CLAMAV_HOST", "clamav") or "clamav").strip()
     port = int(getattr(settings, "CLAMAV_PORT", 3310) or 3310)
     timeout = int(getattr(settings, "CLAMAV_TIMEOUT_SECONDS", 20) or 20)
+    deadline = time.monotonic() + timeout
     with socket.create_connection((host, port), timeout=timeout) as sock:
         sock.settimeout(timeout)
         sock.sendall(b"zINSTREAM\0")
         offset = 0
         chunk_size = 64 * 1024
         while offset < len(data):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("ClamAV scan timed out while sending data")
+            sock.settimeout(min(remaining, timeout))
             chunk = data[offset : offset + chunk_size]
             offset += len(chunk)
             sock.sendall(struct.pack(">I", len(chunk)))
@@ -148,6 +154,10 @@ def _clamav_scan_bytes(data: bytes) -> tuple[bool, str | None]:
         sock.sendall(struct.pack(">I", 0))
         response = b""
         while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("ClamAV scan timed out waiting for response")
+            sock.settimeout(min(remaining, timeout))
             part = sock.recv(4096)
             if not part:
                 break
@@ -302,6 +312,11 @@ def scan_attachment_file_impl(attachment_id: str) -> dict:
         db.close()
 
 
-@celery_app.task(name="app.workers.tasks.attachment_scan.scan_attachment_file", queue="uploads")
+@celery_app.task(
+    name="app.workers.tasks.attachment_scan.scan_attachment_file",
+    queue="uploads",
+    time_limit=120,
+    soft_time_limit=90,
+)
 def scan_attachment_file(attachment_id: str) -> dict:
     return scan_attachment_file_impl(str(attachment_id))

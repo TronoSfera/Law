@@ -1,0 +1,63 @@
+services:
+  frontend:
+    container_name: law-dev-frontend
+    ports:
+      - "18081:80"
+
+  frontend-dev:
+    container_name: law-dev-frontend-dev
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    volumes:
+      - ./app/web:/build/app/web
+      - ./frontend/vite.config.ts:/build/frontend/vite.config.ts
+      - ./frontend/tsconfig.json:/build/frontend/tsconfig.json
+    ports:
+      - "15173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:18000
+
+  backend:
+    container_name: law-dev-backend
+    ports:
+      - "18000:8000"
+
+  chat-service:
+    container_name: law-dev-chat-service
+
+  email-service:
+    container_name: law-dev-email-service
+
+  worker:
+    container_name: law-dev-worker
+
+  beat:
+    container_name: law-dev-beat
+
+  security-scheduler:
+    container_name: law-dev-security-scheduler
+
+  e2e:
+    container_name: law-dev-e2e
+
+  db:
+    container_name: law-dev-db
+    ports:
+      - "15433:5432"
+
+  redis:
+    container_name: law-dev-redis
+    ports:
+      - "16379:6379"
+
+  minio:
+    container_name: law-dev-minio
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+
+  clamav:
+    container_name: law-dev-clamav
+    # Local/dev: use multi-arch image (works on Apple Silicon/ARM64).
+    image: mkodockx/docker-clamav:alpine

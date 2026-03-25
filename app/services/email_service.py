@@ -165,6 +165,43 @@ def send_otp_email_message(*, email: str, code: str, purpose: str, track_number:
     raise EmailDeliveryError(f"Неизвестный EMAIL_PROVIDER: {provider}")
 
 
+def send_status_change_notification(
+    *,
+    client_email: str,
+    track_number: str,
+    status_name: str,
+    comment: str | None = None,
+) -> None:
+    """Send a non-blocking status-change email to the client. Swallows all errors."""
+    if not bool(getattr(settings, "STATUS_CHANGE_EMAIL_ENABLED", True)):
+        return
+    normalized = _normalize_email(client_email)
+    if not normalized:
+        return
+    provider = str(settings.EMAIL_PROVIDER or "dummy").strip().lower()
+    if provider in {"", "dummy", "mock", "console"} and not bool(getattr(settings, "OTP_DEV_MODE", False)):
+        return
+    try:
+        subject_tpl = str(settings.STATUS_CHANGE_EMAIL_SUBJECT_TEMPLATE or "").strip()
+        body_tpl = str(settings.STATUS_CHANGE_EMAIL_BODY_TEMPLATE or "").strip()
+        base_url = str(getattr(settings, "PUBLIC_BASE_URL", "https://ruakb.ru") or "").strip().rstrip("/")
+        tracking_url = f"{base_url}/client"
+        comment_line = f"Комментарий: {comment}\n" if comment else ""
+        subject = subject_tpl.format(track_number=track_number, status_name=status_name)
+        body = body_tpl.format(
+            track_number=track_number,
+            status_name=status_name,
+            comment_line=comment_line,
+            tracking_url=tracking_url,
+        )
+        if provider in {"service", "email_service"}:
+            _send_via_email_service(email=normalized, subject=subject, body=body)
+        elif provider == "smtp":
+            _send_smtp(email=normalized, subject=subject, body=body)
+    except Exception:
+        logger.warning("Failed to send status-change email to %s for track %s", normalized, track_number, exc_info=True)
+
+
 def email_provider_health() -> dict[str, Any]:
     if not bool(getattr(settings, "EMAIL_SERVICE_ENABLED", True)):
         return {

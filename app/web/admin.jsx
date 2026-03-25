@@ -64,10 +64,10 @@ import {
   userInitials,
 } from "./admin/shared/utils.js";
 import { AddIcon, DownloadIcon, FilterIcon, NextIcon, PrevIcon, RefreshIcon } from "./admin/shared/icons.jsx";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactDOM from "react-dom/client";
 import QRCode from "qrcode";
 
-(function () {
-const { useCallback, useEffect, useMemo, useRef, useState } = React;
 const LEGACY_HIDDEN_DICTIONARY_TABLES = new Set(["formFields", "topicRequiredFields", "statusTransitions"]);
 const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
@@ -221,6 +221,102 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             </button>
           </div>
         ) : null}
+      </div>
+    );
+  }
+
+  const INVOICE_TEMPLATE_VARS = [
+    { label: "{track_number}", title: "Номер заявки" },
+    { label: "{client_name}", title: "Имя клиента" },
+    { label: "{client_phone}", title: "Телефон клиента" },
+    { label: "{topic_code}", title: "Тема" },
+    { label: "{amount}", title: "Сумма" },
+    { label: "{paid_at}", title: "Дата оплаты" },
+    { label: "{lawyer_name}", title: "Юрист" },
+    { label: "{company_name}", title: "Компания" },
+  ];
+
+  function InvoiceTemplateEditor({ id, value, onChange, placeholder, disabled }) {
+    const [tab, setTab] = useState("edit");
+    const textareaRef = useRef(null);
+
+    const insertVar = useCallback((varLabel) => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const next = value.slice(0, start) + varLabel + value.slice(end);
+      onChange(next);
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(start + varLabel.length, start + varLabel.length);
+      });
+    }, [value, onChange]);
+
+    return (
+      <div className="html-editor">
+        <div className="html-editor-tabs">
+          <button type="button" className={"html-editor-tab" + (tab === "edit" ? " active" : "")} onClick={() => setTab("edit")}>Редактор</button>
+          <button type="button" className={"html-editor-tab" + (tab === "preview" ? " active" : "")} onClick={() => setTab("preview")}>Превью</button>
+          <button type="button" className={"html-editor-tab" + (tab === "split" ? " active" : "")} onClick={() => setTab("split")}>Разделить</button>
+        </div>
+        <div className="html-editor-vars">
+          {INVOICE_TEMPLATE_VARS.map((v) => (
+            <button key={v.label} type="button" className="html-editor-var-chip" title={v.title} onClick={() => insertVar(v.label)} disabled={disabled}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <div className={"html-editor-body" + (tab === "split" ? " split" : "")}>
+          {(tab === "edit" || tab === "split") && (
+            <textarea
+              ref={textareaRef}
+              id={id}
+              className="html-editor-textarea"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              placeholder={placeholder || ""}
+              disabled={disabled}
+              spellCheck={false}
+            />
+          )}
+          {(tab === "preview" || tab === "split") && (
+            <div
+              className="html-editor-preview"
+              dangerouslySetInnerHTML={{ __html: value || "<p class=\"html-editor-empty\">Нет содержимого</p>" }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function InfiniteScrollSentinel({ tableKey, tables, onLoadMore }) {
+    const sentinelRef = useRef(null);
+    const loadingRef = useRef(false);
+    const tableState = tables?.[tableKey] || {};
+    const hasMore = !tableState.showAll && tableState.rows && tableState.total && tableState.rows.length < tableState.total;
+
+    useEffect(() => {
+      const el = sentinelRef.current;
+      if (!el || !hasMore) return;
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting && !loadingRef.current && typeof onLoadMore === "function") {
+            loadingRef.current = true;
+            Promise.resolve(onLoadMore()).finally(() => { loadingRef.current = false; });
+          }
+        },
+        { rootMargin: "120px" }
+      );
+      observer.observe(el);
+      return () => observer.disconnect();
+    }, [hasMore, onLoadMore, tableState.rows?.length]);
+
+    if (!hasMore) return null;
+    return (
+      <div ref={sentinelRef} className="infinite-scroll-sentinel" aria-hidden="true">
+        <span className="infinite-scroll-spinner" />
       </div>
     );
   }
@@ -947,6 +1043,17 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       const id = "record-field-" + field.key;
       const disabled = Boolean(field.readOnly) || (typeof field.readOnlyWhen === "function" ? Boolean(field.readOnlyWhen(form || {})) : false);
 
+      if (field.type === "html-editor") {
+        return (
+          <InvoiceTemplateEditor
+            id={id}
+            value={String(value || "")}
+            onChange={(next) => onChange(field.key, next)}
+            placeholder={field.placeholder || ""}
+            disabled={disabled}
+          />
+        );
+      }
       if (field.type === "textarea" || field.type === "json") {
         return (
           <textarea
@@ -1913,7 +2020,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             { key: "name", label: "Название", type: "text", required: true },
             { key: "status_group_id", label: "Группа", type: "reference", optional: true, options: getStatusGroupOptions },
             { key: "kind", label: "Тип", type: "enum", required: true, options: getStatusKindOptions, defaultValue: "DEFAULT" },
-            { key: "invoice_template", label: "Шаблон счета", type: "textarea", optional: true, placeholder: "Доступные поля: {track_number}, {client_name}, {topic_code}, {amount}" },
+            { key: "invoice_template", label: "Шаблон счета", type: "html-editor", optional: true, placeholder: "HTML-шаблон. Доступные переменные: {track_number}, {client_name}, {topic_code}, {amount}, {paid_at}, {lawyer_name}" },
             { key: "enabled", label: "Активен", type: "boolean", defaultValue: "true" },
             { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
             { key: "is_terminal", label: "Терминальный", type: "boolean", defaultValue: "false" },
@@ -2090,7 +2197,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       tablesRef,
     });
 
-    const { loadTable, loadPrevPage, loadNextPage, loadAllRows, toggleTableSort } = useTableActions({
+    const { loadTable, loadPrevPage, loadNextPage, loadAllRows, loadMoreRows, toggleTableSort } = useTableActions({
       api,
       setStatus,
       resolveTableConfig,
@@ -2987,6 +3094,21 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       setTableState,
       tablesRef,
     });
+
+    const handleRequestSearch = useCallback(
+      (query) => {
+        const tableState = tablesRef.current.requests || createTableState();
+        const SEARCH_FIELD = "__search__";
+        const withoutSearch = (tableState.filters || []).filter((f) => f._search);
+        const baseFilters = (tableState.filters || []).filter((f) => !f._search);
+        const nextFilters = query
+          ? [...baseFilters, { field: "client_name", op: "~", value: query, _search: true }]
+          : baseFilters;
+        setTableState("requests", { ...tableState, filters: nextFilters, offset: 0, showAll: false });
+        loadTable("requests", { resetOffset: true, filtersOverride: nextFilters });
+      },
+      [loadTable, setTableState, tablesRef]
+    );
 
     const selectConfigNode = useCallback(
       (tableKey) => {
@@ -3932,6 +4054,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                   onPrev={() => loadPrevPage("requests")}
                   onNext={() => loadNextPage("requests")}
                   onLoadAll={() => loadAllRows("requests")}
+                  onSearch={handleRequestSearch}
                   onClaimRequest={claimRequest}
                   onOpenReassign={openReassignModal}
                   onOpenRequest={openRequestDetails}
@@ -3942,6 +4065,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                   TablePagerComponent={TablePager}
                   StatusLineComponent={StatusLine}
                   IconButtonComponent={IconButton}
+                />
+                <InfiniteScrollSentinel
+                  tableKey="requests"
+                  tables={tables}
+                  onLoadMore={() => loadMoreRows("requests")}
                 />
               </Section>
             ) : null}
@@ -4035,6 +4163,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 onChangeStatus={submitRequestStatusChange}
                 onConsumePendingStatusChangePreset={clearPendingStatusChangePreset}
                 onLiveProbe={probeRequestLive}
+                liveStreamUrl={requestModal.requestId ? "/api/admin/chat/requests/" + requestModal.requestId + "/stream?token=" + encodeURIComponent(token || "") : null}
                 onTypingSignal={setRequestTyping}
                 AttachmentPreviewModalComponent={AttachmentPreviewModal}
                 StatusLineComponent={StatusLine}
@@ -4237,6 +4366,5 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
   }
 
-  const root = ReactDOM.createRoot(document.getElementById("admin-root"));
-  root.render(<App />);
-})();
+const root = ReactDOM.createRoot(document.getElementById("admin-root"));
+root.render(<App />);

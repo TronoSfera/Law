@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from "react";
 import { createRequestModalState } from "../shared/state.js";
 import { fmtShortDateTime } from "../shared/utils.js";
 
@@ -137,7 +138,6 @@ function buildFinanceSummaryFromInvoices(financeSummaryData, rowData, invoices) 
 }
 
 export function useRequestWorkspace(options) {
-  const { useCallback, useRef, useState } = React;
   const opts = options || {};
   const api = opts.api;
   const setStatus = opts.setStatus;

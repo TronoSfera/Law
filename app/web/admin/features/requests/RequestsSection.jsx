@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { OPERATOR_LABELS, REQUEST_UPDATE_EVENT_LABELS, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
 import { fmtDate, statusLabel } from "../../shared/utils.js";
 import { AddIcon, FilterIcon } from "../../shared/icons.jsx";
@@ -98,6 +99,7 @@ export function RequestsSection({
   onPrev,
   onNext,
   onLoadAll,
+  onSearch,
   onClaimRequest,
   onOpenReassign,
   onOpenRequest,
@@ -110,6 +112,31 @@ export function RequestsSection({
   IconButtonComponent,
 }) {
   const tableState = tables?.requests || { rows: [], filters: [], sort: [] };
+
+  const [searchDraft, setSearchDraft] = useState("");
+  const searchTimerRef = useRef(null);
+
+  const handleSearchChange = useCallback((event) => {
+    const value = event.target.value;
+    setSearchDraft(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      if (typeof onSearch === "function") onSearch(value.trim());
+    }, 400);
+  }, [onSearch]);
+
+  const handleSearchKeyDown = useCallback((event) => {
+    if (event.key === "Enter") {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      if (typeof onSearch === "function") onSearch(searchDraft.trim());
+    } else if (event.key === "Escape") {
+      setSearchDraft("");
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      if (typeof onSearch === "function") onSearch("");
+    }
+  }, [onSearch, searchDraft]);
+
+  useEffect(() => () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); }, []);
   const FilterToolbar = FilterToolbarComponent;
   const DataTable = DataTableComponent;
   const TablePager = TablePagerComponent;
@@ -124,6 +151,15 @@ export function RequestsSection({
           <p className="muted">Серверная фильтрация и просмотр клиентских заявок.</p>
         </div>
         <div className="section-head-actions">
+          <input
+            className="requests-search-input"
+            type="search"
+            placeholder="Поиск по имени, телефону, номеру…"
+            value={searchDraft}
+            onChange={handleSearchChange}
+            onKeyDown={handleSearchKeyDown}
+            aria-label="Поиск заявок"
+          />
           {onCreate ? (
             <button className="btn secondary table-control-btn" type="button" onClick={onCreate} title="Добавить" aria-label="Добавить">
               <AddIcon />

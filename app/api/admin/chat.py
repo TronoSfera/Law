@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request as FastapiRequest
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.admin_user import AdminUser
 from app.models.attachment import Attachment
@@ -33,6 +36,7 @@ from app.services.chat_secure_service import (
     serialize_messages_for_request,
 )
 from app.services.chat_presence import list_typing_presence, set_typing_presence
+from app.services.chat_pubsub import subscribe_chat_events
 from app.services.security_audit import extract_client_ip, record_pii_access_event
 
 router = APIRouter()
@@ -1029,3 +1033,49 @@ def upsert_data_request_batch(
     if payload_row is None:
         raise HTTPException(status_code=500, detail="Не удалось сформировать сообщение запроса")
     return payload_row
+
+
+@router.get("/requests/{request_id}/stream")
+async def stream_chat_events(
+    request_id: str,
+    http_request: FastapiRequest,
+    token: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """SSE-поток событий чата для администраторов/юристов.
+
+    Принимает JWT токен из заголовка Authorization: Bearer <token>
+    или из query-параметра ?token=<token> (нужно для EventSource).
+    """
+    from app.core.security import decode_jwt  # noqa: PLC0415
+    raw = token
+    if not raw:
+        auth_header = http_request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            raw = auth_header[7:]
+    if not raw:
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+    try:
+        admin = decode_jwt(raw, settings.ADMIN_JWT_SECRET)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Некорректный токен")
+    if admin.get("role") not in ("ADMIN", "LAWYER", "CURATOR"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    req = _request_for_id_or_404(db, request_id)
+    _ensure_lawyer_can_view_request_or_403(admin, req)
+
+    async def event_generator():
+        yield f"data: {json.dumps({'type': 'connected', 'request_id': request_id})}\n\n"
+        async for event in subscribe_chat_events(request_id):
+            if await http_request.is_disconnected():
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

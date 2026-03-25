@@ -1,9 +1,9 @@
+import { useCallback } from "react";
 import { DEFAULT_FORM_FIELD_TYPES, PAGE_SIZE, STATUS_LABELS } from "../shared/constants.js";
 import { createTableState } from "../shared/state.js";
 import { sortByName, statusLabel } from "../shared/utils.js";
 
 export function useTableActions({ api, setStatus, resolveTableConfig, tablesRef, setTableState, setDictionaries, buildUniversalQuery }) {
-  const { useCallback } = React;
 
   const loadTable = useCallback(
     async (tableKey, options, tokenOverride) => {
@@ -174,6 +174,37 @@ export function useTableActions({ api, setStatus, resolveTableConfig, tablesRef,
     [loadTable, setTableState, tablesRef]
   );
 
+  const loadMoreRows = useCallback(
+    async (tableKey) => {
+      const config = resolveTableConfig(tableKey);
+      if (!config) return false;
+      const current = tablesRef.current[tableKey] || createTableState();
+      const nextOffset = current.offset + PAGE_SIZE;
+      if (current.showAll || nextOffset >= current.total) return false;
+
+      const next = { ...current, offset: nextOffset };
+      setTableState(tableKey, next);
+      setStatus(tableKey, "Загрузка...", "");
+
+      try {
+        const activeSort = next.sort && next.sort.length ? next.sort : config.sort;
+        const data = await api(
+          config.endpoint,
+          { method: "POST", body: buildUniversalQuery(next.filters, activeSort, PAGE_SIZE, nextOffset) }
+        );
+        const appended = [...(current.rows || []), ...(data.rows || [])];
+        setTableState(tableKey, { ...next, total: Number(data.total || current.total), rows: appended });
+        setStatus(tableKey, "", "");
+        return true;
+      } catch (error) {
+        setTableState(tableKey, current);
+        setStatus(tableKey, "Ошибка: " + error.message, "error");
+        return false;
+      }
+    },
+    [api, buildUniversalQuery, resolveTableConfig, setStatus, setTableState, tablesRef]
+  );
+
   const toggleTableSort = useCallback(
     (tableKey, field) => {
       const tableState = tablesRef.current[tableKey] || createTableState();
@@ -192,6 +223,7 @@ export function useTableActions({ api, setStatus, resolveTableConfig, tablesRef,
     loadPrevPage,
     loadNextPage,
     loadAllRows,
+    loadMoreRows,
     toggleTableSort,
   };
 }

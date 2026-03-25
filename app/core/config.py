@@ -85,10 +85,20 @@ class Settings(BaseSettings):
     CHAT_ENCRYPTION_KEYS: str = ""
     DATA_ENCRYPTION_SECRET: str = "change_me_data_encryption"
     CHAT_ENCRYPTION_SECRET: str = ""
-    OTP_RATE_LIMIT_WINDOW_SECONDS: int = 300
-    OTP_SEND_RATE_LIMIT: int = 8
-    OTP_VERIFY_RATE_LIMIT: int = 20
+    OTP_RATE_LIMIT_WINDOW_SECONDS: int = 600
+    OTP_SEND_RATE_LIMIT: int = 3
+    OTP_VERIFY_RATE_LIMIT: int = 5
     OTP_DEV_MODE: bool = False
+    STATUS_CHANGE_EMAIL_ENABLED: bool = True
+    STATUS_CHANGE_EMAIL_SUBJECT_TEMPLATE: str = "Статус вашей заявки №{track_number} изменён"
+    STATUS_CHANGE_EMAIL_BODY_TEMPLATE: str = (
+        "Здравствуйте!\n\n"
+        "Статус вашей заявки №{track_number} изменён на «{status_name}».\n"
+        "{comment_line}"
+        "Отслеживайте ход дела по ссылке: {tracking_url}\n\n"
+        "С уважением,\nКоманда Аудиторов корпоративной безопасности"
+    )
+    PUBLIC_BASE_URL: str = "https://ruakb.ru"
     ADMIN_BOOTSTRAP_ENABLED: bool = True
     ADMIN_BOOTSTRAP_EMAIL: str = "admin@example.com"
     ADMIN_BOOTSTRAP_PASSWORD: str = "admin123"

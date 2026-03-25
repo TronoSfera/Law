@@ -2,6 +2,7 @@
 	help \
 	local-up local-down local-logs local-migrate local-test local-seed local-seed-statuses local-seed-catalog \
 	local-reencrypt-active-kid \
+	dev-up dev-down dev-logs dev-migrate dev-vite dev-vite-down \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
 	prod-seed-statuses prod-seed-catalog \
 	prod-secrets-generate prod-secrets-apply prod-secrets-generate-env prod-secrets-apply-env \
@@ -25,11 +26,18 @@ CONFIRM_TOKEN ?= ROTATE-PROD-SECRETS
 CERTBOT_DOMAINS = -d "$(DOMAIN)" -d "$(WWW_DOMAIN)" $(if $(strip $(SECOND_DOMAIN)),-d "$(SECOND_DOMAIN)") $(if $(strip $(SECOND_WWW_DOMAIN)),-d "$(SECOND_WWW_DOMAIN)")
 
 LOCAL_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local.yml
+DEV_COMPOSE   = docker compose -f docker-compose.yml -f docker-compose.dev.yml
 PROD_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml
 CERT_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.prod.cert.yml
 
 help:
 	@echo "Targets:"
+	@echo "  dev-up            - Start dev stack (isolated ports, safe alongside other projects)"
+	@echo "  dev-down          - Stop dev stack"
+	@echo "  dev-logs          - Tail dev logs"
+	@echo "  dev-migrate       - Apply migrations (dev)"
+	@echo "  dev-vite          - Start Vite HMR dev server (http://localhost:15173)"
+	@echo "  dev-vite-down     - Stop Vite HMR dev server"
 	@echo "  local-up          - Start local stack"
 	@echo "  local-down        - Stop local stack"
 	@echo "  local-logs        - Tail local logs"
@@ -100,6 +108,24 @@ local-seed-catalog:
 
 local-reencrypt-active-kid:
 	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.reencrypt_with_active_kid --apply
+
+dev-up:
+	$(DEV_COMPOSE) up -d --build
+
+dev-down:
+	$(DEV_COMPOSE) down
+
+dev-logs:
+	$(DEV_COMPOSE) logs -f --tail=200
+
+dev-migrate:
+	$(DEV_COMPOSE) exec -T backend alembic upgrade head
+
+dev-vite:
+	$(DEV_COMPOSE) up -d --build frontend-dev
+
+dev-vite-down:
+	$(DEV_COMPOSE) stop frontend-dev
 
 check-prod-files:
 	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)

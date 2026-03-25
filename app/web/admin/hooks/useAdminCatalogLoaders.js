@@ -1,7 +1,7 @@
+import { useCallback } from "react";
 import { normalizeReferenceMeta } from "../shared/utils.js";
 
 export function useAdminCatalogLoaders({ api, setStatus, setTableState, setReferenceRowsMap, buildUniversalQuery }) {
-  const { useCallback } = React;
 
   const loadAvailableTables = useCallback(
     async (tokenOverride) => {

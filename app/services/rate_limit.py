@@ -43,18 +43,26 @@ class InMemoryRateLimiter:
         return RateLimitResult(allowed=count <= limit, retry_after_seconds=retry_after, current_value=count)
 
 
+_LUA_HIT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('TTL', KEYS[1])
+if ttl < 0 then ttl = tonumber(ARGV[1]) end
+return {count, ttl}
+"""
+
+
 class RedisRateLimiter:
     def __init__(self, client: redis.Redis):
         self.client = client
+        self._script = client.register_script(_LUA_HIT)
 
     def hit(self, key: str, *, limit: int, window_seconds: int) -> RateLimitResult:
-        count = int(self.client.incr(key))
-        if count == 1:
-            self.client.expire(key, int(max(window_seconds, 1)))
-        ttl = int(self.client.ttl(key))
-        if ttl < 0:
-            ttl = int(max(window_seconds, 1))
-        return RateLimitResult(allowed=count <= limit, retry_after_seconds=ttl, current_value=count)
+        count, ttl = self._script(keys=[key], args=[int(max(window_seconds, 1))])
+        count, ttl = int(count), int(ttl)
+        return RateLimitResult(allowed=count <= limit, retry_after_seconds=max(ttl, 0), current_value=count)
 
 
 _cached_limiter: RateLimiter | None = None

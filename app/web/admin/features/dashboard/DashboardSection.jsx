@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { fmtAmount, fmtDate, statusLabel } from "../../shared/utils.js";
 
 export function DashboardSection({
@@ -10,7 +11,6 @@ export function DashboardSection({
   StatusLineComponent,
   UserAvatarComponent,
 }) {
-  const { useMemo, useState } = React;
   const DataTable = DataTableComponent;
   const StatusLine = StatusLineComponent;
   const UserAvatar = UserAvatarComponent;

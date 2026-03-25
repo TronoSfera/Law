@@ -1,9 +1,8 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactDOM from "react-dom/client";
 import { RequestWorkspace } from "./admin/features/requests/RequestWorkspace.jsx";
 import { createRequestModalState } from "./admin/shared/state.js";
 import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./admin/shared/utils.js";
-
-(function () {
-  const { useCallback, useEffect, useMemo, useRef, useState } = React;
 
   function sortRowsByCreatedAt(rows) {
     return [...rows].sort((left, right) => {
@@ -1324,8 +1323,7 @@ import { detectAttachmentPreviewKind, fmtShortDateTime, statusLabel } from "./ad
     );
   }
 
-  const root = document.getElementById("client-root");
-  if (root) {
-    ReactDOM.createRoot(root).render(<App />);
-  }
-})();
+const root = document.getElementById("client-root");
+if (root) {
+  ReactDOM.createRoot(root).render(<App />);
+}
