@@ -43,6 +43,7 @@ def _build_body(*, code: str, purpose: str, track_number: str | None) -> str:
 def _mock_send(*, email: str, code: str, purpose: str, track_number: str | None) -> dict[str, Any]:
     line = f"[OTP EMAIL MOCK] purpose={purpose} email={email} track={track_number or '-'} code={code}"
     logger.warning(line)
+    # NOTE: debug_code intentionally omitted from return value — never send OTP to API response
     return {
         "provider": "mock_email",
         "status": "accepted",
@@ -50,7 +51,6 @@ def _mock_send(*, email: str, code: str, purpose: str, track_number: str | None)
         "sent": False,
         "mocked": True,
         "dev_mode": bool(_otp_dev_mode_enabled()),
-        "debug_code": str(code),
     }
 
 

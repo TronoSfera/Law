@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import threading
+import uuid
 from typing import AsyncGenerator
 
 import redis
@@ -135,3 +136,51 @@ async def subscribe_chat_events(
             await client.aclose()
         except Exception:
             pass
+
+
+# ── Stream ticket (one-time SSE auth token) ──────────────────────────────────
+
+_TICKET_PREFIX = "sse:ticket:"
+_TICKET_TTL = 60  # seconds — ticket must be redeemed within 60s
+
+
+def issue_stream_ticket(identity: dict) -> str | None:
+    """Выдаёт одноразовый тикет (UUID) для SSE-подключения.
+
+    Хранит identity (sub, role) в Redis с TTL 60 сек.
+    Возвращает ticket UUID или None при недоступности Redis.
+    """
+    client = _get_sync_client()
+    if client is None:
+        return None
+    ticket = str(uuid.uuid4())
+    key = _TICKET_PREFIX + ticket
+    try:
+        client.setex(key, _TICKET_TTL, json.dumps(identity))
+        return ticket
+    except Exception as exc:
+        logger.warning("issue_stream_ticket failed: %s", exc)
+        return None
+
+
+def redeem_stream_ticket(ticket: str) -> dict | None:
+    """Изымает тикет из Redis (one-time use) и возвращает сохранённый identity.
+
+    Возвращает None если тикет не найден, истёк или Redis недоступен.
+    """
+    client = _get_sync_client()
+    if client is None:
+        return None
+    key = _TICKET_PREFIX + ticket
+    try:
+        pipe = client.pipeline()
+        pipe.get(key)
+        pipe.delete(key)
+        results = pipe.execute()
+        raw = results[0]
+        if not raw:
+            return None
+        return json.loads(raw)
+    except Exception as exc:
+        logger.warning("redeem_stream_ticket failed: %s", exc)
+        return None

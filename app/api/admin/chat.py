@@ -36,7 +36,7 @@ from app.services.chat_secure_service import (
     serialize_messages_for_request,
 )
 from app.services.chat_presence import list_typing_presence, set_typing_presence
-from app.services.chat_pubsub import subscribe_chat_events
+from app.services.chat_pubsub import subscribe_chat_events, issue_stream_ticket, redeem_stream_ticket
 from app.services.security_audit import extract_client_ip, record_pii_access_event
 
 router = APIRouter()
@@ -1035,34 +1035,51 @@ def upsert_data_request_batch(
     return payload_row
 
 
+@router.post("/requests/{request_id}/stream-ticket", dependencies=[Depends(require_role(["ADMIN", "LAWYER", "CURATOR"]))])
+def issue_chat_stream_ticket(
+    request_id: str,
+    http_request: FastapiRequest,
+    admin: dict = Depends(require_role(["ADMIN", "LAWYER", "CURATOR"])),
+    db: Session = Depends(get_db),
+):
+    """Выдаёт одноразовый тикет (60 сек) для открытия SSE-потока.
+
+    Клиент сначала вызывает этот endpoint (с Bearer JWT в заголовке),
+    получает {"ticket": "<uuid>"}, затем открывает EventSource с ?ticket=<uuid>.
+    JWT не попадает в URL и не логируется сервером.
+    """
+    req = _request_for_id_or_404(db, request_id)
+    _ensure_lawyer_can_view_request_or_403(admin, req)
+    identity = {"sub": admin.get("sub"), "role": admin.get("role"), "request_id": str(req.id)}
+    ticket = issue_stream_ticket(identity)
+    if ticket is None:
+        raise HTTPException(status_code=503, detail="Сервис временно недоступен, повторите позже")
+    return {"ticket": ticket}
+
+
 @router.get("/requests/{request_id}/stream")
 async def stream_chat_events(
     request_id: str,
     http_request: FastapiRequest,
-    token: str | None = None,
+    ticket: str | None = None,
     db: Session = Depends(get_db),
 ):
     """SSE-поток событий чата для администраторов/юристов.
 
-    Принимает JWT токен из заголовка Authorization: Bearer <token>
-    или из query-параметра ?token=<token> (нужно для EventSource).
+    Принимает одноразовый ?ticket=<uuid> полученный через POST /stream-ticket.
+    Тикет немедленно изымается при первом использовании (one-time use, TTL 60 сек).
     """
-    from app.core.security import decode_jwt  # noqa: PLC0415
-    raw = token
-    if not raw:
-        auth_header = http_request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            raw = auth_header[7:]
-    if not raw:
-        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
-    try:
-        admin = decode_jwt(raw, settings.ADMIN_JWT_SECRET)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Некорректный токен")
-    if admin.get("role") not in ("ADMIN", "LAWYER", "CURATOR"):
+    if not ticket:
+        raise HTTPException(status_code=401, detail="Отсутствует ticket для SSE-потока")
+    identity = redeem_stream_ticket(ticket)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Ticket недействителен или истёк")
+    if identity.get("role") not in ("ADMIN", "LAWYER", "CURATOR"):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
+    # Verify ticket was issued for this specific request_id
+    if identity.get("request_id") != request_id:
+        raise HTTPException(status_code=403, detail="Ticket выдан для другой заявки")
     req = _request_for_id_or_404(db, request_id)
-    _ensure_lawyer_can_view_request_or_403(admin, req)
 
     async def event_generator():
         yield f"data: {json.dumps({'type': 'connected', 'request_id': request_id})}\n\n"

@@ -54,7 +54,7 @@ export function RequestWorkspace({
   onConsumePendingStatusChangePreset,
   onLiveProbe,
   onTypingSignal,
-  liveStreamUrl,
+  getStreamTicket,
   domIds,
   AttachmentPreviewModalComponent,
   StatusLineComponent,
@@ -522,7 +522,7 @@ export function RequestWorkspace({
 
   // SSE real-time: при получении события инициируем немедленный probe
   useEffect(() => {
-    if (!liveStreamUrl || !row || typeof onLiveProbe !== "function" || typeof window.EventSource === "undefined") {
+    if (!getStreamTicket || !row || typeof onLiveProbe !== "function" || typeof window.EventSource === "undefined") {
       sseActiveRef.current = false;
       return undefined;
     }
@@ -532,28 +532,35 @@ export function RequestWorkspace({
 
     const connect = () => {
       if (unmounted) return;
-      es = new window.EventSource(liveStreamUrl, { withCredentials: true });
-      es.onopen = () => { sseActiveRef.current = true; };
-      es.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data);
-          if (data.type === "message") {
-            // Немедленный probe вместо ожидания таймера
-            if (liveTimerRef.current) { clearTimeout(liveTimerRef.current); liveTimerRef.current = null; }
-            onLiveProbe({ cursor: liveCursorRef.current }).then((payload) => {
-              const cursor = String(payload?.cursor || "").trim();
-              if (cursor) liveCursorRef.current = cursor;
-            }).catch(() => {});
+      // Fetch a one-time ticket first — JWT never appears in SSE URL
+      Promise.resolve(getStreamTicket()).then((ticket) => {
+        if (unmounted || !ticket) return;
+        const url = "/api/admin/chat/requests/" + row.id + "/stream?ticket=" + encodeURIComponent(ticket);
+        es = new window.EventSource(url, { withCredentials: true });
+        es.onopen = () => { sseActiveRef.current = true; };
+        es.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data.type === "message") {
+              // Немедленный probe вместо ожидания таймера
+              if (liveTimerRef.current) { clearTimeout(liveTimerRef.current); liveTimerRef.current = null; }
+              onLiveProbe({ cursor: liveCursorRef.current }).then((payload) => {
+                const cursor = String(payload?.cursor || "").trim();
+                if (cursor) liveCursorRef.current = cursor;
+              }).catch(() => {});
+            }
+          } catch (_) {}
+        };
+        es.onerror = () => {
+          sseActiveRef.current = false;
+          es.close();
+          if (!unmounted) {
+            reconnectTimer = setTimeout(connect, 5000);
           }
-        } catch (_) {}
-      };
-      es.onerror = () => {
-        sseActiveRef.current = false;
-        es.close();
-        if (!unmounted) {
-          reconnectTimer = setTimeout(connect, 5000);
-        }
-      };
+        };
+      }).catch(() => {
+        if (!unmounted) reconnectTimer = setTimeout(connect, 5000);
+      });
     };
 
     connect();
@@ -563,7 +570,7 @@ export function RequestWorkspace({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (es) es.close();
     };
-  }, [liveStreamUrl, row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [getStreamTicket, row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!row || typeof onLiveProbe !== "function") {

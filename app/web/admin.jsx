@@ -273,9 +273,11 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             />
           )}
           {(tab === "preview" || tab === "split") && (
-            <div
+            <iframe
               className="html-editor-preview"
-              dangerouslySetInnerHTML={{ __html: value || "<p class=\"html-editor-empty\">Нет содержимого</p>" }}
+              srcDoc={value || "<p class=\"html-editor-empty\">Нет содержимого</p>"}
+              sandbox="allow-same-origin"
+              title="Предпросмотр шаблона"
             />
           )}
         </div>
@@ -4155,7 +4157,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                 onChangeStatus={submitRequestStatusChange}
                 onConsumePendingStatusChangePreset={clearPendingStatusChangePreset}
                 onLiveProbe={probeRequestLive}
-                liveStreamUrl={requestModal.requestId ? "/api/admin/chat/requests/" + requestModal.requestId + "/stream?token=" + encodeURIComponent(token || "") : null}
+                getStreamTicket={requestModal.requestId ? () => api("/api/admin/chat/requests/" + requestModal.requestId + "/stream-ticket", { method: "POST" }).then((d) => d.ticket).catch(() => null) : null}
                 onTypingSignal={setRequestTyping}
                 AttachmentPreviewModalComponent={AttachmentPreviewModal}
                 StatusLineComponent={StatusLine}

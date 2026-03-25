@@ -131,11 +131,9 @@ def _generate_code() -> str:
 
 
 def _client_ip(request: Request) -> str:
-    xff = str(request.headers.get("x-forwarded-for") or "").strip()
-    if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
+    # Use the direct connection IP to prevent X-Forwarded-For spoofing.
+    # Proxy header trust must be configured via ProxyHeadersMiddleware in the ASGI
+    # stack (uvicorn --proxy-headers / TrustedHostMiddleware), not here.
     client = request.client
     return str(client.host if client else "unknown")
 
@@ -346,8 +344,6 @@ def send_otp(payload: OtpSend, request: Request, db: Session = Depends(get_db)):
         "channel": effective_channel,
         "track_number": track_number,
         "ttl_seconds": OTP_TTL_MINUTES * 60,
-        "delivery_response": delivery_response,
-        "sms_response": delivery_response if effective_channel == CHANNEL_SMS else None,
         "fallback_reason": fallback_reason,
     }
 

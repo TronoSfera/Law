@@ -41,25 +41,51 @@ def reset_stale_scan_pending() -> dict:
         db.close()
 
 
+_CLEANUP_BATCH_SIZE = 500
+
+
 @celery_app.task(name="app.workers.tasks.uploads.cleanup_stale_uploads")
 def cleanup_stale_uploads():
     db = SessionLocal()
     try:
-        requests = db.query(Request).all()
-        existing_request_ids = {str(req.id) for req in requests}
+        # Load request IDs only (not full ORM objects) to avoid OOM on large tables.
+        from app.models.request import Request as _Request
+        from sqlalchemy import select as _select
+        existing_request_ids: set[str] = set()
+        offset = 0
+        while True:
+            batch = db.execute(
+                _select(_Request.id).limit(_CLEANUP_BATCH_SIZE).offset(offset)
+            ).scalars().all()
+            if not batch:
+                break
+            existing_request_ids.update(str(rid) for rid in batch)
+            offset += len(batch)
 
         deleted_orphan = 0
         deleted_invalid = 0
-        attachment_rows = db.query(Attachment.id, Attachment.request_id, Attachment.size_bytes, Attachment.s3_key).all()
-        for att_id, request_id, size_bytes, s3_key in attachment_rows:
-            request_id_str = str(request_id)
-            if request_id_str not in existing_request_ids:
-                db.query(Attachment).filter(Attachment.id == att_id).delete(synchronize_session=False)
-                deleted_orphan += 1
-                continue
-            if int(size_bytes or 0) <= 0 or not str(s3_key or "").strip():
-                db.query(Attachment).filter(Attachment.id == att_id).delete(synchronize_session=False)
-                deleted_invalid += 1
+        att_offset = 0
+        while True:
+            attachment_rows = (
+                db.query(Attachment.id, Attachment.request_id, Attachment.size_bytes, Attachment.s3_key)
+                .limit(_CLEANUP_BATCH_SIZE)
+                .offset(att_offset)
+                .all()
+            )
+            if not attachment_rows:
+                break
+            att_offset += len(attachment_rows)
+            for att_id, request_id, size_bytes, s3_key in attachment_rows:
+                request_id_str = str(request_id)
+                if request_id_str not in existing_request_ids:
+                    db.query(Attachment).filter(Attachment.id == att_id).delete(synchronize_session=False)
+                    deleted_orphan += 1
+                    att_offset -= 1  # row removed, adjust offset
+                    continue
+                if int(size_bytes or 0) <= 0 or not str(s3_key or "").strip():
+                    db.query(Attachment).filter(Attachment.id == att_id).delete(synchronize_session=False)
+                    deleted_invalid += 1
+                    att_offset -= 1
 
         if deleted_orphan or deleted_invalid:
             db.flush()
@@ -68,13 +94,19 @@ def cleanup_stale_uploads():
         totals_map = {str(request_id): int(total or 0) for request_id, total in totals_rows}
 
         fixed_requests = 0
-        for req in requests:
-            request_total = totals_map.get(str(req.id), 0)
-            if int(req.total_attachments_bytes or 0) != request_total:
-                req.total_attachments_bytes = request_total
-                req.responsible = "Администратор системы"
-                db.add(req)
-                fixed_requests += 1
+        req_offset = 0
+        while True:
+            req_batch = db.query(Request).limit(_CLEANUP_BATCH_SIZE).offset(req_offset).all()
+            if not req_batch:
+                break
+            req_offset += len(req_batch)
+            for req in req_batch:
+                request_total = totals_map.get(str(req.id), 0)
+                if int(req.total_attachments_bytes or 0) != request_total:
+                    req.total_attachments_bytes = request_total
+                    req.responsible = "Администратор системы"
+                    db.add(req)
+                    fixed_requests += 1
 
         db.commit()
         return {

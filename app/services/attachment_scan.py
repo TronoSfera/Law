@@ -44,7 +44,8 @@ def _scan_enabled() -> bool:
 
 
 def _scan_enforced() -> bool:
-    return bool(getattr(settings, "ATTACHMENT_SCAN_ENFORCE", False))
+    # Default enforcement follows scan enabled state: if scanning is on, enforce by default.
+    return bool(getattr(settings, "ATTACHMENT_SCAN_ENFORCE", _scan_enabled()))
 
 
 def _clamav_enabled() -> bool:
