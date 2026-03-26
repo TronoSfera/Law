@@ -1,0 +1,63 @@
+# Standalone override for running the worktree alongside existing dev/prod stacks.
+# Ports shifted to 28xxx/25xxx/26xxx/29xxx — no conflicts with law-dev-* (18xxx) or law-* (8xxx).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.worktree.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.worktree.yml down
+
+services:
+  frontend:
+    container_name: law-wt-frontend
+    ports:
+      - "28081:80"
+
+  backend:
+    container_name: law-wt-backend
+    ports:
+      - "28000:8000"
+
+  chat-service:
+    container_name: law-wt-chat-service
+
+  email-service:
+    container_name: law-wt-email-service
+
+  worker:
+    container_name: law-wt-worker
+
+  beat:
+    container_name: law-wt-beat
+
+  security-scheduler:
+    container_name: law-wt-security-scheduler
+
+  e2e:
+    container_name: law-wt-e2e
+
+  db:
+    container_name: law-wt-db
+    ports:
+      - "25433:5432"
+    volumes:
+      - pgdata_wt:/var/lib/postgresql/data
+
+  redis:
+    container_name: law-wt-redis
+    ports:
+      - "26379:6379"
+
+  minio:
+    container_name: law-wt-minio
+    ports:
+      - "29000:9000"
+      - "29001:9001"
+    volumes:
+      - miniodata_wt:/data
+
+  clamav:
+    container_name: law-wt-clamav
+    image: mkodockx/docker-clamav:alpine
+
+volumes:
+  pgdata_wt:
+  miniodata_wt:

@@ -809,16 +809,16 @@
       var target = parseInt(el.getAttribute("data-count"), 10);
       var suffix = el.getAttribute("data-count-suffix") || "";
       if (isNaN(target)) return;
-      var duration = 1600;
+      var duration = 1400;
       var start = null;
       el.classList.add("counting");
 
       function step(ts) {
         if (!start) start = ts;
         var progress = Math.min((ts - start) / duration, 1);
-        // easeOutExpo
-        var eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-        var current = Math.floor(eased * target);
+        // easeOutCubic — равномерное замедление без резкого рывка в начале
+        var eased = 1 - Math.pow(1 - progress, 3);
+        var current = Math.round(eased * target);
         el.textContent = current + suffix;
         if (progress < 1) {
           requestAnimationFrame(step);

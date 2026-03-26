@@ -32,7 +32,7 @@
         <a href="#expert">Эксперт</a>
         <a href="#team">Команда</a>
         <button class="btn btn-ghost" type="button" data-open-access>Мои заявки</button>
-        <button class="btn btn-ghost" type="button" data-open-modal>Оставить заявку</button>
+        <button class="btn btn-primary" type="button" data-open-modal>Оставить заявку</button>
       </nav>
     </div>
   </header>
@@ -47,34 +47,38 @@
         </p>
         <div class="hero-actions">
           <button class="btn btn-primary" type="button" data-open-modal>Записаться на консультацию</button>
-          <button class="btn btn-ghost" type="button" data-open-access>Работа с заявкой</button>
-          <a class="btn btn-ghost" href="#practices">Смотреть практики</a>
+          <button class="btn btn-ghost" type="button" data-open-access>Войти в кабинет</button>
         </div>
+        <a class="hero-scroll-hint" href="#practices">Компетенции компании ↓</a>
       </div>
       <aside class="panel">
         <small>Первая консультация</small>
         <strong>Анализ вашей ситуации проводит онлайн лично директор компании.</strong>
         <p class="subtitle">После отправки заявки вы получите предложение по дате и времени онлайн-встречи.</p>
-        <div class="stats">
-          <div class="stat">
-            <b data-count="28" data-count-suffix=" лет">28 лет</b>
-            <span>практики в профессии</span>
-          </div>
-          <div class="stat">
-            <b data-count="10" data-count-suffix="+ лет">10+ лет</b>
-            <span>стаж экспертов направлений</span>
-          </div>
-          <div class="stat">
-            <b data-count="29" data-count-suffix=" млрд ₽">29 млрд ₽</b>
-            <span>объем восстановленных прав</span>
-          </div>
-        </div>
+        <button class="btn btn-primary panel-cta" type="button" data-open-modal>Записаться на консультацию</button>
         <div class="consultation-quote" aria-live="polite">
           <p id="quote-text">Загрузка данных...</p>
           <div class="quote-meta" id="quote-meta"></div>
         </div>
       </aside>
     </section>
+
+    <div class="stats-band reveal">
+      <div class="stats-band-item">
+        <b data-count="28" data-count-suffix=" лет">28 лет</b>
+        <span>практики в профессии</span>
+      </div>
+      <div class="stats-band-sep" aria-hidden="true"></div>
+      <div class="stats-band-item">
+        <b data-count="10" data-count-suffix="+ лет">10+ лет</b>
+        <span>стаж экспертов направлений</span>
+      </div>
+      <div class="stats-band-sep" aria-hidden="true"></div>
+      <div class="stats-band-item">
+        <b data-count="29" data-count-suffix=" млрд ₽">29 млрд ₽</b>
+        <span>объем восстановленных прав</span>
+      </div>
+    </div>
 
     <div class="trust-strip reveal">
       <span>ВШЭ</span>
@@ -170,17 +174,32 @@
         </div>
       </div>
       <article class="expert reveal">
-        <strong>Направления деятельности: юридический консалтинг и судебное сопровождение</strong>
-        <p>
-          Защита права собственности и корпоративных прав, налоговые и бюджетные споры, сложные переговорные процессы,
-          оценка бизнес-рисков и активов, медиация и досудебное урегулирование конфликтов.
-          Преподавательская практика: ВШЭ, РАНХиГС, ЯрГУ им. Демидова и профильные программы МВА.
-        </p>
-        <div class="tags">
-          <span class="tag">Слияния и поглощения</span>
-          <span class="tag">Судебная стратегия</span>
-          <span class="tag">Корпоративная безопасность</span>
-          <span class="tag">Медиация</span>
+        <div class="expert-photo-col">
+          <div class="expert-avatar" aria-hidden="true">
+            <svg viewBox="0 0 60 60" fill="none">
+              <circle cx="30" cy="22" r="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M8 52c0-12.15 9.85-22 22-22s22 9.85 22 22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="expert-creds">
+            <span class="expert-cred-item">к.ю.н.</span>
+            <span class="expert-cred-item">Медиатор</span>
+            <span class="expert-cred-item">Третейский судья</span>
+          </div>
+        </div>
+        <div class="expert-content">
+          <strong>Направления деятельности: юридический консалтинг и судебное сопровождение</strong>
+          <p>
+            Защита права собственности и корпоративных прав, налоговые и бюджетные споры, сложные переговорные процессы,
+            оценка бизнес-рисков и активов, медиация и досудебное урегулирование конфликтов.
+            Преподавательская практика: ВШЭ, РАНХиГС, ЯрГУ им. Демидова и профильные программы МВА.
+          </p>
+          <div class="tags">
+            <span class="tag">Слияния и поглощения</span>
+            <span class="tag">Судебная стратегия</span>
+            <span class="tag">Корпоративная безопасность</span>
+            <span class="tag">Медиация</span>
+          </div>
         </div>
       </article>
     </section>
@@ -206,8 +225,36 @@
     </section>
   </main>
 
-  <footer>
-    ООО «Аудиторы корпоративной безопасности» • Юридический консалтинг и судебное сопровождение
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div class="footer-col">
+        <div class="footer-brand">
+          <img class="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24">
+          <span>АКБ</span>
+        </div>
+        <p class="footer-desc">Юридический консалтинг и судебное сопровождение для бизнеса.</p>
+        <p class="footer-legal">ООО «Аудиторы корпоративной безопасности»</p>
+      </div>
+      <div class="footer-col">
+        <p class="footer-col-title">Навигация</p>
+        <nav class="footer-nav">
+          <a href="#practices">Компетенции</a>
+          <a href="#approach">Подход</a>
+          <a href="#expert">Эксперт</a>
+          <a href="#team">Команда</a>
+          <a href="/privacy.html">Политика ПДн</a>
+        </nav>
+      </div>
+      <div class="footer-col">
+        <p class="footer-col-title">Начать работу</p>
+        <button class="btn btn-primary footer-cta" type="button" data-open-modal>Оставить заявку</button>
+        <button class="btn btn-ghost footer-cta" type="button" data-open-access>Войти в кабинет</button>
+      </div>
+    </div>
+    <div class="wrap footer-bottom">
+      <span>© 2025 ООО «Аудиторы корпоративной безопасности»</span>
+      <a href="/privacy.html">Политика обработки персональных данных</a>
+    </div>
   </footer>
 
   <div class="modal-backdrop" id="request-modal" aria-hidden="true">
