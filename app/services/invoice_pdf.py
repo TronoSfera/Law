@@ -7,6 +7,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+
 REPORTLAB_AVAILABLE = True
 try:
     from reportlab.lib import colors

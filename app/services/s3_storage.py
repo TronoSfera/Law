@@ -77,7 +77,7 @@ class S3Storage:
         self.ensure_bucket()
         url = self.client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": self.bucket, "Key": key, "ContentType": mime_type},
+            Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expires_sec,
             HttpMethod="PUT",
         )
