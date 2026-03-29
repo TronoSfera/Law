@@ -979,5 +979,11 @@ class UploadsS3Tests(unittest.TestCase):
         self.assertTrue(second.startswith("/s3/"))
         self.assertEqual(fake_client.head_bucket_calls, 1)
         self.assertEqual(fake_client.create_bucket_calls, 0)
-        self.assertEqual(fake_client.presign_params[0], {"Bucket": settings.S3_BUCKET, "Key": "avatars/test-user/photo.png"})
-        self.assertEqual(fake_client.presign_params[1], {"Bucket": settings.S3_BUCKET, "Key": "avatars/test-user/photo-2.png"})
+        self.assertEqual(
+            fake_client.presign_params[0],
+            {"Bucket": settings.S3_BUCKET, "Key": "avatars/test-user/photo.png", "ContentType": "image/png"},
+        )
+        self.assertEqual(
+            fake_client.presign_params[1],
+            {"Bucket": settings.S3_BUCKET, "Key": "avatars/test-user/photo-2.png", "ContentType": "image/png"},
+        )
