@@ -2555,7 +2555,10 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
             body: file,
           });
           if (!putResp.ok) {
-            throw new Error("Не удалось загрузить файл в хранилище");
+            const errorText = (await putResp.text()).trim();
+            throw new Error(
+              `Не удалось загрузить файл в хранилище (${putResp.status}${errorText ? `: ${errorText.slice(0, 200)}` : ""})`
+            );
           }
           const done = await api("/api/admin/uploads/complete", {
             method: "POST",
