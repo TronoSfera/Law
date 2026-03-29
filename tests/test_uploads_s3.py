@@ -954,6 +954,7 @@ class UploadsS3Tests(unittest.TestCase):
             def __init__(self):
                 self.head_bucket_calls = 0
                 self.create_bucket_calls = 0
+                self.presign_params = []
 
             def head_bucket(self, **kwargs):
                 self.head_bucket_calls += 1
@@ -964,6 +965,7 @@ class UploadsS3Tests(unittest.TestCase):
                 return {}
 
             def generate_presigned_url(self, operation_name, Params=None, ExpiresIn=900, HttpMethod="PUT"):
+                self.presign_params.append(dict(Params or {}))
                 key = str((Params or {}).get("Key") or "file.bin")
                 return f"https://s3.local/{settings.S3_BUCKET}/{key}?expires={ExpiresIn}"
 
@@ -977,3 +979,5 @@ class UploadsS3Tests(unittest.TestCase):
         self.assertTrue(second.startswith("/s3/"))
         self.assertEqual(fake_client.head_bucket_calls, 1)
         self.assertEqual(fake_client.create_bucket_calls, 0)
+        self.assertEqual(fake_client.presign_params[0], {"Bucket": settings.S3_BUCKET, "Key": "avatars/test-user/photo.png"})
+        self.assertEqual(fake_client.presign_params[1], {"Bucket": settings.S3_BUCKET, "Key": "avatars/test-user/photo-2.png"})
