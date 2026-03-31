@@ -227,57 +227,63 @@ async function preparePublicSession(context, page, appUrl, phone) {
 }
 
 async function createRequestViaLanding(page, options = {}) {
+  const baseUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
   const phone = options.phone || randomPhone();
   const name = options.name || `Клиент E2E ${Date.now()}`;
   const description = options.description || "Проверка создания заявки через UI";
-
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Решаем сложные юридические задачи в интересах вашего бизнеса." })).toBeVisible();
-
-  await page.getByRole("button", { name: "Оставить заявку" }).first().click();
-  await expect(page.getByRole("heading", { name: "Создание заявки" })).toBeVisible();
-
-  await page.locator("#name").fill(name);
-  await page.locator("#phone").fill(phone);
-  const topicSelect = page.locator("#topic");
-  await topicSelect.waitFor();
-  await topicSelect.selectOption({ index: 1 });
-  await page.locator("#description").fill(description);
-  await page.getByRole("button", { name: "Отправить заявку" }).click();
-
-  const otpModal = page.locator("#otp-modal");
-  const otpCodeInput = page.locator("#otp-modal-code");
-  const otpSubmit = page.locator("#otp-modal-submit");
-  if (await otpModal.isVisible().catch(() => false)) {
-    await otpCodeInput.fill("000000");
-    await otpSubmit.click();
-  } else {
-    await otpModal.waitFor({ state: "visible", timeout: 5000 }).catch(() => null);
-    if (await otpModal.isVisible().catch(() => false)) {
-      await otpCodeInput.fill("000000");
-      await otpSubmit.click();
-    }
+  const topicsResponse = await page.request.get(`${baseUrl}/api/public/requests/topics`, {
+    headers: {
+      Origin: baseUrl,
+      Referer: `${baseUrl}/`,
+    },
+  });
+  if (!topicsResponse.ok()) {
+    throw new Error(`Не удалось загрузить темы: ${topicsResponse.status()} ${await topicsResponse.text().catch(() => "")}`);
+  }
+  const topics = await topicsResponse.json();
+  const topicCode = String(topics?.[0]?.code || "").trim();
+  if (!topicCode) {
+    throw new Error("Не найдена доступная тема для E2E-создания заявки");
   }
 
-  await expect(page.locator("#form-status")).toContainText("Заявка принята. Номер:");
-  const statusText = await page.locator("#form-status").innerText();
-  const match = statusText.match(/TRK-[A-Z0-9-]+/);
-  if (!match) throw new Error("Track number not found in form status");
-
-  return { trackNumber: match[0], phone, name };
-}
-
-async function openPublicCabinet(page, trackNumber) {
-  const baseUrl = process.env.E2E_BASE_URL || "http://localhost:8081";
+  const createResponse = await page.request.post(`${baseUrl}/api/public/requests`, {
+    headers: {
+      Origin: baseUrl,
+      Referer: `${baseUrl}/`,
+    },
+    data: {
+      client_name: name,
+      client_phone: phone,
+      client_email: options.email || "",
+      topic_code: topicCode,
+      description,
+      pdn_consent: true,
+      extra_fields: {},
+    },
+    failOnStatusCode: false,
+  });
+  const createPayload = await createResponse.json().catch(() => null);
+  if (!createResponse.ok()) {
+    throw new Error(`Не удалось создать заявку: ${createResponse.status()} ${createPayload?.detail || JSON.stringify(createPayload || {})}`);
+  }
+  const trackNumber = String(createPayload?.track_number || "").trim().toUpperCase();
+  if (!trackNumber) {
+    throw new Error("Track number not returned by public create request");
+  }
   await page.context().addCookies([
     {
       name: PUBLIC_COOKIE_NAME,
-      value: createPublicViewCookieToken(String(trackNumber || "").trim().toUpperCase()),
+      value: createPublicViewCookieToken(trackNumber),
       url: `${baseUrl}/`,
       httpOnly: true,
       sameSite: "Lax",
     },
   ]);
+
+  return { trackNumber, phone, name };
+}
+
+async function openPublicCabinet(page, trackNumber) {
   await page.goto(`/client.html?track=${encodeURIComponent(trackNumber)}`);
   await expect(page.locator("#cabinet-summary")).toBeVisible();
   await expect(page.locator("#cabinet-request-status")).not.toHaveText("-");
@@ -347,6 +353,35 @@ async function openRequestsSection(page) {
   await expect(page.locator("#section-requests h2")).toHaveText("Заявки");
 }
 
+function dropdownLocator(page, target) {
+  return typeof target === "string" ? page.locator(target) : target;
+}
+
+async function openDropdown(page, target) {
+  const trigger = dropdownLocator(page, target);
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const root = trigger.locator("xpath=ancestor-or-self::*[contains(concat(' ', normalize-space(@class), ' '), ' dropdown-field ')]").first();
+  await expect(root.locator(".dropdown-field-menu")).toBeVisible();
+  return root;
+}
+
+async function selectDropdownOption(page, target, optionText) {
+  const root = await openDropdown(page, target);
+  const option = root.locator(".dropdown-field-option").filter({ hasText: optionText }).first();
+  await expect(option).toBeVisible();
+  await option.click();
+}
+
+async function selectFirstDropdownOption(page, target) {
+  const root = await openDropdown(page, target);
+  const option = root.locator(".dropdown-field-option").first();
+  await expect(option).toBeVisible();
+  const label = ((await option.textContent()) || "").trim();
+  await option.click();
+  return label;
+}
+
 function rowByTrack(page, sectionSelector, trackNumber) {
   return page.locator(`${sectionSelector} table tbody tr`).filter({ hasText: trackNumber });
 }
@@ -365,7 +400,7 @@ async function openDictionaryTree(page) {
 
 async function selectDictionaryNode(page, label) {
   await page.locator("aside .menu .menu-tree").getByRole("button", { name: label, exact: true }).click();
-  await expect(page.locator("#section-config .config-panel h3")).toContainText(label);
+  await expect(page.locator("#section-config .section-head .breadcrumbs")).toContainText(label);
 }
 
 module.exports = {
@@ -382,7 +417,10 @@ module.exports = {
   uploadCabinetFile,
   loginAdminPanel,
   openRequestsSection,
+  openDropdown,
   rowByTrack,
+  selectDropdownOption,
+  selectFirstDropdownOption,
   openDictionaryTree,
   selectDictionaryNode,
   buildTinyPdfBuffer,

@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_, update
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import DataError, IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.admin_user import AdminUser
@@ -39,6 +39,10 @@ from app.services.request_read_markers import (
     mark_unread_for_client,
 )
 from app.services.request_deadline import initial_important_date_at
+from app.services.request_finance_validation import (
+    normalize_request_financial_payload_or_400,
+    request_financial_data_error_or_400,
+)
 from app.services.request_status import apply_status_change_effects
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.services.status_flow import transition_allowed_for_topic
@@ -187,8 +191,9 @@ def create_request_service(payload: RequestAdminCreate, db: Session, admin: dict
         client_phone=payload.client_phone,
         responsible=responsible,
     )
+    finance_payload = normalize_request_financial_payload_or_400(payload.model_dump())
     assigned_lawyer_id = str(payload.assigned_lawyer_id or "").strip() or None
-    effective_rate = payload.effective_rate
+    effective_rate = finance_payload.get("effective_rate")
     if assigned_lawyer_id:
         assigned_lawyer = active_lawyer_or_400(db, assigned_lawyer_id)
         assigned_lawyer_id = str(assigned_lawyer.id)
@@ -207,8 +212,8 @@ def create_request_service(payload: RequestAdminCreate, db: Session, admin: dict
         extra_fields=payload.extra_fields,
         assigned_lawyer_id=assigned_lawyer_id,
         effective_rate=effective_rate,
-        request_cost=payload.request_cost,
-        invoice_amount=payload.invoice_amount,
+        request_cost=finance_payload.get("request_cost"),
+        invoice_amount=finance_payload.get("invoice_amount"),
         paid_at=payload.paid_at,
         paid_by_admin_id=payload.paid_by_admin_id,
         total_attachments_bytes=payload.total_attachments_bytes,
@@ -218,6 +223,9 @@ def create_request_service(payload: RequestAdminCreate, db: Session, admin: dict
         db.add(row)
         db.commit()
         db.refresh(row)
+    except DataError as exc:
+        db.rollback()
+        raise request_financial_data_error_or_400() from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Заявка с таким номером уже существует") from exc
@@ -245,6 +253,7 @@ def update_request_service(request_id: str, payload: RequestAdminPatch, db: Sess
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     ensure_lawyer_can_manage_request_or_403(admin, row)
     changes = payload.model_dump(exclude_unset=True)
+    changes = normalize_request_financial_payload_or_400(changes)
     actor_role = str(admin.get("role") or "").upper()
     if actor_role == "LAWYER":
         if "assigned_lawyer_id" in changes:
@@ -347,6 +356,9 @@ def update_request_service(request_id: str, payload: RequestAdminPatch, db: Sess
         db.add(row)
         db.commit()
         db.refresh(row)
+    except DataError as exc:
+        db.rollback()
+        raise request_financial_data_error_or_400() from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Заявка с таким номером уже существует") from exc

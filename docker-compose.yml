@@ -12,6 +12,8 @@ services:
         condition: service_healthy
       email-service:
         condition: service_healthy
+      minio:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/health >/dev/null 2>&1 && wget -q -O - http://127.0.0.1/chat-health >/dev/null 2>&1 && wget -q -O - http://127.0.0.1/email-health >/dev/null 2>&1"]
       interval: 20s
@@ -35,6 +37,7 @@ services:
     environment:
       NODE_PATH: /opt/e2e/node_modules
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      E2E_BASE_URL: http://frontend
 
   backend:
     build: .

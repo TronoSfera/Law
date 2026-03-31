@@ -18,8 +18,8 @@ services:
 
   minio:
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${LOCAL_MINIO_API_PORT:-19100}:9000"
+      - "${LOCAL_MINIO_CONSOLE_PORT:-19101}:9001"
 
   # Local/dev: use multi-arch image (works on Apple Silicon/ARM64).
   clamav:

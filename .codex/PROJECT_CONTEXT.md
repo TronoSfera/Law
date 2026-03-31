@@ -20,6 +20,7 @@
 
 ### Frontend Areas
 - `app/web/admin/`: admin/lawyer UI source modules.
+- `app/web/admin/shared/`: shared admin UI primitives and helpers, including custom dropdowns used instead of native `select` in key admin flows.
 - `app/web/client.jsx`: client cabinet entry.
 - `app/web/admin.js`, `app/web/client.js`: built bundles.
 

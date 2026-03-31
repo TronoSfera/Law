@@ -10,6 +10,7 @@ import {
   invoiceStatusLabel,
   statusLabel,
 } from "../../shared/utils.js";
+import { DropdownField } from "../../shared/DropdownField.jsx";
 
 export function RequestWorkspace({
   viewerRole,
@@ -2123,26 +2124,27 @@ export function RequestWorkspace({
             <div className="request-status-change-grid">
               <div className="field">
                 <label htmlFor="status-change-next-status">Новый статус</label>
-                <select
+                <DropdownField
                   id="status-change-next-status"
                   value={statusChangeModal.statusCode}
-                  onChange={(event) => setStatusChangeModal((prev) => ({ ...prev, statusCode: event.target.value, error: "" }))}
+                  onChange={(nextValue) => setStatusChangeModal((prev) => ({ ...prev, statusCode: nextValue, error: "" }))}
                   disabled={statusChangeModal.saving || loading}
-                >
-                  <option value="">Выберите статус</option>
-                  {statusOptions
-                    .filter((item) => item.code !== String(row?.status_code || "").trim())
-                    .filter((item) =>
-                      Array.isArray(statusChangeModal.allowedStatusCodes) && statusChangeModal.allowedStatusCodes.length
-                        ? statusChangeModal.allowedStatusCodes.includes(item.code)
-                        : true
-                    )
-                    .map((item) => (
-                      <option key={item.code} value={item.code}>
-                        {item.name + (item.groupName ? " • " + item.groupName : "")}
-                      </option>
-                    ))}
-                </select>
+                  options={[
+                    { value: "", label: "Выберите статус" },
+                    ...statusOptions
+                      .filter((item) => item.code !== String(row?.status_code || "").trim())
+                      .filter((item) =>
+                        Array.isArray(statusChangeModal.allowedStatusCodes) && statusChangeModal.allowedStatusCodes.length
+                          ? statusChangeModal.allowedStatusCodes.includes(item.code)
+                          : true
+                      )
+                      .map((item) => ({
+                        value: item.code,
+                        label: item.name + (item.groupName ? " • " + item.groupName : ""),
+                      })),
+                  ]}
+                  placeholder="Выберите статус"
+                />
               </div>
               <div className="field">
                 <label htmlFor="status-change-important-date">Важная дата (дедлайн)</label>
@@ -2267,43 +2269,61 @@ export function RequestWorkspace({
                 {row?.track_number ? "Заявка " + String(row.track_number) : "Данные по заявке"}
               </p>
             </div>
-            <button className="close" type="button" onClick={closeFinanceModal} aria-label="Закрыть">
-              ×
-            </button>
+            <div className="modal-head-actions">
+              {typeof onIssueInvoice === "function" ? (
+                !financeIssueForm.open ? (
+                  <button
+                    type="button"
+                    className="btn secondary btn-sm"
+                    onClick={openFinanceIssueForm}
+                    disabled={loading || !row}
+                  >
+                    Выставить счет
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn secondary btn-sm"
+                    onClick={closeFinanceIssueForm}
+                    disabled={financeIssueForm.saving}
+                  >
+                    Скрыть форму
+                  </button>
+                )
+              ) : null}
+              <button className="close" type="button" onClick={closeFinanceModal} aria-label="Закрыть">
+                ×
+              </button>
+            </div>
           </div>
-          <div className="request-card-grid request-finance-grid">
-            <div className="request-field">
-              <span className="request-field-label">Стоимость</span>
-              <span className="request-field-value">{fmtAmount(finance?.request_cost ?? row?.request_cost)}</span>
-            </div>
-            <div className="request-field">
-              <span className="request-field-label">Оплачено</span>
-              <span className="request-field-value">{fmtAmount(finance?.paid_total)}</span>
-            </div>
-            <div className="request-field">
-              <span className="request-field-label">Дата оплаты</span>
-              <span className="request-field-value">{fmtShortDateTime(finance?.last_paid_at ?? row?.paid_at)}</span>
-            </div>
-            {canSeeRate ? (
-              <div className="request-field">
-                <span className="request-field-label">Ставка</span>
-                <span className="request-field-value">{fmtAmount(finance?.effective_rate ?? row?.effective_rate)}</span>
+          <div className="request-finance-layout">
+            <div className="request-finance-summary">
+              <div className="request-finance-summary-card accent">
+                <span className="request-field-label">Стоимость</span>
+                <span className="request-finance-summary-value">{fmtAmount(finance?.request_cost ?? row?.request_cost)}</span>
               </div>
-            ) : null}
-          </div>
-          {typeof onIssueInvoice === "function" ? (
-            <div className="request-finance-actions">
-              {!financeIssueForm.open ? (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={openFinanceIssueForm}
-                  disabled={loading || !row}
-                >
-                  Выставить счет
-                </button>
-              ) : (
+              <div className="request-finance-summary-card">
+                <span className="request-field-label">Оплачено</span>
+                <span className="request-finance-summary-value">{fmtAmount(finance?.paid_total)}</span>
+              </div>
+              <div className="request-finance-summary-card">
+                <span className="request-field-label">Дата оплаты</span>
+                <span className="request-finance-summary-value">{fmtShortDateTime(finance?.last_paid_at ?? row?.paid_at)}</span>
+              </div>
+              {canSeeRate ? (
+                <div className="request-finance-summary-card">
+                  <span className="request-field-label">Ставка</span>
+                  <span className="request-finance-summary-value">{fmtAmount(finance?.effective_rate ?? row?.effective_rate)}</span>
+                </div>
+              ) : null}
+            </div>
+            {typeof onIssueInvoice === "function" && financeIssueForm.open ? (
+              <div className="request-finance-actions">
                 <form className="stack request-finance-issue-form" onSubmit={submitFinanceIssueForm}>
+                  <div className="request-finance-issue-head">
+                    <h4>Новый счет</h4>
+                    <span className="muted">Заполните сумму и реквизиты плательщика</span>
+                  </div>
                   <div className="request-finance-issue-grid">
                     <div className="field">
                       <label htmlFor="request-finance-invoice-amount">Сумма</label>
@@ -2355,9 +2375,9 @@ export function RequestWorkspace({
                     </button>
                   </div>
                 </form>
-              )}
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+          </div>
           <div className="request-finance-invoices">
             <div className="request-finance-invoices-head">
               <h4>Счета</h4>
@@ -2428,33 +2448,53 @@ export function RequestWorkspace({
                 {row?.description ? String(row.description) : "Описание не заполнено"}
               </div>
             </div>
-            <div className="request-description-modal-meta-wrap">
-              <div className="request-description-modal-meta">
-                <div className="request-description-meta-item">
-                  <span className="request-field-label">Клиент</span>
-                  <span
-                    className={"request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : "")}
-                    data-tooltip={clientHasPhone ? clientPhone : undefined}
-                  >
-                    {clientLabel}
-                  </span>
+            <div className="request-description-modal-side">
+              <div className="request-description-modal-meta-wrap">
+                <div className="request-description-modal-meta">
+                  <div className="request-description-meta-item">
+                    <span className="request-field-label">Клиент</span>
+                    <span
+                      className={"request-field-value" + (clientHasPhone ? " has-tooltip request-contact-value" : "")}
+                      data-tooltip={clientHasPhone ? clientPhone : undefined}
+                    >
+                      {clientLabel}
+                    </span>
+                  </div>
+                  <div className="request-description-meta-item">
+                    <span className="request-field-label">Юрист</span>
+                    <span
+                      className={"request-field-value" + (lawyerHasPhone ? " has-tooltip request-contact-value" : "")}
+                      data-tooltip={lawyerHasPhone ? lawyerPhone : undefined}
+                    >
+                      {lawyerLabel}
+                    </span>
+                  </div>
+                  <div className="request-description-meta-item">
+                    <span className="request-field-label">Создана</span>
+                    <span className="request-field-value">{fmtShortDateTime(row?.created_at)}</span>
+                  </div>
+                  <div className="request-description-meta-item">
+                    <span className="request-field-label">Изменена</span>
+                    <span className="request-field-value">{fmtShortDateTime(row?.updated_at)}</span>
+                  </div>
                 </div>
-                <div className="request-description-meta-item align-right">
-                  <span className="request-field-label">Юрист</span>
-                  <span
-                    className={"request-field-value" + (lawyerHasPhone ? " has-tooltip request-contact-value" : "")}
-                    data-tooltip={lawyerHasPhone ? lawyerPhone : undefined}
-                  >
-                    {lawyerLabel}
-                  </span>
+              </div>
+              <div className="request-description-modal-facts">
+                <div className="request-description-fact-card">
+                  <span className="request-field-label">Номер заявки</span>
+                  <span className="request-field-value">{row?.track_number ? String(row.track_number) : "—"}</span>
                 </div>
-                <div className="request-description-meta-item">
-                  <span className="request-field-label">Создана</span>
-                  <span className="request-field-value">{fmtShortDateTime(row?.created_at)}</span>
+                <div className="request-description-fact-card">
+                  <span className="request-field-label">Тема</span>
+                  <span className="request-field-value">{String(row?.topic_name || row?.topic_code || "Не указана")}</span>
                 </div>
-                <div className="request-description-meta-item align-right">
-                  <span className="request-field-label">Изменена</span>
-                  <span className="request-field-value">{fmtShortDateTime(row?.updated_at)}</span>
+                <div className="request-description-fact-card">
+                  <span className="request-field-label">Статус</span>
+                  <span className="request-field-value">{currentStatusName}</span>
+                </div>
+                <div className="request-description-fact-card">
+                  <span className="request-field-label">Важная дата</span>
+                  <span className="request-field-value">{fmtShortDateTime(row?.important_date_at)}</span>
                 </div>
               </div>
             </div>
@@ -2723,22 +2763,18 @@ export function RequestWorkspace({
                     </div>
                     <div className="field">
                       <label>Тип</label>
-                      <select
+                      <DropdownField
                         value={rowItem.field_type || "string"}
-                        onChange={(event) => updateDataRequestRow(rowItem.localId, { field_type: event.target.value })}
+                        onChange={(nextValue) => updateDataRequestRow(rowItem.localId, { field_type: nextValue })}
                         disabled={
                           dataRequestModal.loading ||
                           dataRequestModal.saving ||
                           dataRequestModal.savingTemplate ||
                           (viewerRoleCode === "LAWYER" && rowItem?.is_filled)
                         }
-                      >
-                        {requestDataTypeOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                        options={requestDataTypeOptions.map((option) => ({ value: option.value, label: option.label }))}
+                        placeholder="Выберите тип"
+                      />
                     </div>
                     <div className="request-data-row-controls">
                       <button

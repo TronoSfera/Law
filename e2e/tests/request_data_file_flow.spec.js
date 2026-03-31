@@ -10,6 +10,7 @@ const {
   trackCleanupPhone,
   trackCleanupTrack,
   cleanupTrackedTestData,
+  selectDropdownOption,
 } = require("./helpers");
 
 const LAWYER_EMAIL = process.env.E2E_LAWYER_EMAIL || "ivan@mail.ru";
@@ -33,7 +34,7 @@ test("request data file field flow via UI: lawyer requests file -> client upload
   trackCleanupTrack(testInfo, trackNumber);
 
   await loginAdminPanel(page, { email: LAWYER_EMAIL, password: LAWYER_PASSWORD });
-  await expect(page.locator("aside .auth-box")).toContainText("Роль: Юрист");
+  await expect(page.locator("#section-dashboard")).toContainText("Моя загрузка");
   await openRequestsSection(page);
 
   const row = rowByTrack(page, "#section-requests", trackNumber);
@@ -53,10 +54,11 @@ test("request data file field flow via UI: lawyer requests file -> client upload
   const catalogFieldInput = page.locator("#request-data-template-select");
   const fileFieldLabel = `Файл для проверки E2E ${Date.now()}`;
 
-  await catalogFieldInput.fill(fileFieldLabel);
+  await catalogFieldInput.click();
+  await catalogFieldInput.pressSequentially(fileFieldLabel);
   await page.locator(".request-data-modal-grid").filter({ hasText: "Поле данных" }).getByRole("button").click();
   await expect(page.locator(".request-data-rows .request-data-row").first().locator("input").first()).toHaveValue(fileFieldLabel);
-  await page.locator(".request-data-rows .request-data-row").first().locator("select").selectOption("file");
+  await selectDropdownOption(page, page.locator(".request-data-rows .request-data-row").first().locator(".dropdown-field-trigger"), "Файл");
 
   await page.locator(".request-data-modal .modal-actions").getByRole("button", { name: "Отправить" }).click();
   const requestDataModal = page.locator(".request-data-modal");

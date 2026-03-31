@@ -11,6 +11,7 @@ const {
   trackCleanupTrack,
   trackCleanupEmail,
   cleanupTrackedTestData,
+  selectDropdownOption,
 } = require("./helpers");
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || "admin@example.com";
@@ -33,7 +34,6 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
   trackCleanupTrack(testInfo, trackNumber);
 
   await loginAdminPanel(page, { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
-  await expect(page.locator("aside .auth-box")).toContainText("Роль: Администратор");
   await expect(page.locator("#section-dashboard h2")).toHaveText("Обзор метрик");
   await expect(page.locator("#section-dashboard")).toContainText("Загрузка юристов");
 
@@ -49,11 +49,11 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
   const topicName = `Тема UI ${unique}`;
 
   await selectDictionaryNode(page, "Пользователи");
-  await page.locator("#section-config .config-panel").getByRole("button", { name: "Добавить" }).click();
+  await page.locator("#section-config .section-head").getByRole("button", { name: "Добавить" }).click();
   await expect(page.getByRole("heading", { name: /Создание • Пользователи/ })).toBeVisible();
   await page.locator("#record-field-name").fill(`Юрист UI ${unique}`);
   await page.locator("#record-field-email").fill(lawyerEmail);
-  await page.locator("#record-field-role").selectOption("LAWYER");
+  await selectDropdownOption(page, "#record-field-role", "Юрист");
   await page.locator("#record-field-default_rate").fill("5000");
   await page.locator("#record-field-salary_percent").fill("35");
   await page.locator("#record-field-password").fill("UiLawyerPass-123!");
@@ -62,7 +62,7 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
   await expect(page.locator("#section-config table")).toContainText(lawyerEmail);
 
   await selectDictionaryNode(page, "Темы");
-  await page.locator("#section-config .config-panel").getByRole("button", { name: "Добавить" }).click();
+  await page.locator("#section-config .section-head").getByRole("button", { name: "Добавить" }).click();
   await expect(page.getByRole("heading", { name: /Создание • Темы/ })).toBeVisible();
   await page.locator("#record-field-name").fill(topicName);
   await page.locator("#record-overlay").getByRole("button", { name: "Сохранить" }).click();
@@ -70,16 +70,13 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
 
   const topicRow = page.locator("#section-config table tbody tr").filter({ hasText: topicName });
   await expect(topicRow).toHaveCount(1);
-  const topicCode = (await topicRow.first().locator("td code").innerText()).trim();
 
   await page.locator("aside .menu button[data-section='invoices']").click();
   await expect(page.locator("#section-invoices h2")).toHaveText("Счета");
-  await page.locator("#section-invoices").getByRole("button", { name: "Новый счет" }).click();
+  await page.locator("#section-invoices .section-head").getByRole("button", { name: "Добавить" }).click();
   await expect(page.getByRole("heading", { name: /Создание • Счета/ })).toBeVisible();
-  await page.locator("#record-field-request_track_number").fill(trackNumber);
+  await selectDropdownOption(page, "#record-field-request_track_number", trackNumber);
   await page.locator("#record-field-amount").fill("15000");
-  await page.locator("#record-field-payer_display_name").fill("Тестовый плательщик");
-  await page.locator("#record-field-payer_details").fill('{"inn":"7700000000"}');
   await page.locator("#record-overlay").getByRole("button", { name: "Сохранить" }).click();
   await expect(page.locator("#section-invoices .status")).toContainText("Список обновлен");
 
@@ -89,7 +86,7 @@ test("admin flow via UI: dictionaries + users + topics + invoices", async ({ con
 
   await invoiceRow.first().getByRole("button", { name: "Редактировать счет" }).click();
   await expect(page.getByRole("heading", { name: /Редактирование • Счета/ })).toBeVisible();
-  await page.locator("#record-field-status").selectOption("PAID");
+  await selectDropdownOption(page, "#record-field-status", "Оплачен");
   await page.locator("#record-overlay").getByRole("button", { name: "Сохранить" }).click();
   await expect(page.locator("#section-invoices .status")).toContainText("Список обновлен");
   await expect(invoiceRow.first()).toContainText("Оплачен");

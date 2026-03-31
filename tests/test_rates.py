@@ -570,6 +570,58 @@ class RequestRatesTests(unittest.TestCase):
             self.assertEqual(client.full_name, "Новый клиент из админки")
             self.assertEqual(client.phone, "+79990000101")
 
+    def test_crud_request_rejects_too_large_request_cost_with_clear_message(self):
+        admin_headers = self._auth_headers("ADMIN", "root@example.com")
+
+        created = self.client.post(
+            "/api/admin/requests",
+            headers=admin_headers,
+            json={
+                "client_name": "Клиент",
+                "client_phone": "+79990000111",
+                "status_code": "NEW",
+                "description": "oversized request cost",
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        request_id = created.json()["id"]
+
+        response = self.client.patch(
+            f"/api/admin/crud/requests/{request_id}",
+            headers=admin_headers,
+            json={"request_cost": 1234567890123},
+        )
+
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Стоимость заявки", response.json()["detail"])
+        self.assertIn("12 цифр", response.json()["detail"])
+
+    def test_legacy_request_rejects_too_large_effective_rate_with_clear_message(self):
+        admin_headers = self._auth_headers("ADMIN", "root@example.com")
+
+        created = self.client.post(
+            "/api/admin/requests",
+            headers=admin_headers,
+            json={
+                "client_name": "Клиент",
+                "client_phone": "+79990000112",
+                "status_code": "NEW",
+                "description": "oversized rate",
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        request_id = created.json()["id"]
+
+        response = self.client.patch(
+            f"/api/admin/requests/{request_id}",
+            headers=admin_headers,
+            json={"effective_rate": 12345678901},
+        )
+
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Ставка", response.json()["detail"])
+        self.assertIn("10 цифр", response.json()["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

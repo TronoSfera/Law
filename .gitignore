@@ -12,3 +12,4 @@ celerybeat-schedule
 celerybeat-schedule.*
 deploy/tls/minio/*
 !deploy/tls/minio/.gitkeep
+.claude

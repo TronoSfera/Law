@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginAdminPanel, openDictionaryTree, cleanupTrackedTestData } = require("./helpers");
+const { loginAdminPanel, openDictionaryTree, cleanupTrackedTestData, openDropdown } = require("./helpers");
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || "admin@example.com";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || "admin123";
@@ -23,15 +23,15 @@ test("admin status designer: open transitions dictionary and prefill topic in cr
 
   const topicSelect = page.locator("#status-designer-topic");
   await expect(topicSelect).toBeVisible();
-  const optionCount = await topicSelect.locator("option").count();
-  expect(optionCount).toBeGreaterThan(1);
-
-  await topicSelect.selectOption({ index: 1 });
-  const selectedTopic = await topicSelect.inputValue();
-  expect(selectedTopic).not.toBe("");
+  const dropdownRoot = await openDropdown(page, topicSelect);
+  const realOption = dropdownRoot.locator(".dropdown-field-option").nth(1);
+  await expect(realOption).toBeVisible();
+  const selectedTopicLabel = ((await realOption.textContent()) || "").trim();
+  await realOption.click();
+  expect(selectedTopicLabel).not.toBe("");
 
   await page.getByRole("button", { name: "Добавить переход" }).click();
   await expect(page.getByRole("heading", { name: /Создание • Переходы статусов/ })).toBeVisible();
-  await expect(page.locator("#record-field-topic_code")).toHaveValue(selectedTopic);
+  await expect(page.locator("#record-field-topic_code")).toContainText(selectedTopicLabel);
   await page.locator("#record-overlay .close").click();
 });

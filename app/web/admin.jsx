@@ -32,6 +32,8 @@ import { useRequestWorkspace } from "./admin/hooks/useRequestWorkspace.js";
 import { useTableActions } from "./admin/hooks/useTableActions.js";
 import { useTableFilterActions } from "./admin/hooks/useTableFilterActions.js";
 import { useTablesState } from "./admin/hooks/useTablesState.js";
+import { DropdownField } from "./admin/shared/DropdownField.jsx";
+import { RecordModal } from "./admin/shared/RecordModal.jsx";
 import {
   avatarColor,
   boolFilterLabel,
@@ -174,6 +176,57 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           </button>
         </div>
       </div>
+    );
+  }
+
+  function SidebarNavIcon({ name }) {
+    const common = { width: 18, height: 18, "aria-hidden": "true", focusable: "false", viewBox: "0 0 24 24" };
+    if (name === "dashboard") {
+      return (
+        <svg {...common}>
+          <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h4A1.5 1.5 0 0 1 11 5.5v4A1.5 1.5 0 0 1 9.5 11h-4A1.5 1.5 0 0 1 4 9.5v-4Zm9 0A1.5 1.5 0 0 1 14.5 4h4A1.5 1.5 0 0 1 20 5.5v7A1.5 1.5 0 0 1 18.5 14h-4a1.5 1.5 0 0 1-1.5-1.5v-7Zm-9 9A1.5 1.5 0 0 1 5.5 13h4a1.5 1.5 0 0 1 1.5 1.5v4A1.5 1.5 0 0 1 9.5 20h-4A1.5 1.5 0 0 1 4 18.5v-4Zm9 3a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2h-6a1 1 0 0 1-1-1Z" fill="currentColor" />
+        </svg>
+      );
+    }
+    if (name === "kanban") {
+      return (
+        <svg {...common}>
+          <path d="M5 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm10 0h4a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 12h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2Z" fill="currentColor" />
+        </svg>
+      );
+    }
+    if (name === "requests") {
+      return (
+        <svg {...common}>
+          <path d="M6 4h9.2a2 2 0 0 1 1.41.59l2.8 2.8A2 2 0 0 1 20 8.8V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h10V6.8L15.2 5H7v3Zm0 4h10v-2H7v2Zm0 4h7v-2H7v2Z" fill="currentColor" />
+        </svg>
+      );
+    }
+    if (name === "serviceRequests") {
+      return (
+        <svg {...common}>
+          <path d="M5 4.5h14A1.5 1.5 0 0 1 20.5 6v9.5A1.5 1.5 0 0 1 19 17H9.2l-3.55 2.96A1.2 1.2 0 0 1 3.7 19V6A1.5 1.5 0 0 1 5 4.5Zm2.1 4.4a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm4.9 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm4.9 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z" fill="currentColor" />
+        </svg>
+      );
+    }
+    if (name === "invoices") {
+      return (
+        <svg {...common}>
+          <path d="M6 4h12a2 2 0 0 1 2 2v12.5a1.5 1.5 0 0 1-2.56 1.06L15 17.12l-2.44 2.44a1.5 1.5 0 0 1-2.12 0L8 17.12l-2.44 2.44A1.5 1.5 0 0 1 3 18.5V6a2 2 0 0 1 2-2Zm2.5 4.5a1 1 0 0 0 0 2h5a1 1 0 1 0 0-2h-5Zm0 4a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2h-7Z" fill="currentColor" />
+        </svg>
+      );
+    }
+    if (name === "config") {
+      return (
+        <svg {...common}>
+          <path d="M12 3.5a2 2 0 0 1 1.86 1.27l.27.68a6.9 6.9 0 0 1 1.31.54l.67-.3a2 2 0 0 1 2.43.75l.7.98a2 2 0 0 1-.18 2.5l-.48.55c.05.35.08.72.08 1.08 0 .37-.03.73-.08 1.08l.48.55a2 2 0 0 1 .18 2.5l-.7.98a2 2 0 0 1-2.43.75l-.67-.3c-.42.23-.86.4-1.31.54l-.27.68A2 2 0 0 1 12 20.5h-1.2a2 2 0 0 1-1.86-1.27l-.27-.68a6.9 6.9 0 0 1-1.31-.54l-.67.3a2 2 0 0 1-2.43-.75l-.7-.98a2 2 0 0 1 .18-2.5l.48-.55A7.7 7.7 0 0 1 4 12c0-.36.03-.73.08-1.08l-.48-.55a2 2 0 0 1-.18-2.5l.7-.98a2 2 0 0 1 2.43-.75l.67.3c.42-.23.86-.4 1.31-.54l.27-.68A2 2 0 0 1 10.8 3.5H12Zm-.6 5.2a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6Z" fill="currentColor" />
+        </svg>
+      );
+    }
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="8" fill="currentColor" />
+      </svg>
     );
   }
 
@@ -392,23 +445,23 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           <form className="stack" onSubmit={onSubmit}>
             <div className="field">
               <label htmlFor="filter-field">Поле</label>
-              <select id="filter-field" value={draft.field} onChange={onFieldChange}>
-                {fields.map((field) => (
-                  <option value={field.field} key={field.field}>
-                    {field.label}
-                  </option>
-                ))}
-              </select>
+              <DropdownField
+                id="filter-field"
+                value={draft.field}
+                onChange={(nextValue) => onFieldChange({ target: { value: nextValue } })}
+                options={fields.map((field) => ({ value: field.field, label: field.label }))}
+                placeholder="Выберите поле"
+              />
             </div>
             <div className="field">
               <label htmlFor="filter-op">Оператор</label>
-              <select id="filter-op" value={draft.op} onChange={onOpChange}>
-                {operators.map((op) => (
-                  <option value={op} key={op}>
-                    {OPERATOR_LABELS[op]}
-                  </option>
-                ))}
-              </select>
+              <DropdownField
+                id="filter-op"
+                value={draft.op}
+                onChange={(nextValue) => onOpChange({ target: { value: nextValue } })}
+                options={operators.map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
+                placeholder="Выберите оператор"
+              />
             </div>
             <div className="field">
               <label htmlFor="filter-value">{selectedField ? "Значение: " + selectedField.label : "Значение"}</label>
@@ -419,22 +472,25 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
               ) : selectedField.type === "date" ? (
                 <input id="filter-value" type="date" value={draft.rawValue} onChange={onValueChange} />
               ) : selectedField.type === "boolean" ? (
-                <select id="filter-value" value={draft.rawValue} onChange={onValueChange}>
-                  <option value="true">True</option>
-                  <option value="false">False</option>
-                </select>
+                <DropdownField
+                  id="filter-value"
+                  value={draft.rawValue}
+                  onChange={(nextValue) => onValueChange({ target: { value: nextValue } })}
+                  options={[
+                    { value: "true", label: "True" },
+                    { value: "false", label: "False" },
+                  ]}
+                  placeholder="Выберите значение"
+                />
               ) : selectedField.type === "reference" || selectedField.type === "enum" ? (
-                <select id="filter-value" value={draft.rawValue} onChange={onValueChange} disabled={!options.length}>
-                  {!options.length ? (
-                    <option value="">Нет доступных значений</option>
-                  ) : (
-                    options.map((option) => (
-                      <option value={String(option.value)} key={String(option.value)}>
-                        {option.label}
-                      </option>
-                    ))
-                  )}
-                </select>
+                <DropdownField
+                  id="filter-value"
+                  value={draft.rawValue}
+                  onChange={(nextValue) => onValueChange({ target: { value: nextValue } })}
+                  options={options.map((option) => ({ value: String(option.value), label: option.label }))}
+                  disabled={!options.length}
+                  placeholder={!options.length ? "Нет доступных значений" : "Выберите значение"}
+                />
               ) : (
                 <input id="filter-value" type="text" value={draft.rawValue} onChange={onValueChange} placeholder="Введите значение" />
               )}
@@ -476,17 +532,14 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           <form className="stack" onSubmit={onSubmit}>
             <div className="field">
               <label htmlFor="reassign-lawyer">Новый юрист</label>
-              <select id="reassign-lawyer" value={value} onChange={onChange} disabled={!options.length}>
-                {!options.length ? (
-                  <option value="">Нет доступных юристов</option>
-                ) : (
-                  options.map((option) => (
-                    <option value={String(option.value)} key={String(option.value)}>
-                      {option.label}
-                    </option>
-                  ))
-                )}
-              </select>
+              <DropdownField
+                id="reassign-lawyer"
+                value={value}
+                onChange={(nextValue) => onChange({ target: { value: nextValue } })}
+                options={options.map((option) => ({ value: String(option.value), label: option.label }))}
+                disabled={!options.length}
+                placeholder={!options.length ? "Нет доступных юристов" : "Выберите юриста"}
+              />
             </div>
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
               <button className="btn" type="submit" disabled={!value}>
@@ -522,11 +575,17 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           <form className="stack" onSubmit={onSubmit}>
             <div className="field">
               <label htmlFor="kanban-sort-mode">Тип сортировки</label>
-              <select id="kanban-sort-mode" value={value} onChange={onChange}>
-                <option value="created_newest">Дата заявки (новые сверху)</option>
-                <option value="lawyer">Юрист</option>
-                <option value="deadline">Дедлайн</option>
-              </select>
+              <DropdownField
+                id="kanban-sort-mode"
+                value={value}
+                onChange={(nextValue) => onChange({ target: { value: nextValue } })}
+                options={[
+                  { value: "created_newest", label: "Дата заявки (новые сверху)" },
+                  { value: "lawyer", label: "Юрист" },
+                  { value: "deadline", label: "Дедлайн" },
+                ]}
+                placeholder="Выберите сортировку"
+              />
             </div>
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
               <button className="btn" type="submit">
@@ -930,146 +989,6 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
   }
 
-  function RecordModal({ open, title, fields, form, status, onClose, onChange, onSubmit, onUploadField }) {
-    if (!open) return null;
-    const visibleFields = (fields || []).filter((field) => {
-      if (typeof field.visibleWhen !== "function") return true;
-      try {
-        return Boolean(field.visibleWhen(form || {}));
-      } catch (_) {
-        return true;
-      }
-    });
-
-    const renderField = (field) => {
-      const value = form[field.key] ?? "";
-      const options = typeof field.options === "function" ? field.options(form || {}) : [];
-      const id = "record-field-" + field.key;
-      const disabled = Boolean(field.readOnly) || (typeof field.readOnlyWhen === "function" ? Boolean(field.readOnlyWhen(form || {})) : false);
-
-      if (field.type === "textarea" || field.type === "json") {
-        return (
-          <textarea
-            id={id}
-            value={value}
-            onChange={(event) => onChange(field.key, event.target.value)}
-            placeholder={field.placeholder || ""}
-            required={Boolean(field.required)}
-            disabled={disabled}
-          />
-        );
-      }
-      if (field.type === "boolean") {
-        return (
-          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)} disabled={disabled}>
-            <option value="true">Да</option>
-            <option value="false">Нет</option>
-          </select>
-        );
-      }
-      if (field.type === "reference" || field.type === "enum") {
-        const extraOptions = Array.isArray(field.extraOptions) ? field.extraOptions : [];
-        const hasCurrentValue =
-          String(value || "").trim() !== "" &&
-          [...extraOptions, ...options].some((option) => String(option?.value || "") === String(value));
-        return (
-          <select id={id} value={value} onChange={(event) => onChange(field.key, event.target.value)} disabled={disabled}>
-            {field.optional ? <option value="">-</option> : null}
-            {!hasCurrentValue && String(value || "").trim() !== "" ? <option value={String(value)}>{String(value)}</option> : null}
-            {extraOptions.map((option) => (
-              <option value={String(option.value)} key={String(option.value)}>
-                {option.label}
-              </option>
-            ))}
-            {options.map((option) => (
-              <option value={String(option.value)} key={String(option.value)}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        );
-      }
-      if (field.uploadScope) {
-        return (
-          <div className="field-inline">
-            <input
-              id={id}
-              type="text"
-              value={value}
-              onChange={(event) => onChange(field.key, event.target.value)}
-              placeholder={field.placeholder || ""}
-              required={Boolean(field.required)}
-              disabled={disabled}
-            />
-            <label className="btn secondary btn-sm" style={{ whiteSpace: "nowrap", opacity: disabled ? 0.6 : 1, pointerEvents: disabled ? "none" : "auto" }}>
-              Загрузить
-              <input
-                type="file"
-                accept={field.accept || "*/*"}
-                style={{ display: "none" }}
-                onChange={(event) => {
-                  const file = event.target.files && event.target.files[0];
-                  if (file && onUploadField) onUploadField(field, file);
-                  event.target.value = "";
-                }}
-                disabled={disabled}
-              />
-            </label>
-          </div>
-        );
-      }
-      return (
-        <input
-          id={id}
-          type={field.type === "number" ? "number" : field.type === "password" ? "password" : "text"}
-          step={field.type === "number" ? "any" : undefined}
-          value={value}
-          onChange={(event) => onChange(field.key, event.target.value)}
-          placeholder={field.placeholder || ""}
-          required={Boolean(field.required)}
-          disabled={disabled}
-        />
-      );
-    };
-
-    return (
-      <Overlay open={open} id="record-overlay" onClose={(event) => event.target.id === "record-overlay" && onClose()}>
-        <div className="modal" style={{ width: "min(760px, 100%)" }} onClick={(event) => event.stopPropagation()}>
-          <div className="modal-head">
-            <div>
-              <h3>{title}</h3>
-              <p className="muted" style={{ marginTop: "0.35rem" }}>
-                Создание и редактирование записи.
-              </p>
-            </div>
-            <button className="close" type="button" onClick={onClose}>
-              ×
-            </button>
-          </div>
-          <form className="stack" onSubmit={onSubmit}>
-            <div className="filters" style={{ gridTemplateColumns: "repeat(2, minmax(0,1fr))" }}>
-              {visibleFields.map((field) => (
-                <div className="field" key={field.key} style={field.fullRow ? { gridColumn: "1 / -1" } : undefined}>
-                  <label htmlFor={"record-field-" + field.key}>{field.label}</label>
-                  {renderField(field)}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-              <button className="btn" type="submit">
-                Сохранить
-              </button>
-              <button className="btn secondary" type="button" onClick={onClose}>
-                Отмена
-              </button>
-            </div>
-            <StatusLine status={status} />
-          </form>
-        </div>
-      </Overlay>
-    );
-  }
-
   function GlobalTooltipLayer() {
     const [tooltip, setTooltip] = useState({ open: false, text: "", x: 0, y: 0, maxWidth: 320 });
     const activeRef = useRef(null);
@@ -1243,8 +1162,16 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     });
 
     const [configActiveKey, setConfigActiveKey] = useState("");
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+      try {
+        return window.localStorage.getItem("law-admin-sidebar-collapsed") === "1";
+      } catch (_) {
+        return false;
+      }
+    });
     const [referencesExpanded, setReferencesExpanded] = useState(true);
     const [statusDesignerTopicCode, setStatusDesignerTopicCode] = useState("");
+    const [menuTreeScrollbar, setMenuTreeScrollbar] = useState({ visible: false, top: 0, height: 0 });
 
     const [metaEntity, setMetaEntity] = useState("quotes");
     const [metaJson, setMetaJson] = useState("");
@@ -1266,6 +1193,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     const initialRouteHandledRef = useRef(false);
     const statusDesignerLoadedTopicRef = useRef("");
+    const menuTreeRef = useRef(null);
+    const menuTreeDragRef = useRef(null);
 
     const setStatus = useCallback((key, message, kind) => {
       setStatusMap((prev) => ({ ...prev, [key]: { message: message || "", kind: kind || "" } }));
@@ -3620,6 +3549,99 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
     }, [configActiveKey, dictionaryTableItems]);
 
+    useEffect(() => {
+      try {
+        window.localStorage.setItem("law-admin-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
+      } catch (_) {}
+    }, [sidebarCollapsed]);
+
+    const updateMenuTreeScrollbar = useCallback(() => {
+      const node = menuTreeRef.current;
+      if (!node) {
+        setMenuTreeScrollbar({ visible: false, top: 0, height: 0 });
+        return;
+      }
+      const viewport = node.clientHeight;
+      const full = node.scrollHeight;
+      if (!viewport || full <= viewport + 1) {
+        setMenuTreeScrollbar({ visible: false, top: 0, height: 0 });
+        return;
+      }
+      const trackHeight = viewport;
+      const thumbHeight = Math.max(42, Math.round((viewport / full) * trackHeight));
+      const maxScroll = Math.max(1, full - viewport);
+      const maxThumbOffset = Math.max(0, trackHeight - thumbHeight);
+      const thumbTop = Math.round((node.scrollTop / maxScroll) * maxThumbOffset);
+      setMenuTreeScrollbar({ visible: true, top: thumbTop, height: thumbHeight });
+    }, []);
+
+    useEffect(() => {
+      if (!referencesExpanded || sidebarCollapsed) {
+        setMenuTreeScrollbar({ visible: false, top: 0, height: 0 });
+        return undefined;
+      }
+      const node = menuTreeRef.current;
+      if (!node) return undefined;
+      updateMenuTreeScrollbar();
+      const handleScroll = () => updateMenuTreeScrollbar();
+      node.addEventListener("scroll", handleScroll, { passive: true });
+      let observer = null;
+      if (typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(() => updateMenuTreeScrollbar());
+        observer.observe(node);
+      }
+      window.addEventListener("resize", updateMenuTreeScrollbar);
+      return () => {
+        node.removeEventListener("scroll", handleScroll);
+        if (observer) observer.disconnect();
+        window.removeEventListener("resize", updateMenuTreeScrollbar);
+      };
+    }, [referencesExpanded, sidebarCollapsed, dictionaryTableItems.length, updateMenuTreeScrollbar]);
+
+    useEffect(() => {
+      const handlePointerMove = (event) => {
+        const drag = menuTreeDragRef.current;
+        const node = menuTreeRef.current;
+        if (!drag || !node) return;
+        event.preventDefault();
+        const delta = event.clientY - drag.startClientY;
+        const nextThumbTop = Math.min(drag.maxThumbTop, Math.max(0, drag.startThumbTop + delta));
+        const ratio = drag.maxThumbTop > 0 ? nextThumbTop / drag.maxThumbTop : 0;
+        node.scrollTop = ratio * drag.maxScrollTop;
+      };
+
+      const stopDrag = () => {
+        if (!menuTreeDragRef.current) return;
+        menuTreeDragRef.current = null;
+        document.body.classList.remove("menu-tree-scrollbar-dragging");
+      };
+
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", stopDrag);
+      window.addEventListener("pointercancel", stopDrag);
+      return () => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", stopDrag);
+        window.removeEventListener("pointercancel", stopDrag);
+      };
+    }, []);
+
+    const startMenuTreeScrollbarDrag = useCallback((event) => {
+      const node = menuTreeRef.current;
+      if (!node) return;
+      const maxScrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+      const maxThumbTop = Math.max(0, node.clientHeight - menuTreeScrollbar.height);
+      if (!maxScrollTop || !maxThumbTop) return;
+      menuTreeDragRef.current = {
+        startClientY: event.clientY,
+        startThumbTop: menuTreeScrollbar.top,
+        maxThumbTop,
+        maxScrollTop,
+      };
+      document.body.classList.add("menu-tree-scrollbar-dragging");
+      event.preventDefault();
+    }, [menuTreeScrollbar.height, menuTreeScrollbar.top]);
+
     const anyOverlayOpen =
       recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open || totpSetupModal.open || accountModal.open;
     useEffect(() => {
@@ -3641,13 +3663,33 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
       return () => document.removeEventListener("keydown", onEsc);
     }, [closeAccountModal, closeKanbanSortModal, closeTotpSetupModal]);
 
+    useEffect(() => {
+      const root = document.getElementById("admin-root");
+      if (!root) return undefined;
+      const applyInputHints = () => {
+        root.querySelectorAll("input, textarea, select").forEach((node) => {
+          const tagName = String(node.tagName || "").toLowerCase();
+          const inputType = tagName === "input" ? String(node.getAttribute("type") || "text").toLowerCase() : "";
+          node.setAttribute("autocomplete", inputType === "password" ? "new-password" : "off");
+          node.setAttribute("autocorrect", "off");
+          node.setAttribute("autocapitalize", "off");
+          node.setAttribute("spellcheck", "false");
+          node.setAttribute("data-form-type", "other");
+        });
+      };
+      applyInputHints();
+      const observer = new MutationObserver(() => applyInputHints());
+      observer.observe(root, { childList: true, subtree: true });
+      return () => observer.disconnect();
+    }, []);
+
     const menuItems = useMemo(() => {
       const baseItems = [
-        { key: "dashboard", label: "Обзор" },
-        { key: "kanban", label: "Канбан" },
-        { key: "requests", label: "Заявки" },
-        { key: "serviceRequests", label: "Запросы" },
-        { key: "invoices", label: "Счета" },
+        { key: "dashboard", label: "Обзор", icon: "dashboard" },
+        { key: "kanban", label: "Канбан", icon: "kanban" },
+        { key: "requests", label: "Заявки", icon: "requests" },
+        { key: "serviceRequests", label: "Запросы", icon: "serviceRequests" },
+        { key: "invoices", label: "Счета", icon: "invoices" },
       ];
       return baseItems.filter((item) => canAccessSection(role, item.key));
     }, [role]);
@@ -3733,13 +3775,30 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
 
     return (
       <>
-        <div className="layout">
+        <div className={"layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
           <aside className="sidebar">
-            <div className="logo">
-              <a href="/">
-                <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
-                <span>Правовой трекер</span>
-              </a>
+            <div className="sidebar-head">
+              <div className="logo">
+                <a href="/">
+                  <img className="brand-mark" src="/brand-mark.svg" alt="" width="24" height="24" />
+                  <span>Правовой трекер</span>
+                </a>
+              </div>
+              <button
+                className="icon-btn"
+                type="button"
+                data-tooltip={sidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
+                aria-label={sidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
+                onClick={() => setSidebarCollapsed((prev) => !prev)}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                  {sidebarCollapsed ? (
+                    <path d="M9.53 4.47a1 1 0 0 1 1.41 0l6.82 6.82a1 1 0 0 1 0 1.42l-6.82 6.82a1 1 0 1 1-1.41-1.42L15.64 12 9.53 5.89a1 1 0 0 1 0-1.42Zm-4 0a1 1 0 0 1 1.41 0l6.82 6.82a1 1 0 0 1 0 1.42l-6.82 6.82a1 1 0 0 1-1.41-1.42L11.64 12 5.53 5.89a1 1 0 0 1 0-1.42Z" fill="currentColor" />
+                  ) : (
+                    <path d="M14.47 4.47a1 1 0 0 1 0 1.42L8.36 12l6.11 6.11a1 1 0 0 1-1.41 1.42l-6.82-6.82a1 1 0 0 1 0-1.42l6.82-6.82a1 1 0 0 1 1.41 0Zm4 0a1 1 0 0 1 0 1.42L12.36 12l6.11 6.11a1 1 0 0 1-1.41 1.42l-6.82-6.82a1 1 0 0 1 0-1.42l6.82-6.82a1 1 0 0 1 1.41 0Z" fill="currentColor" />
+                  )}
+                </svg>
+              </button>
             </div>
             <nav className="menu">
               {menuItems.map((item) => (
@@ -3749,8 +3808,13 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                   data-section={item.key}
                   type="button"
                   onClick={() => activateSection(item.key)}
+                  title={sidebarCollapsed ? item.label : undefined}
+                  aria-label={item.label}
                 >
-                  {item.label}
+                  <span className="menu-button-content">
+                    <span className="menu-icon"><SidebarNavIcon name={item.icon} /></span>
+                    <span className="menu-label">{item.label}</span>
+                  </span>
                 </button>
               ))}
               {role === "ADMIN" ? (
@@ -3759,24 +3823,49 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
                     className={activeSection === "config" ? "active" : ""}
                     type="button"
                     onClick={() => {
-                      setReferencesExpanded((prev) => !prev);
+                      if (sidebarCollapsed) {
+                        setSidebarCollapsed(false);
+                        setReferencesExpanded(true);
+                      } else {
+                        setReferencesExpanded((prev) => !prev);
+                      }
                       activateSection("config");
                     }}
+                    title={sidebarCollapsed ? "Справочники" : undefined}
+                    aria-label="Справочники"
                   >
-                    {"Справочники " + (referencesExpanded ? "▾" : "▸")}
+                    <span className="menu-button-content">
+                      <span className="menu-icon"><SidebarNavIcon name="config" /></span>
+                      <span className="menu-label">Справочники</span>
+                      <span className="menu-caret" aria-hidden="true">{referencesExpanded ? "▾" : "▸"}</span>
+                    </span>
                   </button>
-                  {referencesExpanded ? (
-                    <div className="menu-tree">
-                      {dictionaryTableItems.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className={activeSection === "config" && configActiveKey === item.key ? "active" : ""}
-                          onClick={() => selectConfigNode(item.key)}
-                        >
-                          {getTableLabel(item.key)}
-                        </button>
-                      ))}
+                  {referencesExpanded && !sidebarCollapsed ? (
+                    <div className="menu-tree-shell">
+                      <div className="menu-tree" ref={menuTreeRef}>
+                        {dictionaryTableItems.map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            className={activeSection === "config" && configActiveKey === item.key ? "active" : ""}
+                            onClick={() => selectConfigNode(item.key)}
+                          >
+                            {getTableLabel(item.key)}
+                          </button>
+                        ))}
+                      </div>
+                      {menuTreeScrollbar.visible ? (
+                        <div className="menu-tree-scrollbar" aria-hidden="true">
+                          <div
+                            className="menu-tree-scrollbar-thumb"
+                            onPointerDown={startMenuTreeScrollbarDrag}
+                            style={{
+                              height: menuTreeScrollbar.height + "px",
+                              transform: "translateY(" + menuTreeScrollbar.top + "px)",
+                            }}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </>
@@ -4156,13 +4245,20 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         <RecordModal
           open={recordModal.open}
           title={(recordModal.mode === "edit" ? "Редактирование • " : "Создание • ") + getTableLabel(recordModal.tableKey)}
+          tableKey={recordModal.tableKey}
+          mode={recordModal.mode}
           fields={recordModalFields}
           form={recordModal.form || {}}
           status={getStatus("recordForm")}
+          accessToken={token}
           onClose={closeRecordModal}
           onChange={updateRecordField}
           onUploadField={uploadRecordFieldFile}
           onSubmit={submitRecordModal}
+          OverlayComponent={Overlay}
+          IconButtonComponent={IconButton}
+          UserAvatarComponent={UserAvatar}
+          StatusLineComponent={StatusLine}
         />
 
         <FilterModal

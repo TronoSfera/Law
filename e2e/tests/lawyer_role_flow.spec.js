@@ -13,6 +13,7 @@ const {
   trackCleanupPhone,
   trackCleanupTrack,
   cleanupTrackedTestData,
+  selectDropdownOption,
 } = require("./helpers");
 
 const LAWYER_EMAIL = process.env.E2E_LAWYER_EMAIL || "ivan@mail.ru";
@@ -41,7 +42,7 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await uploadCabinetFile(page, clientFileName, "lawyer unread marker");
 
   await loginAdminPanel(page, { email: LAWYER_EMAIL, password: LAWYER_PASSWORD });
-  await expect(page.locator("aside .auth-box")).toContainText("Роль: Юрист");
+  await expect(page.locator("#section-dashboard")).toContainText("Моя загрузка");
 
   await openRequestsSection(page);
 
@@ -106,15 +107,17 @@ test("lawyer flow via UI: claim request -> chat and files in request workspace t
   await page.locator("#section-requests").getByRole("button", { name: "Обновить" }).click();
   await expect(row.first().locator(".request-update-empty")).toContainText("нет");
 
-  await row.first().getByRole("button", { name: "Редактировать заявку" }).click();
-  await expect(page.getByRole("heading", { name: /Редактирование • Заявки/ })).toBeVisible();
-  await page.locator("#record-field-status_code").selectOption("IN_PROGRESS");
-  await page.locator("#record-overlay").getByRole("button", { name: "Сохранить" }).click();
-  await expect(page.locator("#section-requests .status")).toContainText("Список обновлен");
-  await expect(row.first()).toContainText("В работе");
+  await row.first().locator(".request-track-link").click();
+  await expect(page.getByRole("heading", { name: /Карточка заявки/ })).toBeVisible();
+  await page.getByRole("button", { name: "Сменить статус" }).click();
+  await expect(page.getByRole("heading", { name: "Смена статуса" })).toBeVisible();
+  await selectDropdownOption(page, "#status-change-next-status", "В работе");
+  await page.locator(".request-status-change-modal").getByRole("button", { name: "Отправить" }).click();
+  await expect(page.locator("#section-request-workspace .status")).toContainText(/Статус заявки обновлен|Карточка заявки загружена/);
 
   await page.goto("/");
   await openPublicCabinet(page, trackNumber);
   await expect(page.locator("#cabinet-messages")).toContainText(lawyerMessage);
+  await page.getByRole("tab", { name: /Файлы/ }).click();
   await expect(page.locator("#cabinet-files")).toContainText(lawyerFileName);
 });

@@ -1,9 +1,9 @@
 .PHONY: \
 	help \
 	local-up local-down local-logs local-migrate local-test local-seed local-seed-statuses local-seed-catalog \
-	local-reencrypt-active-kid \
+	local-reencrypt-active-kid local-s3-proxy-smoke \
 	prod-up prod-down prod-logs prod-ps prod-migrate \
-	prod-seed-statuses prod-seed-catalog \
+	prod-seed-statuses prod-seed-catalog prod-s3-proxy-smoke \
 	prod-secrets-generate prod-secrets-apply prod-secrets-generate-env prod-secrets-apply-env \
 	prod-minio-tls-init incident-checklist rotate-encryption-kid reencrypt-active-kid prod-reencrypt-active-kid \
 	security-smoke prod-security-audit prod-security-scheduler-up prod-security-scheduler-logs \
@@ -39,6 +39,7 @@ help:
 	@echo "  local-seed-statuses - Seed legal flow statuses (local)"
 	@echo "  local-seed-catalog  - Seed quotes + legal flow statuses (local)"
 	@echo "  local-reencrypt-active-kid - Re-encrypt historical chat/invoice/admin secrets using active KID (local)"
+	@echo "  local-s3-proxy-smoke - Smoke-test PUT upload path through frontend /s3 proxy (local)"
 	@echo "  prod-up           - Start production stack (nginx 80/443 + TLS certs already issued)"
 	@echo "  prod-down         - Stop production stack"
 	@echo "  prod-logs         - Tail production logs"
@@ -46,6 +47,7 @@ help:
 	@echo "  prod-migrate      - Apply migrations (prod)"
 	@echo "  prod-seed-statuses - Seed legal flow statuses (prod)"
 	@echo "  prod-seed-catalog  - Seed quotes + legal flow statuses (prod)"
+	@echo "  prod-s3-proxy-smoke - Smoke-test PUT upload path through frontend /s3 proxy (prod)"
 	@echo "  prod-secrets-generate - Generate rotated internal secrets into .env.prod"
 	@echo "  prod-secrets-apply    - Generate + apply rotated internal secrets to running prod stack"
 	@echo "  prod-secrets-generate-env - Generate rotated secrets from current .env into .env.secure"
@@ -101,10 +103,14 @@ local-seed-catalog:
 local-reencrypt-active-kid:
 	$(LOCAL_COMPOSE) exec -T backend python -m app.scripts.reencrypt_with_active_kid --apply
 
+local-s3-proxy-smoke:
+	./scripts/ops/s3_proxy_upload_smoke.sh http://localhost:8081
+
 check-prod-files:
 	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)
 	@test -f frontend/nginx.prod.conf || (echo "[ERROR] Missing frontend/nginx.prod.conf. Run: git pull"; exit 1)
 	@test -f scripts/ops/minio_tls_bootstrap.sh || (echo "[ERROR] Missing scripts/ops/minio_tls_bootstrap.sh. Run: git pull"; exit 1)
+	@test -f scripts/ops/s3_proxy_upload_smoke.sh || (echo "[ERROR] Missing scripts/ops/s3_proxy_upload_smoke.sh. Run: git pull"; exit 1)
 
 check-cert-files: check-prod-files
 	@test -f docker-compose.prod.cert.yml || (echo "[ERROR] Missing docker-compose.prod.cert.yml. Run: git pull"; exit 1)
@@ -133,6 +139,9 @@ prod-seed-statuses: check-prod-files
 prod-seed-catalog: check-prod-files
 	$(PROD_COMPOSE) exec -T backend python -m app.scripts.upsert_quotes
 	$(PROD_COMPOSE) exec -T backend python -m app.scripts.upsert_statuses_legal_flow
+
+prod-s3-proxy-smoke: check-prod-files
+	COMPOSE_OVERRIDE=docker-compose.prod.nginx.yml ./scripts/ops/s3_proxy_upload_smoke.sh https://$(SECOND_DOMAIN)
 
 prod-secrets-generate:
 	./scripts/ops/rotate_prod_secrets.sh --env-in .env.production --env-out .env.prod

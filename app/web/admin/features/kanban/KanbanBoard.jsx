@@ -1,4 +1,5 @@
 import { KANBAN_GROUPS } from "../../shared/constants.js";
+import { DropdownField } from "../../shared/DropdownField.jsx";
 import { FilterIcon, RefreshIcon } from "../../shared/icons.jsx";
 import { fallbackStatusGroup, fmtKanbanDate, resolveDeadlineTone, statusLabel } from "../../shared/utils.js";
 
@@ -212,24 +213,22 @@ export function KanbanBoard({
                             </button>
                           ) : null}
                           {canMove && transitionOptions.length ? (
-                            <select
-                              className="kanban-transition-select"
-                              defaultValue=""
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                const targetStatus = String(event.target.value || "");
-                                if (!targetStatus) return;
-                                onMoveRequest(row, "", targetStatus);
-                                event.target.value = "";
-                              }}
-                            >
-                              <option value="">Перевести…</option>
-                              {transitionOptions.map((transition) => (
-                                <option key={String(transition.to_status)} value={String(transition.to_status)}>
-                                  {String(transition.to_status_name || transition.to_status)}
-                                </option>
-                              ))}
-                            </select>
+                            <div onClick={(event) => event.stopPropagation()}>
+                              <DropdownField
+                                className="kanban-transition-select"
+                                value=""
+                                placeholder="Перевести…"
+                                onChange={(nextValue) => {
+                                  const targetStatus = String(nextValue || "");
+                                  if (!targetStatus) return;
+                                  onMoveRequest(row, "", targetStatus);
+                                }}
+                                options={transitionOptions.map((transition) => ({
+                                  value: String(transition.to_status),
+                                  label: String(transition.to_status_name || transition.to_status),
+                                }))}
+                              />
+                            </div>
                           ) : null}
                         </div>
                       </article>

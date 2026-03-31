@@ -63,6 +63,34 @@ echo $?  # 0=OK, >0=ALERT
 ./scripts/ops/perf_baseline.sh http://localhost:8081
 ```
 Отчет сохраняется в `reports/perf/perf-baseline-<timestamp>.md`. Скрипт логинится под `admin@example.com / admin123`, берет первую заявку из канбана и замеряет `kanban`, `request detail`, `chat messages/live`, `status-route`, `attachments`, `invoices`.
+11. Smoke-тест `PUT /s3/*` через frontend proxy:
+```bash
+./scripts/ops/s3_proxy_upload_smoke.sh http://localhost:8081
+COMPOSE_OVERRIDE=docker-compose.prod.nginx.yml ./scripts/ops/s3_proxy_upload_smoke.sh https://ruakb.online
+```
+Скрипт создает временный pre-signed upload для `smoke-tests/*`, выполняет `PUT` через `/s3`, сверяет размер объекта в MinIO и удаляет временный объект.
+Примечание для local: host-порты `minio` вынесены в переменные `LOCAL_MINIO_API_PORT` и `LOCAL_MINIO_CONSOLE_PORT`, default: `19100/19101`, чтобы не конфликтовать с другими проектами.
+
+## Чеклист split-деплоя upload/S3-контура
+1. Пересобрать и перезапустить только затронутые сервисы:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml up -d --build frontend backend
+```
+2. Проверить конфиг frontend nginx:
+```bash
+docker exec law-frontend sh -lc "nginx -t && nginx -T | sed -n '/location \\/s3\\//,/}/p'"
+```
+3. Выполнить smoke-тест upload proxy:
+```bash
+COMPOSE_OVERRIDE=docker-compose.prod.nginx.yml ./scripts/ops/s3_proxy_upload_smoke.sh https://ruakb.online
+```
+4. При сбое снять последние логи:
+```bash
+docker logs law-frontend --tail 50
+docker logs law-edge --tail 50
+docker logs law-backend --tail 50
+docker logs law-minio --tail 50
+```
 
 ## Матрица проверок по задачам
 | ID | Что проверяем | Где тесты | Как запускать |

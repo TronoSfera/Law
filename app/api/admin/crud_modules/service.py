@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.admin_user import AdminUser
@@ -34,6 +34,10 @@ from app.services.request_read_markers import (
     mark_unread_for_lawyer,
 )
 from app.services.request_deadline import initial_important_date_at
+from app.services.request_finance_validation import (
+    normalize_request_financial_payload_or_400,
+    request_financial_data_error_or_400,
+)
 from app.services.request_status import apply_status_change_effects
 from app.services.request_templates import validate_required_topic_fields_or_400
 from app.services.status_flow import transition_allowed_for_topic
@@ -318,6 +322,7 @@ def create_row_service(table_name: str, payload: dict[str, Any], db: Session, ad
             prepared["immutable"] = False
         prepared["request_id"] = request_uuid
     if normalized == "requests":
+        prepared = normalize_request_financial_payload_or_400(prepared)
         validate_required_topic_fields_or_400(db, prepared.get("topic_code"), prepared.get("extra_fields"))
         client = _upsert_client_or_400(
             db,
@@ -385,6 +390,9 @@ def create_row_service(table_name: str, payload: dict[str, Any], db: Session, ad
         _append_audit(db, admin, normalized, str(snapshot.get("id") or ""), "CREATE", {"after": snapshot})
         db.commit()
         db.refresh(row)
+    except DataError:
+        db.rollback()
+        raise request_financial_data_error_or_400()
     except IntegrityError:
         db.rollback()
         raise _integrity_error()
@@ -457,6 +465,7 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
     if normalized == "statuses":
         clean_payload = _apply_status_fields(db, clean_payload)
     if normalized == "requests" and isinstance(row, Request):
+        clean_payload = normalize_request_financial_payload_or_400(clean_payload)
         if {"client_name", "client_phone"}.intersection(set(clean_payload.keys())) or row.client_id is None:
             client = _upsert_client_or_400(
                 db,
@@ -579,6 +588,9 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
         _append_audit(db, admin, normalized, str(after.get("id") or row_id), "UPDATE", {"before": before, "after": after})
         db.commit()
         db.refresh(row)
+    except DataError:
+        db.rollback()
+        raise request_financial_data_error_or_400()
     except IntegrityError:
         db.rollback()
         raise _integrity_error()

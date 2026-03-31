@@ -1,4 +1,5 @@
 import { KNOWN_CONFIG_TABLE_KEYS, OPERATOR_LABELS, PAGE_SIZE, TABLE_SERVER_CONFIG } from "../../shared/constants.js";
+import { DropdownField } from "../../shared/DropdownField.jsx";
 import { AddIcon, DownloadIcon, FilterIcon, NextIcon, PrevIcon, RefreshIcon } from "../../shared/icons.jsx";
 import { boolLabel, fmtDate, listPreview, normalizeReferenceMeta, roleLabel, statusKindLabel } from "../../shared/utils.js";
 
@@ -374,18 +375,19 @@ export function ConfigSection(props) {
                               <p className="muted">Ветвления, возвраты, SLA и требования к данным/файлам на каждом переходе.</p>
                             </div>
                             <div className="status-designer-controls">
-                              <select
+                              <DropdownField
                                 id="status-designer-topic"
                                 value={statusDesignerTopicCode}
-                                onChange={(event) => loadStatusDesignerTopic(event.target.value)}
-                              >
-                                <option value="">Выберите тему</option>
-                                {(dictionaries.topics || []).map((topic) => (
-                                  <option key={topic.code} value={topic.code}>
-                                    {(topic.name || topic.code) + " (" + topic.code + ")"}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(nextValue) => loadStatusDesignerTopic(nextValue)}
+                                options={[
+                                  { value: "", label: "Выберите тему" },
+                                  ...((dictionaries.topics || []).map((topic) => ({
+                                    value: topic.code,
+                                    label: (topic.name || topic.code) + " (" + topic.code + ")",
+                                  }))),
+                                ]}
+                                placeholder="Выберите тему"
+                              />
                               <button className="btn secondary btn-sm" type="button" onClick={() => loadStatusDesignerTopic(statusDesignerTopicCode)}>
                                 Обновить тему
                               </button>
@@ -509,7 +511,9 @@ export function ConfigSection(props) {
                               <div className="user-identity">
                                 <UserAvatar name={row.name} email={row.email} avatarUrl={row.avatar_url} accessToken={token} size={32} />
                                 <div className="user-identity-text">
-                                  <b>{row.name || "-"}</b>
+                                  <button className="user-identity-link" type="button" onClick={() => openEditRecordModal("users", row)}>
+                                    {row.name || "-"}
+                                  </button>
                                 </div>
                               </div>
                             </td>
@@ -523,7 +527,6 @@ export function ConfigSection(props) {
                             <td>{fmtDate(row.created_at)}</td>
                             <td>
                               <div className="table-actions">
-                                <IconButton icon="✎" tooltip="Редактировать пользователя" onClick={() => openEditRecordModal("users", row)} />
                                 <IconButton icon="🗑" tooltip="Удалить пользователя" onClick={() => deleteRecord("users", row.id)} tone="danger" />
                               </div>
                             </td>
