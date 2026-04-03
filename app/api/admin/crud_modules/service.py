@@ -448,6 +448,15 @@ def update_row_service(table_name: str, row_id: str, payload: dict[str, Any], db
         is_update=True,
         allow_protected_fields={"password_hash"} if normalized == "admin_users" else None,
     )
+    if normalized == "admin_users" and "email" in clean_payload:
+        new_email = str(clean_payload.get("email") or "").strip().lower()
+        if new_email:
+            duplicate = db.query(AdminUser).filter(
+                AdminUser.email == new_email,
+                AdminUser.id != row.id,
+            ).first()
+            if duplicate:
+                raise HTTPException(status_code=400, detail="Этот email уже используется другим пользователем")
     if normalized == "admin_user_topics":
         clean_payload = _apply_admin_user_topics_fields(db, clean_payload)
     if normalized == "topic_required_fields":

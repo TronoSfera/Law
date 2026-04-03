@@ -81,10 +81,13 @@ export function useTableActions({ api, setStatus, resolveTableConfig, tablesRef,
         }
 
         if (tableKey === "topics") {
-          setDictionaries((prev) => ({
-            ...prev,
-            topics: sortByName((next.rows || []).map((row) => ({ code: row.code, name: row.name || row.code }))),
-          }));
+          setDictionaries((prev) => {
+            const map = new Map((prev.topics || []).map((t) => [t.code, t]));
+            (next.rows || []).forEach((row) => {
+              if (row.code) map.set(row.code, { code: row.code, name: row.name || row.code });
+            });
+            return { ...prev, topics: sortByName(Array.from(map.values())) };
+          });
         }
 
         if (tableKey === "statuses") {

@@ -232,9 +232,12 @@ def _apply_admin_user_topics_fields(db: Session, payload: dict[str, Any]) -> dic
     data = dict(payload)
     if "admin_user_id" in data:
         user_id = _parse_uuid_or_400(data.get("admin_user_id"), "admin_user_id")
-        user = db.get(AdminUser, user_id)
+        user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
         if user is None:
-            raise HTTPException(status_code=400, detail="Пользователь не найден")
+            raise HTTPException(
+                status_code=400,
+                detail="Юрист не найден в базе данных. Возможно, учётная запись была удалена — обновите страницу и попробуйте снова.",
+            )
         if str(user.role or "").upper() != "LAWYER":
             raise HTTPException(status_code=400, detail="Дополнительные темы доступны только для юриста")
         data["admin_user_id"] = user_id
