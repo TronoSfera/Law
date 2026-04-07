@@ -3663,6 +3663,19 @@
       padding-top: 0.15rem;
     }
 
+    /* Crop-mode: collapse to single column, hide form panel, centre the editor */
+    .record-user-top--crop-mode {
+      grid-template-columns: 1fr;
+    }
+
+    .record-user-top--crop-mode .record-user-summary {
+      display: none;
+    }
+
+    .record-user-top--crop-mode .record-user-avatar-area {
+      padding-top: 0;
+    }
+
     .record-user-avatar-shell {
       width: 156px;
       height: 156px;
@@ -3854,6 +3867,81 @@
       color: var(--muted);
       text-align: center;
     }
+
+    /* ── Avatar Crop Editor ─────────────────────────────────────────────────── */
+    .avatar-crop-editor {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.25rem 0 0.5rem;
+    }
+
+    .avatar-crop-hint {
+      font-size: 0.78rem;
+      color: var(--fg3, #7a8ea0);
+      text-align: center;
+      margin: 0;
+    }
+
+    .avatar-crop-viewport {
+      width: 320px;
+      height: 320px;
+      position: relative;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 2px solid rgba(241, 211, 163, 0.28);
+      background: #0a0e14;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+      flex-shrink: 0;
+    }
+
+    .avatar-crop-viewport:active {
+      cursor: grabbing;
+    }
+
+    .avatar-crop-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.82rem;
+      color: var(--fg3, #7a8ea0);
+    }
+
+    .avatar-crop-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 320px;
+    }
+
+    .avatar-crop-controls label {
+      font-size: 0.82rem;
+      color: var(--fg2, #a8bbcc);
+      white-space: nowrap;
+    }
+
+    .avatar-crop-controls input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent, #f1d3a3);
+    }
+
+    .avatar-crop-controls span {
+      font-size: 0.8rem;
+      color: var(--fg3, #7a8ea0);
+      min-width: 2.6rem;
+      text-align: right;
+    }
+
+    .avatar-crop-actions {
+      display: flex;
+      gap: 0.55rem;
+    }
+    /* ────────────────────────────────────────────────────────────────────────── */
 
     .overlay {
       overflow-y: auto;

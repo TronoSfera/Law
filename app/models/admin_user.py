@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, JSON, Numeric, String
+from sqlalchemy import Boolean, DateTime, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.session import Base
 from app.models.common import UUIDMixin, TimestampMixin
@@ -13,6 +13,8 @@ class AdminUser(Base, UUIDMixin, TimestampMixin):
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    avatar_original_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    avatar_crop_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     primary_topic_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     default_rate: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     salary_percent: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)

@@ -1281,6 +1281,15 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         }));
     }, [dictionaries.users]);
 
+    const getLawyerAndAdminOptions = useCallback(() => {
+      return (dictionaries.users || [])
+        .filter((item) => item && item.id && ["LAWYER", "ADMIN"].includes(String(item.role || "").toUpperCase()))
+        .map((item) => ({
+          value: item.id,
+          label: (item.name || item.email || item.id) + (item.email ? " (" + item.email + ")" : ""),
+        }));
+    }, [dictionaries.users]);
+
     const getFormFieldTypeOptions = useCallback(() => {
       return (dictionaries.formFieldTypes || []).filter(Boolean).map((item) => ({ value: item, label: item }));
     }, [dictionaries.formFieldTypes]);
@@ -1326,7 +1335,17 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           if (rawValue == null || rawValue === "") return;
           const value = String(rawValue);
           const labelRaw = row[reference.label_field];
-          const label = String(labelRaw == null || labelRaw === "" ? rawValue : labelRaw);
+          let label;
+          if (reference.table === "admin_users") {
+            const name = String(labelRaw || "").trim();
+            const email = String(row.email || "").trim();
+            if (name && email) label = name + " (" + email + ")";
+            else if (name) label = name;
+            else if (email) label = email;
+            else label = value;
+          } else {
+            label = String(labelRaw == null || labelRaw === "" ? rawValue : labelRaw);
+          }
           if (!map.has(value)) map.set(value, label);
         });
         return Array.from(map.entries())
@@ -1922,6 +1941,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
               uploadScope: "USER_AVATAR",
               accept: "image/*",
             },
+            { key: "avatar_original_key", label: "Оригинал аватара", type: "text", optional: true, hidden: true },
+            { key: "avatar_crop_json", label: "Кроп аватара", type: "text", optional: true, hidden: true },
             { key: "primary_topic_code", label: "Профиль (тема)", type: "reference", optional: true, options: getTopicOptions },
             { key: "default_rate", label: "Ставка по умолчанию", type: "number", optional: true },
             { key: "salary_percent", label: "Процент зарплаты", type: "number", optional: true },
@@ -1933,6 +1954,15 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           return [
             { key: "admin_user_id", label: "Юрист", type: "reference", required: true, options: getLawyerOptions },
             { key: "topic_code", label: "Дополнительная тема", type: "reference", required: true, options: getTopicOptions },
+          ];
+        }
+        if (tableKey === "landing_featured_staff") {
+          return [
+            { key: "admin_user_id", label: "Сотрудник", type: "reference", required: true, options: getLawyerAndAdminOptions },
+            { key: "caption", label: "Подпись", type: "textarea", optional: true, placeholder: "Краткое описание специалиста" },
+            { key: "sort_order", label: "Порядок", type: "number", defaultValue: "0" },
+            { key: "pinned", label: "Закреплён", type: "boolean", defaultValue: "false" },
+            { key: "enabled", label: "Отображать", type: "boolean", defaultValue: "true" },
           ];
         }
         const meta = tableCatalogMap[tableKey];
@@ -2459,7 +2489,7 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     );
 
     const uploadRecordFieldFile = useCallback(
-      async (field, file) => {
+      async (field, file, cropJson) => {
         if (!recordModal.tableKey || !field || !file) return;
         if (field.uploadScope !== "USER_AVATAR") return;
         if (recordModal.tableKey !== "users") return;
@@ -2489,24 +2519,75 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
               `Не удалось загрузить файл в хранилище (${putResp.status}${errorText ? `: ${errorText.slice(0, 200)}` : ""})`
             );
           }
+          const completeBody = {
+            key: init.key,
+            file_name: file.name,
+            mime_type: mimeType,
+            size_bytes: file.size,
+            scope: "USER_AVATAR",
+            user_id: recordModal.rowId,
+          };
+          if (cropJson) completeBody.crop_json = JSON.stringify(cropJson);
           const done = await api("/api/admin/uploads/complete", {
             method: "POST",
-            body: {
-              key: init.key,
-              file_name: file.name,
-              mime_type: mimeType,
-              size_bytes: file.size,
-              scope: "USER_AVATAR",
-              user_id: recordModal.rowId,
-            },
+            body: completeBody,
           });
           updateRecordField("avatar_url", String(done.avatar_url || ""));
+          if (done.avatar_original_key) {
+            updateRecordField("avatar_original_key", String(done.avatar_original_key));
+          }
           setStatus("recordForm", "Аватар загружен", "ok");
         } catch (error) {
           setStatus("recordForm", "Ошибка загрузки: " + error.message, "error");
         }
       },
       [api, recordModal, setStatus, updateRecordField]
+    );
+
+    // recropAvatar: fetches original from S3, then calls setCropFile(file) inside RecordModal
+    // via the provided callback, so the crop editor opens inline without full re-render.
+    const recropAvatar = useCallback(
+      async (avatarField, form, setCropFileCallback) => {
+        if (!recordModal.rowId || !form) return;
+        if (!form.avatar_original_key) {
+          setStatus("recordForm", "Оригинал аватара не найден", "error");
+          return;
+        }
+        try {
+          setStatus("recordForm", "Загрузка оригинала...", "");
+          const src = `/api/admin/uploads/object/${encodeURIComponent(form.avatar_original_key)}?token=${encodeURIComponent(token)}`;
+          const resp = await fetch(src);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const blob = await resp.blob();
+          const file = new File([blob], "original.webp", { type: blob.type || "image/webp" });
+          setStatus("recordForm", "", "");
+          if (setCropFileCallback) setCropFileCallback(file);
+        } catch (err) {
+          setStatus("recordForm", "Не удалось загрузить оригинал: " + err.message, "error");
+        }
+      },
+      [recordModal.rowId, setStatus, token]
+    );
+
+    // applyRecrop: called after user confirms new crop from the re-crop editor.
+    // Sends only the crop params to /recrop (no file re-upload needed).
+    const applyRecrop = useCallback(
+      async (cropJson) => {
+        if (!recordModal.rowId) return;
+        try {
+          setStatus("recordForm", "Применение кадрирования...", "");
+          const done = await api("/api/admin/uploads/recrop", {
+            method: "POST",
+            body: { user_id: recordModal.rowId, crop_json: JSON.stringify(cropJson) },
+          });
+          // Force browser to reload the avatar by appending a cache-bust param
+          updateRecordField("avatar_url", String(done.avatar_url || "") + "?t=" + Date.now());
+          setStatus("recordForm", "Кадрирование обновлено", "ok");
+        } catch (err) {
+          setStatus("recordForm", "Ошибка кадрирования: " + err.message, "error");
+        }
+      },
+      [api, recordModal.rowId, setStatus, updateRecordField]
     );
 
     const buildRecordPayload = useCallback(
@@ -2519,6 +2600,8 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
         fields.forEach((field) => {
           if (isLawyerRequestEdit && field.key !== "topic_code") return;
           if (isAdminRequestEdit && adminRequestRestricted.has(field.key)) return;
+          // Hidden fields are for frontend state only — never sent to the server.
+          if (field.hidden) return;
           const raw = form[field.key];
           if (field.type === "boolean") {
             payload[field.key] = raw === "true";
@@ -4254,6 +4337,9 @@ const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
           onClose={closeRecordModal}
           onChange={updateRecordField}
           onUploadField={uploadRecordFieldFile}
+          onUploadFieldWithCrop={uploadRecordFieldFile}
+          onRecropAvatar={recropAvatar}
+          onApplyRecrop={applyRecrop}
           onSubmit={submitRecordModal}
           OverlayComponent={Overlay}
           IconButtonComponent={IconButton}

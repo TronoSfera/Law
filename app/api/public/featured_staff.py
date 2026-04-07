@@ -49,8 +49,6 @@ def list_featured_staff(
             LandingFeaturedStaff.enabled.is_(True),
             AdminUser.is_active.is_(True),
             AdminUser.role.in_(("ADMIN", "LAWYER")),
-            AdminUser.avatar_url.is_not(None),
-            and_(AdminUser.avatar_url != ""),
         )
         .order_by(
             LandingFeaturedStaff.pinned.desc(),

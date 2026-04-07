@@ -2702,9 +2702,9 @@
     FilterToolbarComponent,
     StatusLineComponent
   }) {
-    const { useMemo: useMemo2, useState: useState3 } = React;
-    const [draggingId, setDraggingId] = useState3("");
-    const [dragOverGroup, setDragOverGroup] = useState3("");
+    const { useMemo: useMemo2, useState: useState4 } = React;
+    const [draggingId, setDraggingId] = useState4("");
+    const [dragOverGroup, setDragOverGroup] = useState4("");
     const safeColumns = Array.isArray(columns) && columns.length ? columns : KANBAN_GROUPS;
     const grouped = useMemo2(() => {
       const map = {};
@@ -3273,11 +3273,11 @@
     StatusLineComponent,
     UserAvatarComponent
   }) {
-    const { useMemo: useMemo2, useState: useState3 } = React;
+    const { useMemo: useMemo2, useState: useState4 } = React;
     const DataTable = DataTableComponent;
     const StatusLine = StatusLineComponent;
     const UserAvatar = UserAvatarComponent;
-    const [lawyerModal, setLawyerModal] = useState3({
+    const [lawyerModal, setLawyerModal] = useState4({
       open: false,
       loading: false,
       error: "",
@@ -3813,12 +3813,12 @@
     AttachmentPreviewModalComponent,
     StatusLineComponent
   }) {
-    const { useEffect: useEffect3, useMemo: useMemo2, useRef: useRef3, useState: useState3 } = React;
-    const [preview, setPreview] = useState3({ open: false, url: "", fileName: "", mimeType: "" });
-    const [chatTab, setChatTab] = useState3("chat");
-    const [dropActive, setDropActive] = useState3(false);
-    const [financeOpen, setFinanceOpen] = useState3(false);
-    const [financeIssueForm, setFinanceIssueForm] = useState3({
+    const { useEffect: useEffect4, useMemo: useMemo2, useRef: useRef4, useState: useState4 } = React;
+    const [preview, setPreview] = useState4({ open: false, url: "", fileName: "", mimeType: "" });
+    const [chatTab, setChatTab] = useState4("chat");
+    const [dropActive, setDropActive] = useState4(false);
+    const [financeOpen, setFinanceOpen] = useState4(false);
+    const [financeIssueForm, setFinanceIssueForm] = useState4({
       open: false,
       saving: false,
       amount: "",
@@ -3826,11 +3826,11 @@
       payerDisplayName: "",
       error: ""
     });
-    const [requestDataListOpen, setRequestDataListOpen] = useState3(false);
-    const [descriptionOpen, setDescriptionOpen] = useState3(false);
-    const [requestTemplateSuggestOpen, setRequestTemplateSuggestOpen] = useState3(false);
-    const [catalogFieldSuggestOpen, setCatalogFieldSuggestOpen] = useState3(false);
-    const [statusChangeModal, setStatusChangeModal] = useState3({
+    const [requestDataListOpen, setRequestDataListOpen] = useState4(false);
+    const [descriptionOpen, setDescriptionOpen] = useState4(false);
+    const [requestTemplateSuggestOpen, setRequestTemplateSuggestOpen] = useState4(false);
+    const [catalogFieldSuggestOpen, setCatalogFieldSuggestOpen] = useState4(false);
+    const [statusChangeModal, setStatusChangeModal] = useState4({
       open: false,
       saving: false,
       statusCode: "",
@@ -3840,9 +3840,9 @@
       files: [],
       error: ""
     });
-    const [draggedRequestRowId, setDraggedRequestRowId] = useState3("");
-    const [dragOverRequestRowId, setDragOverRequestRowId] = useState3("");
-    const [dataRequestModal, setDataRequestModal] = useState3({
+    const [draggedRequestRowId, setDraggedRequestRowId] = useState4("");
+    const [dragOverRequestRowId, setDragOverRequestRowId] = useState4("");
+    const [dataRequestModal, setDataRequestModal] = useState4({
       open: false,
       loading: false,
       saving: false,
@@ -3863,7 +3863,7 @@
       templateStatus: "",
       error: ""
     });
-    const [clientDataModal, setClientDataModal] = useState3({
+    const [clientDataModal, setClientDataModal] = useState4({
       open: false,
       loading: false,
       saving: false,
@@ -3872,19 +3872,19 @@
       status: "",
       error: ""
     });
-    const [composerFocused, setComposerFocused] = useState3(false);
-    const [typingPeers, setTypingPeers] = useState3([]);
-    const [liveMode, setLiveMode] = useState3("online");
-    const fileInputRef = useRef3(null);
-    const statusChangeFileInputRef = useRef3(null);
-    const chatListRef = useRef3(null);
-    const liveCursorRef = useRef3("");
-    const liveTimerRef = useRef3(null);
-    const liveInFlightRef = useRef3(false);
-    const liveFailCountRef = useRef3(0);
-    const typingHeartbeatRef = useRef3(null);
-    const typingActiveRef = useRef3(false);
-    const lastAutoScrollCursorRef = useRef3("");
+    const [composerFocused, setComposerFocused] = useState4(false);
+    const [typingPeers, setTypingPeers] = useState4([]);
+    const [liveMode, setLiveMode] = useState4("online");
+    const fileInputRef = useRef4(null);
+    const statusChangeFileInputRef = useRef4(null);
+    const chatListRef = useRef4(null);
+    const liveCursorRef = useRef4("");
+    const liveTimerRef = useRef4(null);
+    const liveInFlightRef = useRef4(false);
+    const liveFailCountRef = useRef4(0);
+    const typingHeartbeatRef = useRef4(null);
+    const typingActiveRef = useRef4(false);
+    const lastAutoScrollCursorRef = useRef4("");
     const idMap = useMemo2(
       () => ({
         messagesList: "request-modal-messages",
@@ -4115,7 +4115,7 @@
     const closeStatusChangeModal = () => {
       setStatusChangeModal((prev) => ({ ...prev, open: false, saving: false, error: "", files: [] }));
     };
-    useEffect3(() => {
+    useEffect4(() => {
       if (!pendingStatusChangePreset) return;
       openStatusChangeModal(pendingStatusChangePreset);
       if (typeof onConsumePendingStatusChangePreset === "function") onConsumePendingStatusChangePreset();
@@ -4216,10 +4216,10 @@
       link.click();
       link.remove();
     };
-    useEffect3(() => {
+    useEffect4(() => {
       liveCursorRef.current = localActivityCursor || "";
     }, [localActivityCursor, row?.id]);
-    useEffect3(() => {
+    useEffect4(() => {
       if (!row || typeof onLiveProbe !== "function") {
         setTypingPeers([]);
         setLiveMode("online");
@@ -4275,7 +4275,7 @@
     const typingEnabled = Boolean(
       row && typeof onTypingSignal === "function" && !loading && !fileUploading && composerFocused && String(messageDraft || "").trim()
     );
-    useEffect3(() => {
+    useEffect4(() => {
       if (typeof onTypingSignal !== "function" || !row) {
         if (typingHeartbeatRef.current) {
           clearInterval(typingHeartbeatRef.current);
@@ -4305,7 +4305,7 @@
         void onTypingSignal({ typing: false }).catch(() => null);
       }
     }, [onTypingSignal, row, typingEnabled]);
-    useEffect3(
+    useEffect4(
       () => () => {
         if (typingHeartbeatRef.current) {
           clearInterval(typingHeartbeatRef.current);
@@ -4843,7 +4843,7 @@
       }
       chatTimelineItems.push(entry);
     });
-    useEffect3(() => {
+    useEffect4(() => {
       if (chatTab !== "chat") return;
       const listNode = chatListRef.current;
       if (!listNode) return;
@@ -5887,8 +5887,8 @@
 
   // app/web/admin/hooks/useAdminApi.js
   function useAdminApi(token) {
-    const { useCallback } = React;
-    return useCallback(
+    const { useCallback: useCallback2 } = React;
+    return useCallback2(
       async (path, options, tokenOverride) => {
         const opts = options || {};
         const authToken = tokenOverride !== void 0 ? tokenOverride : token;
@@ -5938,8 +5938,8 @@
 
   // app/web/admin/hooks/useAdminCatalogLoaders.js
   function useAdminCatalogLoaders({ api, setStatus, setTableState, setReferenceRowsMap, buildUniversalQuery: buildUniversalQuery2 }) {
-    const { useCallback } = React;
-    const loadAvailableTables = useCallback(
+    const { useCallback: useCallback2 } = React;
+    const loadAvailableTables = useCallback2(
       async (tokenOverride) => {
         setStatus("availableTables", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...", "");
         try {
@@ -5962,7 +5962,7 @@
       },
       [api, setStatus, setTableState]
     );
-    const loadReferenceRows = useCallback(
+    const loadReferenceRows = useCallback2(
       async (catalogRows, tokenOverride) => {
         const rows = Array.isArray(catalogRows) ? catalogRows : [];
         const byTable = {};
@@ -6069,20 +6069,20 @@
     return { rows: normalizedRows, columns: normalizedColumns };
   }
   function useKanban({ api, setStatus, setTableState, tablesRef }) {
-    const { useCallback, useState: useState3 } = React;
-    const [kanbanData, setKanbanData] = useState3({
+    const { useCallback: useCallback2, useState: useState4 } = React;
+    const [kanbanData, setKanbanData] = useState4({
       rows: [],
       columns: KANBAN_GROUPS,
       total: 0,
       truncated: false
     });
-    const [kanbanLoading, setKanbanLoading] = useState3(false);
-    const [kanbanSortModal, setKanbanSortModal] = useState3({
+    const [kanbanLoading, setKanbanLoading] = useState4(false);
+    const [kanbanSortModal, setKanbanSortModal] = useState4({
       open: false,
       value: "created_newest"
     });
-    const [kanbanSortApplied, setKanbanSortApplied] = useState3(false);
-    const loadKanban = useCallback(
+    const [kanbanSortApplied, setKanbanSortApplied] = useState4(false);
+    const loadKanban = useCallback2(
       async (tokenOverride, options) => {
         const opts = options || {};
         const currentKanbanState = tablesRef.current.kanban || createTableState();
@@ -6125,7 +6125,7 @@
       },
       [api, kanbanSortModal.value, setStatus, setTableState, tablesRef]
     );
-    const openKanbanSortModal = useCallback(() => {
+    const openKanbanSortModal = useCallback2(() => {
       const tableState = tablesRef.current.kanban || createTableState();
       const currentMode = Array.isArray(tableState.sort) && tableState.sort[0] ? String(tableState.sort[0].field || "") : "";
       setKanbanSortModal({
@@ -6134,14 +6134,14 @@
       });
       setStatus("kanbanSort", "", "");
     }, [setStatus, tablesRef]);
-    const closeKanbanSortModal = useCallback(() => {
+    const closeKanbanSortModal = useCallback2(() => {
       setKanbanSortModal((prev) => ({ ...prev, open: false }));
       setStatus("kanbanSort", "", "");
     }, [setStatus]);
-    const updateKanbanSortMode = useCallback((event) => {
+    const updateKanbanSortMode = useCallback2((event) => {
       setKanbanSortModal((prev) => ({ ...prev, value: String(event.target.value || "created_newest") }));
     }, []);
-    const submitKanbanSortModal = useCallback(
+    const submitKanbanSortModal = useCallback2(
       async (event) => {
         event.preventDefault();
         const nextMode = String(kanbanSortModal.value || "created_newest");
@@ -6158,7 +6158,7 @@
       },
       [closeKanbanSortModal, kanbanSortModal.value, loadKanban, setTableState, tablesRef]
     );
-    const resetKanbanState = useCallback(() => {
+    const resetKanbanState = useCallback2(() => {
       setKanbanSortModal({ open: false, value: "created_newest" });
       setKanbanSortApplied(false);
       setKanbanData({ rows: [], columns: KANBAN_GROUPS, total: 0, truncated: false });
@@ -6294,7 +6294,7 @@
     };
   }
   function useRequestWorkspace(options) {
-    const { useCallback, useRef: useRef3, useState: useState3 } = React;
+    const { useCallback: useCallback2, useRef: useRef4, useState: useState4 } = React;
     const opts = options || {};
     const api = opts.api;
     const setStatus = opts.setStatus;
@@ -6302,13 +6302,13 @@
     const token = opts.token || "";
     const users = Array.isArray(opts.users) ? opts.users : [];
     const resolveAdminObjectSrc2 = opts.resolveAdminObjectSrc;
-    const [requestModal, setRequestModal] = useState3(createRequestModalState());
-    const requestOpenGuardRef = useRef3({ requestId: "", ts: 0 });
-    const resetRequestWorkspaceState = useCallback(() => {
+    const [requestModal, setRequestModal] = useState4(createRequestModalState());
+    const requestOpenGuardRef = useRef4({ requestId: "", ts: 0 });
+    const resetRequestWorkspaceState = useCallback2(() => {
       setRequestModal(createRequestModalState());
       requestOpenGuardRef.current = { requestId: "", ts: 0 };
     }, []);
-    const hydrateRequestMessageBodies = useCallback(
+    const hydrateRequestMessageBodies = useCallback2(
       async (requestId, rows) => {
         const targetRequestId = String(requestId || "").trim();
         const ids = collectDeferredMessageIds(rows);
@@ -6334,11 +6334,11 @@
       },
       [api]
     );
-    const updateRequestModalMessageDraft = useCallback((event) => {
+    const updateRequestModalMessageDraft = useCallback2((event) => {
       const value = event.target.value;
       setRequestModal((prev) => ({ ...prev, messageDraft: value }));
     }, []);
-    const appendRequestModalFiles = useCallback((files) => {
+    const appendRequestModalFiles = useCallback2((files) => {
       const list = Array.isArray(files) ? files.filter(Boolean) : [];
       if (!list.length) return;
       setRequestModal((prev) => {
@@ -6353,17 +6353,17 @@
         return { ...prev, selectedFiles: next };
       });
     }, []);
-    const removeRequestModalFile = useCallback((index) => {
+    const removeRequestModalFile = useCallback2((index) => {
       setRequestModal((prev) => {
         const existing = Array.isArray(prev.selectedFiles) ? [...prev.selectedFiles] : [];
         existing.splice(index, 1);
         return { ...prev, selectedFiles: existing };
       });
     }, []);
-    const clearRequestModalFiles = useCallback(() => {
+    const clearRequestModalFiles = useCallback2(() => {
       setRequestModal((prev) => ({ ...prev, selectedFiles: [] }));
     }, []);
-    const uploadRequestAttachmentWithRetry = useCallback(
+    const uploadRequestAttachmentWithRetry = useCallback2(
       async ({ requestId, file, messageId }) => {
         if (!api) throw new Error("API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
         const targetRequestId = String(requestId || "").trim();
@@ -6427,7 +6427,7 @@
       },
       [api]
     );
-    const loadRequestModalData = useCallback(
+    const loadRequestModalData = useCallback2(
       async (requestId, loadOptions) => {
         if (!api || !requestId) return;
         const localOpts = loadOptions || {};
@@ -6539,11 +6539,11 @@
       },
       [api, hydrateRequestMessageBodies, resolveAdminObjectSrc2, setStatus, token, users]
     );
-    const refreshRequestModal = useCallback(async () => {
+    const refreshRequestModal = useCallback2(async () => {
       if (!requestModal.requestId) return;
       await loadRequestModalData(requestModal.requestId, { showLoading: true });
     }, [loadRequestModalData, requestModal.requestId]);
-    const openRequestDetails = useCallback(
+    const openRequestDetails = useCallback2(
       async (requestId, event, options2) => {
         if (event) {
           event.preventDefault();
@@ -6568,7 +6568,7 @@
       },
       [loadRequestModalData, setActiveSection, setStatus]
     );
-    const submitRequestModalMessage = useCallback(
+    const submitRequestModalMessage = useCallback2(
       async (event) => {
         if (event && typeof event.preventDefault === "function") event.preventDefault();
         if (!api) return;
@@ -6611,7 +6611,7 @@
         uploadRequestAttachmentWithRetry
       ]
     );
-    const loadRequestDataTemplates = useCallback(
+    const loadRequestDataTemplates = useCallback2(
       async (documentName) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId) return { rows: [], documents: [] };
@@ -6620,7 +6620,7 @@
       },
       [api, requestModal.requestId]
     );
-    const loadRequestDataBatch = useCallback(
+    const loadRequestDataBatch = useCallback2(
       async (messageId) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId || !messageId) throw new Error("\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 \u0437\u0430\u044F\u0432\u043A\u0430");
@@ -6628,7 +6628,7 @@
       },
       [api, requestModal.requestId]
     );
-    const loadRequestDataTemplateDetails = useCallback(
+    const loadRequestDataTemplateDetails = useCallback2(
       async (templateId) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId || !templateId) throw new Error("\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D \u0448\u0430\u0431\u043B\u043E\u043D");
@@ -6638,7 +6638,7 @@
       },
       [api, requestModal.requestId]
     );
-    const saveRequestDataTemplate = useCallback(
+    const saveRequestDataTemplate = useCallback2(
       async (payload) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId) throw new Error("\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 \u0437\u0430\u044F\u0432\u043A\u0430");
@@ -6649,7 +6649,7 @@
       },
       [api, requestModal.requestId]
     );
-    const saveRequestDataBatch = useCallback(
+    const saveRequestDataBatch = useCallback2(
       async (payload) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId) throw new Error("\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 \u0437\u0430\u044F\u0432\u043A\u0430");
@@ -6662,10 +6662,10 @@
       },
       [api, loadRequestModalData, requestModal.requestId]
     );
-    const clearPendingStatusChangePreset = useCallback(() => {
+    const clearPendingStatusChangePreset = useCallback2(() => {
       setRequestModal((prev) => ({ ...prev, pendingStatusChangePreset: null }));
     }, []);
-    const probeRequestLive = useCallback(
+    const probeRequestLive = useCallback2(
       async ({ cursor } = {}) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId) return { has_updates: false, typing: [], cursor: null };
@@ -6696,7 +6696,7 @@
       },
       [api, requestModal.requestId, resolveAdminObjectSrc2, token, users]
     );
-    const loadOlderRequestMessages = useCallback(async () => {
+    const loadOlderRequestMessages = useCallback2(async () => {
       const requestId = String(requestModal.requestId || "").trim();
       const cursor = getOldestMessageCursor(requestModal.messages);
       if (!api || !requestId || requestModal.messagesLoadingMore || !requestModal.messagesHasMore) return null;
@@ -6741,7 +6741,7 @@
       hydrateRequestMessageBodies,
       users
     ]);
-    const setRequestTyping = useCallback(
+    const setRequestTyping = useCallback2(
       async ({ typing } = {}) => {
         const requestId = requestModal.requestId;
         if (!api || !requestId) return { status: "skipped", typing: false };
@@ -6752,7 +6752,7 @@
       },
       [api, requestModal.requestId]
     );
-    const submitRequestStatusChange = useCallback(
+    const submitRequestStatusChange = useCallback2(
       async ({ requestId, statusCode, importantDateAt, comment, files } = {}) => {
         if (!api) throw new Error("API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
         const targetRequestId = String(requestId || requestModal.requestId || "").trim();
@@ -6799,7 +6799,7 @@
       },
       [api, loadRequestModalData, requestModal.availableStatuses, requestModal.requestId, setStatus, uploadRequestAttachmentWithRetry]
     );
-    const issueRequestInvoice = useCallback(
+    const issueRequestInvoice = useCallback2(
       async ({ requestId, amount, serviceDescription, payerDisplayName } = {}) => {
         if (!api) throw new Error("API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
         const targetRequestId = String(requestId || requestModal.requestId || "").trim();
@@ -6869,8 +6869,8 @@
 
   // app/web/admin/hooks/useTableActions.js
   function useTableActions({ api, setStatus, resolveTableConfig, tablesRef, setTableState, setDictionaries, buildUniversalQuery: buildUniversalQuery2 }) {
-    const { useCallback } = React;
-    const loadTable = useCallback(
+    const { useCallback: useCallback2 } = React;
+    const loadTable = useCallback2(
       async (tableKey, options, tokenOverride) => {
         const opts = options || {};
         const config = resolveTableConfig(tableKey);
@@ -6936,10 +6936,13 @@
             });
           }
           if (tableKey === "topics") {
-            setDictionaries((prev) => ({
-              ...prev,
-              topics: sortByName((next.rows || []).map((row) => ({ code: row.code, name: row.name || row.code })))
-            }));
+            setDictionaries((prev) => {
+              const map = new Map((prev.topics || []).map((t) => [t.code, t]));
+              (next.rows || []).forEach((row) => {
+                if (row.code) map.set(row.code, { code: row.code, name: row.name || row.code });
+              });
+              return { ...prev, topics: sortByName(Array.from(map.values())) };
+            });
           }
           if (tableKey === "statuses") {
             setDictionaries((prev) => {
@@ -6989,7 +6992,7 @@
       },
       [api, buildUniversalQuery2, resolveTableConfig, setDictionaries, setStatus, setTableState, tablesRef]
     );
-    const loadPrevPage = useCallback(
+    const loadPrevPage = useCallback2(
       (tableKey) => {
         const tableState = tablesRef.current[tableKey] || createTableState();
         const next = { ...tableState, offset: Math.max(0, tableState.offset - PAGE_SIZE), showAll: false };
@@ -6998,7 +7001,7 @@
       },
       [loadTable, setTableState, tablesRef]
     );
-    const loadNextPage = useCallback(
+    const loadNextPage = useCallback2(
       (tableKey) => {
         const tableState = tablesRef.current[tableKey] || createTableState();
         if (tableState.offset + PAGE_SIZE >= tableState.total) return;
@@ -7008,7 +7011,7 @@
       },
       [loadTable, setTableState, tablesRef]
     );
-    const loadAllRows = useCallback(
+    const loadAllRows = useCallback2(
       (tableKey) => {
         const tableState = tablesRef.current[tableKey] || createTableState();
         if (!tableState.total) return;
@@ -7018,7 +7021,7 @@
       },
       [loadTable, setTableState, tablesRef]
     );
-    const toggleTableSort = useCallback(
+    const toggleTableSort = useCallback2(
       (tableKey, field) => {
         const tableState = tablesRef.current[tableKey] || createTableState();
         const currentSort = Array.isArray(tableState.sort) ? tableState.sort[0] : null;
@@ -7050,8 +7053,8 @@
     setTableState,
     tablesRef
   }) {
-    const { useCallback } = React;
-    const applyFilterModal = useCallback(
+    const { useCallback: useCallback2 } = React;
+    const applyFilterModal = useCallback2(
       async (event) => {
         if (event && typeof event.preventDefault === "function") event.preventDefault();
         if (!filterModal.tableKey) return;
@@ -7105,7 +7108,7 @@
       },
       [closeFilterModal, filterModal, getFieldDef, loadKanban, loadTable, setStatus, setTableState, tablesRef]
     );
-    const clearFiltersFromModal = useCallback(async () => {
+    const clearFiltersFromModal = useCallback2(async () => {
       if (!filterModal.tableKey) return;
       const tableState = tablesRef.current[filterModal.tableKey] || createTableState();
       setTableState(filterModal.tableKey, {
@@ -7121,7 +7124,7 @@
         await loadTable(filterModal.tableKey, { resetOffset: true, filtersOverride: [] });
       }
     }, [closeFilterModal, filterModal.tableKey, loadKanban, loadTable, setTableState, tablesRef]);
-    const removeFilterChip = useCallback(
+    const removeFilterChip = useCallback2(
       async (tableKey, index) => {
         const tableState = tablesRef.current[tableKey] || createTableState();
         const nextFilters = [...tableState.filters || []];
@@ -7167,18 +7170,18 @@
     };
   }
   function useTablesState() {
-    const { useCallback, useEffect: useEffect3, useRef: useRef3, useState: useState3 } = React;
-    const [tables, setTables] = useState3(createInitialTablesState);
-    const [tableCatalog, setTableCatalog] = useState3([]);
-    const [referenceRowsMap, setReferenceRowsMap] = useState3({});
-    const tablesRef = useRef3(tables);
-    useEffect3(() => {
+    const { useCallback: useCallback2, useEffect: useEffect4, useRef: useRef4, useState: useState4 } = React;
+    const [tables, setTables] = useState4(createInitialTablesState);
+    const [tableCatalog, setTableCatalog] = useState4([]);
+    const [referenceRowsMap, setReferenceRowsMap] = useState4({});
+    const tablesRef = useRef4(tables);
+    useEffect4(() => {
       tablesRef.current = tables;
     }, [tables]);
-    const setTableState = useCallback((tableKey, next) => {
+    const setTableState = useCallback2((tableKey, next) => {
       setTables((prev) => ({ ...prev, [tableKey]: next }));
     }, []);
-    const resetTablesState = useCallback(() => {
+    const resetTablesState = useCallback2(() => {
       setTables(createInitialTablesState());
       setTableCatalog([]);
       setReferenceRowsMap({});
@@ -7196,8 +7199,179 @@
     };
   }
 
+  // app/web/admin/shared/AvatarCropEditor.jsx
+  var { useCallback, useEffect: useEffect2, useRef: useRef2, useState: useState2 } = React;
+  var VIEWPORT_PX = 320;
+  var ZOOM_MIN = 1;
+  var ZOOM_MAX = 4;
+  var ZOOM_STEP = 0.01;
+  function AvatarCropEditor({ imageFile, initialCrop, onApply, onCancel }) {
+    const [objectUrl, setObjectUrl] = useState2(null);
+    const [naturalW, setNaturalW] = useState2(0);
+    const [naturalH, setNaturalH] = useState2(0);
+    const [loaded, setLoaded] = useState2(false);
+    const [panX, setPanX] = useState2(initialCrop?.x ?? 0);
+    const [panY, setPanY] = useState2(initialCrop?.y ?? 0);
+    const [zoom, setZoom] = useState2(
+      Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, initialCrop?.zoom ?? 1))
+    );
+    const dragRef = useRef2(null);
+    const viewportRef = useRef2(null);
+    useEffect2(() => {
+      if (!imageFile) return;
+      const url = URL.createObjectURL(imageFile);
+      setObjectUrl(url);
+      setLoaded(false);
+      setPanX(initialCrop?.x ?? 0);
+      setPanY(initialCrop?.y ?? 0);
+      setZoom(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, initialCrop?.zoom ?? 1)));
+      return () => URL.revokeObjectURL(url);
+    }, [imageFile, initialCrop]);
+    const handleImageLoad = useCallback(
+      (event) => {
+        setNaturalW(event.currentTarget.naturalWidth);
+        setNaturalH(event.currentTarget.naturalHeight);
+        setLoaded(true);
+      },
+      []
+    );
+    const minSide = Math.min(naturalW, naturalH) || 1;
+    const cropSrcW = minSide / zoom;
+    const cropSrcH = minSide / zoom;
+    const displayScale = naturalW && naturalH ? VIEWPORT_PX / cropSrcW : 1;
+    const offsetX = (naturalW - cropSrcW) / 2;
+    const offsetY = (naturalH - cropSrcH) / 2;
+    const cx = naturalW / 2 + panX * offsetX;
+    const cy = naturalH / 2 + panY * offsetY;
+    const imgW = naturalW * displayScale;
+    const imgH = naturalH * displayScale;
+    const imgLeft = VIEWPORT_PX / 2 - cx * displayScale;
+    const imgTop = VIEWPORT_PX / 2 - cy * displayScale;
+    const stopDrag = useCallback(() => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onMouseUp);
+    }, []);
+    const applyDelta = useCallback(
+      (dxPx, dyPx) => {
+        if (!dragRef.current) return;
+        const { startPanX, startPanY } = dragRef.current;
+        const panDx = offsetX > 0 ? dxPx / (displayScale * offsetX) : 0;
+        const panDy = offsetY > 0 ? dyPx / (displayScale * offsetY) : 0;
+        setPanX(Math.max(-1, Math.min(1, startPanX - panDx)));
+        setPanY(Math.max(-1, Math.min(1, startPanY - panDy)));
+      },
+      [displayScale, offsetX, offsetY]
+    );
+    const onMouseMove = useCallback(
+      (event) => {
+        if (!dragRef.current) return;
+        applyDelta(
+          event.clientX - dragRef.current.startX,
+          event.clientY - dragRef.current.startY
+        );
+      },
+      [applyDelta]
+    );
+    const onTouchMove = useCallback(
+      (event) => {
+        if (!dragRef.current) return;
+        event.preventDefault();
+        const t = event.touches[0];
+        applyDelta(
+          t.clientX - dragRef.current.startX,
+          t.clientY - dragRef.current.startY
+        );
+      },
+      [applyDelta]
+    );
+    const onMouseUp = useCallback(() => stopDrag(), [stopDrag]);
+    const startDrag = useCallback(
+      (clientX, clientY) => {
+        dragRef.current = {
+          startX: clientX,
+          startY: clientY,
+          startPanX: panX,
+          startPanY: panY
+        };
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+        window.addEventListener("touchmove", onTouchMove, { passive: false });
+        window.addEventListener("touchend", onMouseUp);
+      },
+      [panX, panY, onMouseMove, onMouseUp, onTouchMove]
+    );
+    const handleMouseDown = useCallback(
+      (event) => {
+        event.preventDefault();
+        startDrag(event.clientX, event.clientY);
+      },
+      [startDrag]
+    );
+    const handleTouchStart = useCallback(
+      (event) => {
+        const t = event.touches[0];
+        startDrag(t.clientX, t.clientY);
+      },
+      [startDrag]
+    );
+    useEffect2(
+      () => () => stopDrag(),
+      [stopDrag]
+    );
+    const handleApply = useCallback(() => {
+      if (!imageFile || !onApply) return;
+      onApply({
+        file: imageFile,
+        cropJson: { x: panX, y: panY, zoom }
+      });
+    }, [imageFile, onApply, panX, panY, zoom]);
+    return /* @__PURE__ */ React.createElement("div", { className: "avatar-crop-editor" }, /* @__PURE__ */ React.createElement("p", { className: "avatar-crop-hint" }, "\u041F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435, \u0447\u0442\u043E\u0431\u044B \u0432\u044B\u0431\u0440\u0430\u0442\u044C \u043E\u0431\u043B\u0430\u0441\u0442\u044C \u0444\u043E\u043A\u0443\u0441\u0430"), /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        ref: viewportRef,
+        className: "avatar-crop-viewport",
+        onMouseDown: handleMouseDown,
+        onTouchStart: handleTouchStart,
+        "aria-label": "\u041E\u0431\u043B\u0430\u0441\u0442\u044C \u043A\u0430\u0434\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F \u0430\u0432\u0430\u0442\u0430\u0440\u0430"
+      },
+      objectUrl ? /* @__PURE__ */ React.createElement(
+        "img",
+        {
+          src: objectUrl,
+          alt: "",
+          draggable: false,
+          onLoad: handleImageLoad,
+          style: loaded ? {
+            position: "absolute",
+            width: imgW + "px",
+            height: imgH + "px",
+            left: imgLeft + "px",
+            top: imgTop + "px",
+            pointerEvents: "none",
+            userSelect: "none"
+          } : { opacity: 0 }
+        }
+      ) : null,
+      !loaded ? /* @__PURE__ */ React.createElement("span", { className: "avatar-crop-loading" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026") : null
+    ), /* @__PURE__ */ React.createElement("div", { className: "avatar-crop-controls" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "avatar-crop-zoom" }, "\u041C\u0430\u0441\u0448\u0442\u0430\u0431"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        id: "avatar-crop-zoom",
+        type: "range",
+        min: ZOOM_MIN,
+        max: ZOOM_MAX,
+        step: ZOOM_STEP,
+        value: zoom,
+        onChange: (event) => setZoom(parseFloat(event.target.value))
+      }
+    ), /* @__PURE__ */ React.createElement("span", null, zoom.toFixed(1), "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "avatar-crop-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn", type: "button", onClick: handleApply, disabled: !loaded }, "\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onCancel }, "\u041E\u0442\u043C\u0435\u043D\u0430")));
+  }
+
   // app/web/admin/shared/RecordModal.jsx
-  var { useEffect: useEffect2, useRef: useRef2, useState: useState2 } = React;
+  var { useEffect: useEffect3, useRef: useRef3, useState: useState3 } = React;
   function RecordModal({
     open,
     title,
@@ -7211,6 +7385,9 @@
     onChange,
     onSubmit,
     onUploadField,
+    onUploadFieldWithCrop,
+    onRecropAvatar,
+    onApplyRecrop,
     OverlayComponent,
     IconButtonComponent,
     UserAvatarComponent,
@@ -7220,10 +7397,14 @@
     const IconButton = IconButtonComponent;
     const UserAvatar = UserAvatarComponent;
     const StatusLine = StatusLineComponent;
-    const [avatarPreviewOpen, setAvatarPreviewOpen] = useState2(false);
-    const [userEditing, setUserEditing] = useState2(false);
-    const avatarUploadRef = useRef2(null);
+    const [avatarPreviewOpen, setAvatarPreviewOpen] = useState3(false);
+    const [userEditing, setUserEditing] = useState3(false);
+    const [cropFile, setCropFile] = useState3(null);
+    const [cropInitial, setCropInitial] = useState3(null);
+    const isRecropRef = useRef3(false);
+    const avatarUploadRef = useRef3(null);
     const visibleFields = (fields || []).filter((field) => {
+      if (field.hidden) return false;
       if (typeof field.visibleWhen !== "function") return true;
       try {
         return Boolean(field.visibleWhen(form || {}));
@@ -7251,7 +7432,7 @@
     const avatarPreviewSrc = avatarValue ? resolveAvatarSrc(avatarValue, accessToken, 512) : "";
     const statusTone = userActiveRaw === "false" ? "danger" : userActiveRaw === "true" || !userActiveRaw ? "success" : "warn";
     const isCreateMode = isUserModal && mode === "create";
-    useEffect2(() => {
+    useEffect3(() => {
       if (!isUserModal) {
         setUserEditing(false);
         setAvatarPreviewOpen(false);
@@ -7385,7 +7566,34 @@
       }
       return /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item", key: "rate-combo-view" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "\u0421\u0442\u0430\u0432\u043A\u0430 / % \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u044B"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, defaultRate || "\u2014", " / ", salaryPercent || "\u2014"));
     };
-    return /* @__PURE__ */ React.createElement(Overlay, { open, id: "record-overlay", onClose: (event) => event.target.id === "record-overlay" && onClose() }, /* @__PURE__ */ React.createElement("div", { className: "modal" + (isUserModal ? " record-user-modal" : ""), style: { width: isUserModal ? "min(920px, 100%)" : "min(760px, 100%)" }, onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, title), /* @__PURE__ */ React.createElement("p", { className: "muted", style: { marginTop: "0.35rem" } }, isUserModal ? isCreateMode ? "\u0421\u043E\u0437\u0434\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F." : userEditing ? "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F." : "\u041F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F." : "\u0421\u043E\u0437\u0434\u0430\u043D\u0438\u0435 \u0438 \u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u043F\u0438\u0441\u0438.")), /* @__PURE__ */ React.createElement("div", { className: "modal-head-actions" }, isUserModal && !isCreateMode ? userEditing ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", type: "submit", form: "record-modal-form", "data-tooltip": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C", "aria-label": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M5 4h11.59a2 2 0 0 1 1.41.59l1.41 1.41A2 2 0 0 1 20 7.41V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1Zm1 2v13h12V8.24L15.76 6H15v4a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6H6Zm4 0v3h3V6h-3Z", fill: "currentColor" }))), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", type: "button", onClick: onClose, "data-tooltip": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M6.7 6.7a1 1 0 0 1 1.4 0L12 10.58l3.9-3.88a1 1 0 1 1 1.4 1.42L13.42 12l3.88 3.9a1 1 0 1 1-1.42 1.4L12 13.42l-3.9 3.88a1 1 0 0 1-1.4-1.42L10.58 12 6.7 8.1a1 1 0 0 1 0-1.4Z", fill: "currentColor" })))) : /* @__PURE__ */ React.createElement("button", { className: "icon-btn", type: "button", onClick: () => setUserEditing(true), "data-tooltip": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C", "aria-label": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M15.86 3.49a2 2 0 0 1 2.83 0l1.82 1.82a2 2 0 0 1 0 2.83l-9.9 9.9a1 1 0 0 1-.45.26l-4 1a1 1 0 0 1-1.21-1.21l1-4a1 1 0 0 1 .26-.45l9.9-9.9Zm1.41 1.42-9.67 9.67-.54 2.16 2.16-.54 9.67-9.67-1.62-1.62Z", fill: "currentColor" }))) : null, /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: onClose }, "\xD7"))), /* @__PURE__ */ React.createElement("form", { className: "stack" + (isUserModal ? " record-user-scroll" : ""), id: "record-modal-form", onSubmit }, isUserModal ? /* @__PURE__ */ React.createElement("div", { className: "record-user-top" }, /* @__PURE__ */ React.createElement("div", { className: "record-user-avatar-area" }, /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement(Overlay, { open, id: "record-overlay", onClose: (event) => event.target.id === "record-overlay" && onClose() }, /* @__PURE__ */ React.createElement("div", { className: "modal" + (isUserModal ? " record-user-modal" : ""), style: { width: isUserModal ? "min(920px, 100%)" : "min(760px, 100%)" }, onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, title), /* @__PURE__ */ React.createElement("p", { className: "muted", style: { marginTop: "0.35rem" } }, isUserModal ? isCreateMode ? "\u0421\u043E\u0437\u0434\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F." : userEditing ? "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F." : "\u041F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F." : "\u0421\u043E\u0437\u0434\u0430\u043D\u0438\u0435 \u0438 \u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0437\u0430\u043F\u0438\u0441\u0438.")), /* @__PURE__ */ React.createElement("div", { className: "modal-head-actions" }, isUserModal && !isCreateMode ? userEditing ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", type: "submit", form: "record-modal-form", "data-tooltip": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C", "aria-label": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M5 4h11.59a2 2 0 0 1 1.41.59l1.41 1.41A2 2 0 0 1 20 7.41V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1Zm1 2v13h12V8.24L15.76 6H15v4a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6H6Zm4 0v3h3V6h-3Z", fill: "currentColor" }))), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", type: "button", onClick: onClose, "data-tooltip": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M6.7 6.7a1 1 0 0 1 1.4 0L12 10.58l3.9-3.88a1 1 0 1 1 1.4 1.42L13.42 12l3.88 3.9a1 1 0 1 1-1.42 1.4L12 13.42l-3.9 3.88a1 1 0 0 1-1.4-1.42L10.58 12 6.7 8.1a1 1 0 0 1 0-1.4Z", fill: "currentColor" })))) : /* @__PURE__ */ React.createElement("button", { className: "icon-btn", type: "button", onClick: () => setUserEditing(true), "data-tooltip": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C", "aria-label": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M15.86 3.49a2 2 0 0 1 2.83 0l1.82 1.82a2 2 0 0 1 0 2.83l-9.9 9.9a1 1 0 0 1-.45.26l-4 1a1 1 0 0 1-1.21-1.21l1-4a1 1 0 0 1 .26-.45l9.9-9.9Zm1.41 1.42-9.67 9.67-.54 2.16 2.16-.54 9.67-9.67-1.62-1.62Z", fill: "currentColor" }))) : null, /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: onClose }, "\xD7"))), /* @__PURE__ */ React.createElement("form", { className: "stack" + (isUserModal ? " record-user-scroll" : ""), id: "record-modal-form", onSubmit }, isUserModal ? /* @__PURE__ */ React.createElement("div", { className: "record-user-top" + (cropFile ? " record-user-top--crop-mode" : "") }, /* @__PURE__ */ React.createElement("div", { className: "record-user-avatar-area" }, cropFile ? (
+      // Crop editor takes over the avatar area while selecting focus
+      /* @__PURE__ */ React.createElement(
+        AvatarCropEditor,
+        {
+          imageFile: cropFile,
+          initialCrop: cropInitial,
+          onApply: ({ file, cropJson }) => {
+            const wasRecrop = isRecropRef.current;
+            isRecropRef.current = false;
+            setCropFile(null);
+            setCropInitial(null);
+            if (wasRecrop && onApplyRecrop) {
+              onApplyRecrop(cropJson);
+            } else if (onUploadFieldWithCrop) {
+              onUploadFieldWithCrop(avatarField, file, cropJson);
+            } else if (onUploadField) {
+              onUploadField(avatarField, file);
+            }
+          },
+          onCancel: () => {
+            isRecropRef.current = false;
+            setCropFile(null);
+            setCropInitial(null);
+          }
+        }
+      )
+    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
       "button",
       {
         type: "button",
@@ -7406,7 +7614,10 @@
         style: { display: "none" },
         onChange: (event) => {
           const file = event.target.files && event.target.files[0];
-          if (file && onUploadField) onUploadField(avatarField, file);
+          if (file) {
+            setCropInitial(null);
+            setCropFile(file);
+          }
           event.target.value = "";
         }
       }
@@ -7417,7 +7628,23 @@
         tooltip: "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0430\u0432\u0430\u0442\u0430\u0440",
         onClick: () => avatarUploadRef.current?.click()
       }
-    ), /* @__PURE__ */ React.createElement(
+    ), avatarValue && form?.avatar_original_key && onRecropAvatar ? /* @__PURE__ */ React.createElement(
+      IconButton,
+      {
+        icon: /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M7 3a1 1 0 0 1 1 1v1h8V4a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h1V4a1 1 0 0 1 1-1Zm-2 6v10h14V9H5Zm4 2h2v2H9v-2Zm4 0h2v2h-2v-2Zm-4 4h2v2H9v-2Zm4 0h2v2h-2v-2Z", fill: "currentColor" })),
+        tooltip: "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C \u043A\u0430\u0434\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435",
+        onClick: () => {
+          isRecropRef.current = true;
+          let saved = null;
+          try {
+            saved = form?.avatar_crop_json ? JSON.parse(form.avatar_crop_json) : null;
+          } catch (_) {
+          }
+          setCropInitial(saved);
+          onRecropAvatar(avatarField, form, setCropFile);
+        }
+      }
+    ) : null, /* @__PURE__ */ React.createElement(
       IconButton,
       {
         icon: /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true", focusable: "false" }, /* @__PURE__ */ React.createElement("path", { d: "M6.7 6.7a1 1 0 0 1 1.4 0L12 10.58l3.9-3.88a1 1 0 1 1 1.4 1.42L13.42 12l3.88 3.9a1 1 0 1 1-1.42 1.4L12 13.42l-3.9 3.88a1 1 0 0 1-1.4-1.42L10.58 12 6.7 8.1a1 1 0 0 1 0-1.4Z", fill: "currentColor" })),
@@ -7428,13 +7655,13 @@
         },
         disabled: !avatarValue
       }
-    ))) : null), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary" }, /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-head" }, isCreateMode || userEditing ? renderUserCard("name") : /* @__PURE__ */ React.createElement("h4", null, userName || "\u041D\u043E\u0432\u044B\u0439 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C"), isCreateMode || userEditing ? /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-edit-meta" }, renderUserCard("role"), renderUserCard("is_active")) : /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-badges" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-badge" }, userRole || "\u0420\u043E\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "record-user-badge status-" + statusTone }, activeLabel))), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-grid" }, isCreateMode || userEditing ? /* @__PURE__ */ React.createElement(React.Fragment, null, renderUserCard("email"), renderUserCard("phone"), renderUserCard("primary_topic_code"), renderUserRateCard(), renderUserCard("password")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "Email"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, userEmail || "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D")), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "\u0422\u0435\u043B\u0435\u0444\u043E\u043D"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, userPhone || "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D")), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "\u041F\u0440\u043E\u0444\u0438\u043B\u044C"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, userTopic)), renderUserRateCard())))) : null, !isUserModal ? /* @__PURE__ */ React.createElement("div", { className: "filters", style: { gridTemplateColumns: "repeat(2, minmax(0,1fr))" } }, formFields.map((field) => /* @__PURE__ */ React.createElement("div", { className: "field", key: field.key, style: field.fullRow ? { gridColumn: "1 / -1" } : void 0 }, /* @__PURE__ */ React.createElement("label", { htmlFor: "record-field-" + field.key }, field.label), renderField(field)))) : null, isUserModal && isCreateMode ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.6rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn", type: "submit" }, "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onClose }, "\u041E\u0442\u043C\u0435\u043D\u0430")) : null, !isUserModal ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.6rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn", type: "submit" }, "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onClose }, "\u041E\u0442\u043C\u0435\u043D\u0430")) : null, /* @__PURE__ */ React.createElement(StatusLine, { status }))), isUserModal ? /* @__PURE__ */ React.createElement(Overlay, { open: avatarPreviewOpen, id: "record-avatar-preview-overlay", onClose: () => setAvatarPreviewOpen(false) }, /* @__PURE__ */ React.createElement("div", { className: "modal record-avatar-preview-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, userName || "\u0410\u0432\u0430\u0442\u0430\u0440 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F"), /* @__PURE__ */ React.createElement("p", { className: "muted", style: { marginTop: "0.35rem" } }, "\u041F\u0440\u043E\u0441\u0442\u043E\u043C\u043E\u0442\u0440 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setAvatarPreviewOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "record-avatar-preview-body" }, avatarPreviewSrc ? /* @__PURE__ */ React.createElement("img", { className: "record-avatar-preview-image", src: avatarPreviewSrc, alt: userName || userEmail || "avatar" }) : /* @__PURE__ */ React.createElement("div", { className: "record-avatar-preview-empty" }, /* @__PURE__ */ React.createElement(UserAvatar, { name: userName, email: userEmail, avatarUrl: "", accessToken, size: 128 }), /* @__PURE__ */ React.createElement("span", null, "\u0410\u0432\u0430\u0442\u0430\u0440 \u0435\u0449\u0435 \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D"))))) : null);
+    ))) : null)), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary" }, /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-head" }, isCreateMode || userEditing ? renderUserCard("name") : /* @__PURE__ */ React.createElement("h4", null, userName || "\u041D\u043E\u0432\u044B\u0439 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C"), isCreateMode || userEditing ? /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-edit-meta" }, renderUserCard("role"), renderUserCard("is_active")) : /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-badges" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-badge" }, userRole || "\u0420\u043E\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430"), /* @__PURE__ */ React.createElement("span", { className: "record-user-badge status-" + statusTone }, activeLabel))), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-grid" }, isCreateMode || userEditing ? /* @__PURE__ */ React.createElement(React.Fragment, null, renderUserCard("email"), renderUserCard("phone"), renderUserCard("primary_topic_code"), renderUserRateCard(), renderUserCard("password")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "Email"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, userEmail || "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D")), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "\u0422\u0435\u043B\u0435\u0444\u043E\u043D"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, userPhone || "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D")), /* @__PURE__ */ React.createElement("div", { className: "record-user-summary-item" }, /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-label" }, "\u041F\u0440\u043E\u0444\u0438\u043B\u044C"), /* @__PURE__ */ React.createElement("span", { className: "record-user-summary-value" }, userTopic)), renderUserRateCard())))) : null, !isUserModal ? /* @__PURE__ */ React.createElement("div", { className: "filters", style: { gridTemplateColumns: "repeat(2, minmax(0,1fr))" } }, formFields.map((field) => /* @__PURE__ */ React.createElement("div", { className: "field", key: field.key, style: field.fullRow ? { gridColumn: "1 / -1" } : void 0 }, /* @__PURE__ */ React.createElement("label", { htmlFor: "record-field-" + field.key }, field.label), renderField(field)))) : null, isUserModal && isCreateMode ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.6rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn", type: "submit" }, "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onClose }, "\u041E\u0442\u043C\u0435\u043D\u0430")) : null, !isUserModal ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.6rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn", type: "submit" }, "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onClose }, "\u041E\u0442\u043C\u0435\u043D\u0430")) : null, /* @__PURE__ */ React.createElement(StatusLine, { status }))), isUserModal ? /* @__PURE__ */ React.createElement(Overlay, { open: avatarPreviewOpen, id: "record-avatar-preview-overlay", onClose: () => setAvatarPreviewOpen(false) }, /* @__PURE__ */ React.createElement("div", { className: "modal record-avatar-preview-modal", onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, userName || "\u0410\u0432\u0430\u0442\u0430\u0440 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F"), /* @__PURE__ */ React.createElement("p", { className: "muted", style: { marginTop: "0.35rem" } }, "\u041F\u0440\u043E\u0441\u0442\u043E\u043C\u043E\u0442\u0440 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.")), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: () => setAvatarPreviewOpen(false), "aria-label": "\u0417\u0430\u043A\u0440\u044B\u0442\u044C" }, "\xD7")), /* @__PURE__ */ React.createElement("div", { className: "record-avatar-preview-body" }, avatarPreviewSrc ? /* @__PURE__ */ React.createElement("img", { className: "record-avatar-preview-image", src: avatarPreviewSrc, alt: userName || userEmail || "avatar" }) : /* @__PURE__ */ React.createElement("div", { className: "record-avatar-preview-empty" }, /* @__PURE__ */ React.createElement(UserAvatar, { name: userName, email: userEmail, avatarUrl: "", accessToken, size: 128 }), /* @__PURE__ */ React.createElement("span", null, "\u0410\u0432\u0430\u0442\u0430\u0440 \u0435\u0449\u0435 \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D"))))) : null);
   }
 
   // app/web/admin.jsx
   var import_qrcode = __toESM(require_browser());
   (function() {
-    const { useCallback, useEffect: useEffect3, useMemo: useMemo2, useRef: useRef3, useState: useState3 } = React;
+    const { useCallback: useCallback2, useEffect: useEffect4, useMemo: useMemo2, useRef: useRef4, useState: useState4 } = React;
     const LEGACY_HIDDEN_DICTIONARY_TABLES = /* @__PURE__ */ new Set(["formFields", "topicRequiredFields", "statusTransitions"]);
     const NEW_REQUEST_CLIENT_OPTION = "__new_client__";
     function StatusLine({ status }) {
@@ -7580,8 +7807,8 @@
       );
     }
     function UserAvatar({ name, email, avatarUrl, accessToken, size = 32 }) {
-      const [broken, setBroken] = useState3(false);
-      useEffect3(() => setBroken(false), [avatarUrl]);
+      const [broken, setBroken] = useState4(false);
+      useEffect4(() => setBroken(false), [avatarUrl]);
       const initials = userInitials(name, email);
       const bg = avatarColor(name || email || initials);
       const src = resolveAvatarSrc(avatarUrl, accessToken, size);
@@ -7599,9 +7826,9 @@
       ) : /* @__PURE__ */ React.createElement("span", null, initials));
     }
     function LoginScreen({ onSubmit, status }) {
-      const [email, setEmail] = useState3("");
-      const [password, setPassword] = useState3("");
-      const [totpCode, setTotpCode] = useState3("");
+      const [email, setEmail] = useState4("");
+      const [password, setPassword] = useState4("");
+      const [totpCode, setTotpCode] = useState4("");
       const submit = (event) => {
         event.preventDefault();
         onSubmit(email, password, totpCode);
@@ -7805,12 +8032,12 @@
       )), /* @__PURE__ */ React.createElement("div", { className: "field" })), /* @__PURE__ */ React.createElement("div", { className: "account-security-box" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("b", null, "2FA"), ": ", totpStatus.enabled ? "\u0412\u043A\u043B\u044E\u0447\u0435\u043D\u0430" : "\u0412\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u0430"), /* @__PURE__ */ React.createElement("div", { className: "muted" }, "\u0420\u0435\u0436\u0438\u043C: ", String(totpStatus.mode || "-"))), /* @__PURE__ */ React.createElement("div", { style: { marginTop: "0.6rem", display: "flex", gap: "0.45rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onSetupTotp }, "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C 2FA"), totpStatus.enabled ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onRegenerateBackupCodes }, "Backup-\u043A\u043E\u0434\u044B"), /* @__PURE__ */ React.createElement("button", { className: "btn danger", type: "button", onClick: onDisableTotp }, "\u041E\u0442\u043A\u043B\u044E\u0447\u0438\u0442\u044C 2FA")) : null)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: "0.6rem", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn", type: "submit", disabled: saveLoading }, saveLoading ? "\u0421\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u043C..." : "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", type: "button", onClick: onClose, disabled: saveLoading }, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C")), /* @__PURE__ */ React.createElement(StatusLine, { status }))));
     }
     function AttachmentPreviewModal({ open, title, url, fileName, mimeType, onClose }) {
-      const [resolvedUrl, setResolvedUrl] = useState3("");
-      const [resolvedText, setResolvedText] = useState3("");
-      const [resolvedKind, setResolvedKind] = useState3("");
-      const [hint, setHint] = useState3("");
-      const [loading, setLoading] = useState3(false);
-      const [error, setError] = useState3("");
+      const [resolvedUrl, setResolvedUrl] = useState4("");
+      const [resolvedText, setResolvedText] = useState4("");
+      const [resolvedKind, setResolvedKind] = useState4("");
+      const [hint, setHint] = useState4("");
+      const [loading, setLoading] = useState4(false);
+      const [error, setError] = useState4("");
       const decodeTextPreview = (arrayBuffer) => {
         const bytes = new Uint8Array(arrayBuffer || new ArrayBuffer(0));
         const sampleLength = Math.min(bytes.length, 4096);
@@ -7825,7 +8052,7 @@
         const normalized = text.length > 2e5 ? text.slice(0, 2e5) + "\n\n[\u0422\u0435\u043A\u0441\u0442 \u043E\u0431\u0440\u0435\u0437\u0430\u043D \u0434\u043B\u044F \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430]" : text;
         return normalized;
       };
-      useEffect3(() => {
+      useEffect4(() => {
         if (!open || !url) {
           setResolvedUrl("");
           setResolvedText("");
@@ -7927,9 +8154,9 @@
       ), /* @__PURE__ */ React.createElement("button", { className: "close", type: "button", onClick: onClose }, "\xD7"))), /* @__PURE__ */ React.createElement("div", { className: "request-preview-body" }, loading ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430...") : null, !loading && !error && hint ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, hint) : null, error ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, error) : null, !loading && !error && kind === "image" && resolvedUrl ? /* @__PURE__ */ React.createElement("img", { className: "request-preview-image", src: resolvedUrl, alt: fileName || "attachment" }) : null, !loading && !error && kind === "video" && resolvedUrl ? /* @__PURE__ */ React.createElement("video", { className: "request-preview-video", src: resolvedUrl, controls: true, preload: "metadata" }) : null, !loading && !error && kind === "pdf" && resolvedUrl ? /* @__PURE__ */ React.createElement("iframe", { className: "request-preview-frame", src: resolvedUrl, title: fileName || "preview" }) : null, !loading && !error && kind === "text" ? /* @__PURE__ */ React.createElement("pre", { className: "request-preview-text" }, resolvedText || "\u0424\u0430\u0439\u043B \u043F\u0443\u0441\u0442.") : null, kind === "none" ? /* @__PURE__ */ React.createElement("p", { className: "request-preview-note" }, "\u0414\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0442\u0438\u043F\u0430 \u0444\u0430\u0439\u043B\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u0435 \u0438\u043B\u0438 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0435.") : null)));
     }
     function GlobalTooltipLayer() {
-      const [tooltip, setTooltip] = useState3({ open: false, text: "", x: 0, y: 0, maxWidth: 320 });
-      const activeRef = useRef3(null);
-      useEffect3(() => {
+      const [tooltip, setTooltip] = useState4({ open: false, text: "", x: 0, y: 0, maxWidth: 320 });
+      const activeRef = useRef4(null);
+      useEffect4(() => {
         const getTarget = (node) => {
           if (!(node instanceof Element)) return null;
           const el = node.closest("[data-tooltip]");
@@ -8004,13 +8231,13 @@
       const routeInfo = useMemo2(() => resolveAdminRoute(window.location.search), []);
       const isRequestWorkspaceRoute = routeInfo.view === "request" && Boolean(routeInfo.requestId);
       const initialSection = isRequestWorkspaceRoute ? "requestWorkspace" : routeInfo.section || "dashboard";
-      const [token, setToken] = useState3("");
-      const [role, setRole] = useState3("");
-      const [email, setEmail] = useState3("");
-      const [userId, setUserId] = useState3("");
-      const [activeSection, setActiveSection] = useState3(initialSection);
-      const dashboardLoadRef = useRef3(0);
-      const [dashboardData, setDashboardData] = useState3({
+      const [token, setToken] = useState4("");
+      const [role, setRole] = useState4("");
+      const [email, setEmail] = useState4("");
+      const [userId, setUserId] = useState4("");
+      const [activeSection, setActiveSection] = useState4(initialSection);
+      const dashboardLoadRef = useRef4(0);
+      const [dashboardData, setDashboardData] = useState4({
         scope: "",
         cards: [],
         byStatus: {},
@@ -8035,22 +8262,22 @@
         referenceRowsMap,
         setReferenceRowsMap
       } = useTablesState();
-      const [dictionaries, setDictionaries] = useState3({
+      const [dictionaries, setDictionaries] = useState4({
         topics: [],
         statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name })),
         formFieldTypes: [...DEFAULT_FORM_FIELD_TYPES],
         formFieldKeys: [],
         users: []
       });
-      const [statusMap, setStatusMap] = useState3({});
-      const [smsProviderHealth, setSmsProviderHealth] = useState3(null);
-      const [totpStatus, setTotpStatus] = useState3({
+      const [statusMap, setStatusMap] = useState4({});
+      const [smsProviderHealth, setSmsProviderHealth] = useState4(null);
+      const [totpStatus, setTotpStatus] = useState4({
         mode: "password_totp_optional",
         enabled: false,
         required: false,
         has_backup_codes: false
       });
-      const [totpSetupModal, setTotpSetupModal] = useState3({
+      const [totpSetupModal, setTotpSetupModal] = useState4({
         open: false,
         secret: "",
         uri: "",
@@ -8058,7 +8285,7 @@
         code: "",
         loading: false
       });
-      const [accountModal, setAccountModal] = useState3({
+      const [accountModal, setAccountModal] = useState4({
         open: false,
         loading: false,
         saving: false,
@@ -8075,27 +8302,27 @@
           passwordConfirm: ""
         }
       });
-      const [recordModal, setRecordModal] = useState3({
+      const [recordModal, setRecordModal] = useState4({
         open: false,
         tableKey: null,
         mode: "create",
         rowId: null,
         form: {}
       });
-      const [configActiveKey, setConfigActiveKey] = useState3("");
-      const [sidebarCollapsed, setSidebarCollapsed] = useState3(() => {
+      const [configActiveKey, setConfigActiveKey] = useState4("");
+      const [sidebarCollapsed, setSidebarCollapsed] = useState4(() => {
         try {
           return window.localStorage.getItem("law-admin-sidebar-collapsed") === "1";
         } catch (_) {
           return false;
         }
       });
-      const [referencesExpanded, setReferencesExpanded] = useState3(true);
-      const [statusDesignerTopicCode, setStatusDesignerTopicCode] = useState3("");
-      const [menuTreeScrollbar, setMenuTreeScrollbar] = useState3({ visible: false, top: 0, height: 0 });
-      const [metaEntity, setMetaEntity] = useState3("quotes");
-      const [metaJson, setMetaJson] = useState3("");
-      const [filterModal, setFilterModal] = useState3({
+      const [referencesExpanded, setReferencesExpanded] = useState4(true);
+      const [statusDesignerTopicCode, setStatusDesignerTopicCode] = useState4("");
+      const [menuTreeScrollbar, setMenuTreeScrollbar] = useState4({ visible: false, top: 0, height: 0 });
+      const [metaEntity, setMetaEntity] = useState4("quotes");
+      const [metaJson, setMetaJson] = useState4("");
+      const [filterModal, setFilterModal] = useState4({
         open: false,
         tableKey: null,
         field: "",
@@ -8103,21 +8330,21 @@
         rawValue: "",
         editIndex: null
       });
-      const [reassignModal, setReassignModal] = useState3({
+      const [reassignModal, setReassignModal] = useState4({
         open: false,
         requestId: null,
         trackNumber: "",
         lawyerId: ""
       });
-      const initialRouteHandledRef = useRef3(false);
-      const statusDesignerLoadedTopicRef = useRef3("");
-      const menuTreeRef = useRef3(null);
-      const menuTreeDragRef = useRef3(null);
-      const setStatus = useCallback((key, message, kind) => {
+      const initialRouteHandledRef = useRef4(false);
+      const statusDesignerLoadedTopicRef = useRef4("");
+      const menuTreeRef = useRef4(null);
+      const menuTreeDragRef = useRef4(null);
+      const setStatus = useCallback2((key, message, kind) => {
         setStatusMap((prev) => ({ ...prev, [key]: { message: message || "", kind: kind || "" } }));
       }, []);
-      const getStatus = useCallback((key) => statusMap[key] || { message: "", kind: "" }, [statusMap]);
-      const isAdminTokenExpired = useCallback((rawToken) => {
+      const getStatus = useCallback2((key) => statusMap[key] || { message: "", kind: "" }, [statusMap]);
+      const isAdminTokenExpired = useCallback2((rawToken) => {
         const payload = decodeJwtPayload(rawToken || "");
         const exp = Number(payload?.exp || 0);
         if (!payload || !payload.role || !payload.email) return true;
@@ -8157,34 +8384,40 @@
         buildUniversalQuery,
         resolveAdminObjectSrc
       });
-      const getStatusOptions = useCallback(() => {
+      const getStatusOptions = useCallback2(() => {
         return (dictionaries.statuses || []).filter((item) => item && item.code).map((item) => ({ value: item.code, label: String(item.name || "").trim() || humanizeKey(item.code) }));
       }, [dictionaries.statuses]);
-      const getInvoiceStatusOptions = useCallback(() => {
+      const getInvoiceStatusOptions = useCallback2(() => {
         return Object.entries(INVOICE_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
       }, []);
-      const getServiceRequestTypeOptions = useCallback(() => {
+      const getServiceRequestTypeOptions = useCallback2(() => {
         return Object.entries(SERVICE_REQUEST_TYPE_LABELS).map(([code, name]) => ({ value: code, label: name }));
       }, []);
-      const getServiceRequestStatusOptions = useCallback(() => {
+      const getServiceRequestStatusOptions = useCallback2(() => {
         return Object.entries(SERVICE_REQUEST_STATUS_LABELS).map(([code, name]) => ({ value: code, label: name }));
       }, []);
-      const getStatusKindOptions = useCallback(() => {
+      const getStatusKindOptions = useCallback2(() => {
         return Object.entries(STATUS_KIND_LABELS).map(([code, name]) => ({ value: code, label: name }));
       }, []);
-      const getTopicOptions = useCallback(() => {
+      const getTopicOptions = useCallback2(() => {
         return (dictionaries.topics || []).filter((item) => item && item.code).map((item) => ({ value: item.code, label: String(item.name || "").trim() || humanizeKey(item.code) }));
       }, [dictionaries.topics]);
-      const getLawyerOptions = useCallback(() => {
+      const getLawyerOptions = useCallback2(() => {
         return (dictionaries.users || []).filter((item) => item && item.id && String(item.role || "").toUpperCase() === "LAWYER").map((item) => ({
           value: item.id,
           label: (item.name || item.email || item.id) + (item.email ? " (" + item.email + ")" : "")
         }));
       }, [dictionaries.users]);
-      const getFormFieldTypeOptions = useCallback(() => {
+      const getLawyerAndAdminOptions = useCallback2(() => {
+        return (dictionaries.users || []).filter((item) => item && item.id && ["LAWYER", "ADMIN"].includes(String(item.role || "").toUpperCase())).map((item) => ({
+          value: item.id,
+          label: (item.name || item.email || item.id) + (item.email ? " (" + item.email + ")" : "")
+        }));
+      }, [dictionaries.users]);
+      const getFormFieldTypeOptions = useCallback2(() => {
         return (dictionaries.formFieldTypes || []).filter(Boolean).map((item) => ({ value: item, label: item }));
       }, [dictionaries.formFieldTypes]);
-      const getRequestDataValueTypeOptions = useCallback(() => {
+      const getRequestDataValueTypeOptions = useCallback2(() => {
         return [
           { value: "string", label: "\u0421\u0442\u0440\u043E\u043A\u0430" },
           { value: "date", label: "\u0414\u0430\u0442\u0430" },
@@ -8193,10 +8426,10 @@
           { value: "text", label: "\u0422\u0435\u043A\u0441\u0442" }
         ];
       }, []);
-      const getFormFieldKeyOptions = useCallback(() => {
+      const getFormFieldKeyOptions = useCallback2(() => {
         return (dictionaries.formFieldKeys || []).filter((item) => item && item.key).map((item) => ({ value: item.key, label: String(item.label || "").trim() || humanizeKey(item.key) }));
       }, [dictionaries.formFieldKeys]);
-      const getRoleOptions = useCallback(() => {
+      const getRoleOptions = useCallback2(() => {
         return Object.entries(ROLE_LABELS).map(([code, label]) => ({ value: code, label }));
       }, []);
       const tableCatalogMap = useMemo2(() => {
@@ -8207,7 +8440,7 @@
         });
         return map;
       }, [tableCatalog]);
-      const getReferenceOptions = useCallback(
+      const getReferenceOptions = useCallback2(
         (rawReference) => {
           const reference = normalizeReferenceMeta(rawReference);
           if (!reference) return [];
@@ -8219,14 +8452,24 @@
             if (rawValue == null || rawValue === "") return;
             const value = String(rawValue);
             const labelRaw = row[reference.label_field];
-            const label = String(labelRaw == null || labelRaw === "" ? rawValue : labelRaw);
+            let label;
+            if (reference.table === "admin_users") {
+              const name = String(labelRaw || "").trim();
+              const email2 = String(row.email || "").trim();
+              if (name && email2) label = name + " (" + email2 + ")";
+              else if (name) label = name;
+              else if (email2) label = email2;
+              else label = value;
+            } else {
+              label = String(labelRaw == null || labelRaw === "" ? rawValue : labelRaw);
+            }
             if (!map.has(value)) map.set(value, label);
           });
           return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
         },
         [referenceRowsMap]
       );
-      const resolveReferenceLabel = useCallback(
+      const resolveReferenceLabel = useCallback2(
         (rawReference, rawValue) => {
           if (rawValue == null || rawValue === "") return "-";
           const value = String(rawValue);
@@ -8236,13 +8479,13 @@
         },
         [getReferenceOptions]
       );
-      const getStatusGroupOptions = useCallback(() => {
+      const getStatusGroupOptions = useCallback2(() => {
         return getReferenceOptions({ table: "status_groups", value_field: "id", label_field: "name" });
       }, [getReferenceOptions]);
-      const getClientOptions = useCallback(() => {
+      const getClientOptions = useCallback2(() => {
         return getReferenceOptions({ table: "clients", value_field: "id", label_field: "full_name" });
       }, [getReferenceOptions]);
-      const getInvoiceRequestRows = useCallback(() => {
+      const getInvoiceRequestRows = useCallback2(() => {
         const fromReferences = Array.isArray(referenceRowsMap.requests) ? referenceRowsMap.requests : [];
         const fromTable = Array.isArray(tables.requests?.rows) ? tables.requests.rows : [];
         const byTrack = /* @__PURE__ */ new Map();
@@ -8253,7 +8496,7 @@
         });
         return Array.from(byTrack.values());
       }, [referenceRowsMap.requests, tables.requests?.rows]);
-      const getInvoiceRequestTrackOptions = useCallback(() => {
+      const getInvoiceRequestTrackOptions = useCallback2(() => {
         const rows = getInvoiceRequestRows();
         return rows.map((row) => {
           const track = String(row?.track_number || "").trim().toUpperCase();
@@ -8266,7 +8509,7 @@
           return { value: track, label: parts.join(" \u2022 ") };
         }).filter(Boolean).sort((a, b) => String(a.label).localeCompare(String(b.label), "ru"));
       }, [getInvoiceRequestRows]);
-      const getInvoicePayerOptions = useCallback((formOrTrack) => {
+      const getInvoicePayerOptions = useCallback2((formOrTrack) => {
         const map = /* @__PURE__ */ new Map();
         const addPayer = (nameRaw, phoneRaw) => {
           const name = String(nameRaw || "").trim();
@@ -8298,7 +8541,7 @@
           (item) => item && item.section === "dictionary" && Array.isArray(item.actions) && item.actions.includes("query") && !LEGACY_HIDDEN_DICTIONARY_TABLES.has(String(item.key || ""))
         ).sort((a, b) => String(a.label || a.key).localeCompare(String(b.label || b.key), "ru"));
       }, [tableCatalog]);
-      const resolveTableConfig = useCallback(
+      const resolveTableConfig = useCallback2(
         (tableKey) => {
           if (TABLE_SERVER_CONFIG[tableKey]) return TABLE_SERVER_CONFIG[tableKey];
           const meta = tableCatalogMap[tableKey];
@@ -8312,7 +8555,7 @@
         },
         [tableCatalogMap]
       );
-      const resolveMutationConfig = useCallback(
+      const resolveMutationConfig = useCallback2(
         (tableKey) => {
           if (TABLE_MUTATION_CONFIG[tableKey]) return TABLE_MUTATION_CONFIG[tableKey];
           const meta = tableCatalogMap[tableKey];
@@ -8326,7 +8569,7 @@
         },
         [tableCatalogMap]
       );
-      const getFilterFields = useCallback(
+      const getFilterFields = useCallback2(
         (tableKey) => {
           if (tableKey === "kanban") {
             return [
@@ -8510,7 +8753,7 @@
           getTopicOptions
         ]
       );
-      const getTableLabel = useCallback((tableKey) => {
+      const getTableLabel = useCallback2((tableKey) => {
         if (tableKey === "kanban") return "\u041A\u0430\u043D\u0431\u0430\u043D";
         if (tableKey === "requests") return "\u0417\u0430\u044F\u0432\u043A\u0438";
         if (tableKey === "serviceRequests") return "\u0417\u0430\u043F\u0440\u043E\u0441\u044B";
@@ -8596,7 +8839,7 @@
           };
         });
       }, [dictionaries.statuses, statusDesignerRows, tables.statuses.rows]);
-      const getRecordFields = useCallback(
+      const getRecordFields = useCallback2(
         (tableKey) => {
           if (tableKey === "requests") {
             const isNewClientMode = (form) => {
@@ -8770,6 +9013,8 @@
                 uploadScope: "USER_AVATAR",
                 accept: "image/*"
               },
+              { key: "avatar_original_key", label: "\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B \u0430\u0432\u0430\u0442\u0430\u0440\u0430", type: "text", optional: true, hidden: true },
+              { key: "avatar_crop_json", label: "\u041A\u0440\u043E\u043F \u0430\u0432\u0430\u0442\u0430\u0440\u0430", type: "text", optional: true, hidden: true },
               { key: "primary_topic_code", label: "\u041F\u0440\u043E\u0444\u0438\u043B\u044C (\u0442\u0435\u043C\u0430)", type: "reference", optional: true, options: getTopicOptions },
               { key: "default_rate", label: "\u0421\u0442\u0430\u0432\u043A\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E", type: "number", optional: true },
               { key: "salary_percent", label: "\u041F\u0440\u043E\u0446\u0435\u043D\u0442 \u0437\u0430\u0440\u043F\u043B\u0430\u0442\u044B", type: "number", optional: true },
@@ -8781,6 +9026,15 @@
             return [
               { key: "admin_user_id", label: "\u042E\u0440\u0438\u0441\u0442", type: "reference", required: true, options: getLawyerOptions },
               { key: "topic_code", label: "\u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u0430\u044F \u0442\u0435\u043C\u0430", type: "reference", required: true, options: getTopicOptions }
+            ];
+          }
+          if (tableKey === "landing_featured_staff") {
+            return [
+              { key: "admin_user_id", label: "\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A", type: "reference", required: true, options: getLawyerAndAdminOptions },
+              { key: "caption", label: "\u041F\u043E\u0434\u043F\u0438\u0441\u044C", type: "textarea", optional: true, placeholder: "\u041A\u0440\u0430\u0442\u043A\u043E\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0441\u043F\u0435\u0446\u0438\u0430\u043B\u0438\u0441\u0442\u0430" },
+              { key: "sort_order", label: "\u041F\u043E\u0440\u044F\u0434\u043E\u043A", type: "number", defaultValue: "0" },
+              { key: "pinned", label: "\u0417\u0430\u043A\u0440\u0435\u043F\u043B\u0451\u043D", type: "boolean", defaultValue: "false" },
+              { key: "enabled", label: "\u041E\u0442\u043E\u0431\u0440\u0430\u0436\u0430\u0442\u044C", type: "boolean", defaultValue: "true" }
             ];
           }
           const meta = tableCatalogMap[tableKey];
@@ -8818,18 +9072,18 @@
           getTopicOptions
         ]
       );
-      const getFieldDef = useCallback(
+      const getFieldDef = useCallback2(
         (tableKey, fieldName) => {
           return getFilterFields(tableKey).find((field) => field.field === fieldName) || null;
         },
         [getFilterFields]
       );
-      const getFieldOptions = useCallback((fieldDef) => {
+      const getFieldOptions = useCallback2((fieldDef) => {
         if (!fieldDef) return [];
         if (typeof fieldDef.options === "function") return fieldDef.options() || [];
         return [];
       }, []);
-      const getFilterValuePreview = useCallback(
+      const getFilterValuePreview = useCallback2(
         (tableKey, clause) => {
           const fieldDef = getFieldDef(tableKey, clause.field);
           if (!fieldDef) return String(clause.value ?? "");
@@ -8876,7 +9130,7 @@
         setReferenceRowsMap,
         buildUniversalQuery
       });
-      const loadCurrentConfigTable = useCallback(
+      const loadCurrentConfigTable = useCallback2(
         async (resetOffset, tokenOverride, keyOverride) => {
           const currentKey = keyOverride || configActiveKey;
           if (!currentKey) {
@@ -8886,7 +9140,7 @@
         },
         [configActiveKey, loadTable]
       );
-      const loadStatusDesignerTopic = useCallback(
+      const loadStatusDesignerTopic = useCallback2(
         async (topicCode) => {
           const code = String(topicCode || "").trim();
           setStatusDesignerTopicCode(code);
@@ -8902,7 +9156,7 @@
         },
         [loadTable]
       );
-      useEffect3(() => {
+      useEffect4(() => {
         if (configActiveKey !== "statusTransitions") {
           statusDesignerLoadedTopicRef.current = "";
           return;
@@ -8926,7 +9180,7 @@
           filtersOverride: [{ field: "topic_code", op: "=", value: nextTopic }]
         });
       }, [configActiveKey, dictionaries.topics, loadTable, statusDesignerTopicCode]);
-      const loadDashboard = useCallback(
+      const loadDashboard = useCallback2(
         async (tokenOverride) => {
           const loadId = Date.now();
           dashboardLoadRef.current = loadId;
@@ -8988,7 +9242,7 @@
         },
         [api, role, setStatus]
       );
-      const loadMeta = useCallback(
+      const loadMeta = useCallback2(
         async (tokenOverride) => {
           const entity = (metaEntity || "quotes").trim() || "quotes";
           setStatus("meta", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...", "");
@@ -9002,7 +9256,7 @@
         },
         [api, metaEntity, setStatus]
       );
-      const loadSmsProviderHealth = useCallback(
+      const loadSmsProviderHealth = useCallback2(
         async (tokenOverride, options) => {
           const opts = options || {};
           const silent = Boolean(opts.silent);
@@ -9038,7 +9292,7 @@
         },
         [api, role, setStatus, token]
       );
-      const refreshSection = useCallback(
+      const refreshSection = useCallback2(
         async (section, tokenOverride) => {
           if (!(tokenOverride !== void 0 ? tokenOverride : token)) return;
           if (section === "dashboard") return loadDashboard(tokenOverride);
@@ -9053,7 +9307,7 @@
         },
         [loadAvailableTables, loadCurrentConfigTable, loadDashboard, loadKanban, loadMeta, loadTable, role, token]
       );
-      const bootstrapReferenceData = useCallback(
+      const bootstrapReferenceData = useCallback2(
         async (tokenOverride, roleOverride) => {
           setDictionaries((prev) => ({
             ...prev,
@@ -9107,7 +9361,7 @@
         },
         [api, loadReferenceRows]
       );
-      const updateAvailableTableState = useCallback(
+      const updateAvailableTableState = useCallback2(
         async (tableName, isActive) => {
           const name = String(tableName || "").trim();
           if (!name) return;
@@ -9125,7 +9379,7 @@
         },
         [api, bootstrapReferenceData, loadAvailableTables, role, setStatus, token]
       );
-      const openCreateRecordModal = useCallback(
+      const openCreateRecordModal = useCallback2(
         (tableKey) => {
           const fields = getRecordFields(tableKey);
           const initial = {};
@@ -9153,7 +9407,7 @@
         },
         [getInvoiceRequestRows, getRecordFields, setStatus]
       );
-      const openCreateStatusTransitionForTopic = useCallback(() => {
+      const openCreateStatusTransitionForTopic = useCallback2(() => {
         const topicCode = String(statusDesignerTopicCode || "").trim();
         if (!topicCode) {
           setStatus("statusTransitions", "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0442\u0435\u043C\u0443 \u0434\u043B\u044F \u043A\u043E\u043D\u0441\u0442\u0440\u0443\u043A\u0442\u043E\u0440\u0430", "error");
@@ -9177,7 +9431,7 @@
         });
         setStatus("recordForm", "", "");
       }, [setStatus, statusDesignerRows, statusDesignerTopicCode]);
-      const openEditRecordModal = useCallback(
+      const openEditRecordModal = useCallback2(
         async (tableKey, row) => {
           let sourceRow = row || {};
           if (tableKey === "requests" && role === "ADMIN" && row?.id) {
@@ -9207,11 +9461,11 @@
         },
         [api, getRecordFields, role, setStatus]
       );
-      const closeRecordModal = useCallback(() => {
+      const closeRecordModal = useCallback2(() => {
         setRecordModal({ open: false, tableKey: null, mode: "create", rowId: null, form: {} });
         setStatus("recordForm", "", "");
       }, [setStatus]);
-      const updateRecordField = useCallback(
+      const updateRecordField = useCallback2(
         (field, value) => {
           setRecordModal((prev) => {
             const nextForm = { ...prev.form || {}, [field]: value };
@@ -9263,8 +9517,8 @@
         },
         [getInvoiceRequestRows, referenceRowsMap.clients]
       );
-      const uploadRecordFieldFile = useCallback(
-        async (field, file) => {
+      const uploadRecordFieldFile = useCallback2(
+        async (field, file, cropJson) => {
           if (!recordModal.tableKey || !field || !file) return;
           if (field.uploadScope !== "USER_AVATAR") return;
           if (recordModal.tableKey !== "users") return;
@@ -9294,18 +9548,23 @@
                 `\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 (${putResp.status}${errorText ? `: ${errorText.slice(0, 200)}` : ""})`
               );
             }
+            const completeBody = {
+              key: init.key,
+              file_name: file.name,
+              mime_type: mimeType,
+              size_bytes: file.size,
+              scope: "USER_AVATAR",
+              user_id: recordModal.rowId
+            };
+            if (cropJson) completeBody.crop_json = JSON.stringify(cropJson);
             const done = await api("/api/admin/uploads/complete", {
               method: "POST",
-              body: {
-                key: init.key,
-                file_name: file.name,
-                mime_type: mimeType,
-                size_bytes: file.size,
-                scope: "USER_AVATAR",
-                user_id: recordModal.rowId
-              }
+              body: completeBody
             });
             updateRecordField("avatar_url", String(done.avatar_url || ""));
+            if (done.avatar_original_key) {
+              updateRecordField("avatar_original_key", String(done.avatar_original_key));
+            }
             setStatus("recordForm", "\u0410\u0432\u0430\u0442\u0430\u0440 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D", "ok");
           } catch (error) {
             setStatus("recordForm", "\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438: " + error.message, "error");
@@ -9313,7 +9572,46 @@
         },
         [api, recordModal, setStatus, updateRecordField]
       );
-      const buildRecordPayload = useCallback(
+      const recropAvatar = useCallback2(
+        async (avatarField, form, setCropFileCallback) => {
+          if (!recordModal.rowId || !form) return;
+          if (!form.avatar_original_key) {
+            setStatus("recordForm", "\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B \u0430\u0432\u0430\u0442\u0430\u0440\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D", "error");
+            return;
+          }
+          try {
+            setStatus("recordForm", "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u043E\u0440\u0438\u0433\u0438\u043D\u0430\u043B\u0430...", "");
+            const src = `/api/admin/uploads/object/${encodeURIComponent(form.avatar_original_key)}?token=${encodeURIComponent(token)}`;
+            const resp = await fetch(src);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const blob = await resp.blob();
+            const file = new File([blob], "original.webp", { type: blob.type || "image/webp" });
+            setStatus("recordForm", "", "");
+            if (setCropFileCallback) setCropFileCallback(file);
+          } catch (err) {
+            setStatus("recordForm", "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043E\u0440\u0438\u0433\u0438\u043D\u0430\u043B: " + err.message, "error");
+          }
+        },
+        [recordModal.rowId, setStatus, token]
+      );
+      const applyRecrop = useCallback2(
+        async (cropJson) => {
+          if (!recordModal.rowId) return;
+          try {
+            setStatus("recordForm", "\u041F\u0440\u0438\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u043A\u0430\u0434\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F...", "");
+            const done = await api("/api/admin/uploads/recrop", {
+              method: "POST",
+              body: { user_id: recordModal.rowId, crop_json: JSON.stringify(cropJson) }
+            });
+            updateRecordField("avatar_url", String(done.avatar_url || "") + "?t=" + Date.now());
+            setStatus("recordForm", "\u041A\u0430\u0434\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E", "ok");
+          } catch (err) {
+            setStatus("recordForm", "\u041E\u0448\u0438\u0431\u043A\u0430 \u043A\u0430\u0434\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F: " + err.message, "error");
+          }
+        },
+        [api, recordModal.rowId, setStatus, updateRecordField]
+      );
+      const buildRecordPayload = useCallback2(
         (tableKey, form, mode) => {
           const fields = getRecordFields(tableKey);
           const payload = {};
@@ -9323,6 +9621,7 @@
           fields.forEach((field) => {
             if (isLawyerRequestEdit && field.key !== "topic_code") return;
             if (isAdminRequestEdit && adminRequestRestricted.has(field.key)) return;
+            if (field.hidden) return;
             const raw = form[field.key];
             if (field.type === "boolean") {
               payload[field.key] = raw === "true";
@@ -9375,7 +9674,7 @@
         },
         [getRecordFields, role]
       );
-      const submitRecordModal = useCallback(
+      const submitRecordModal = useCallback2(
         async (event) => {
           event.preventDefault();
           const tableKey = recordModal.tableKey;
@@ -9400,7 +9699,7 @@
         },
         [api, buildRecordPayload, closeRecordModal, loadReferenceRows, loadTable, recordModal, resolveMutationConfig, setStatus, tableCatalog]
       );
-      const deleteRecord = useCallback(
+      const deleteRecord = useCallback2(
         async (tableKey, id) => {
           const endpoints = resolveMutationConfig(tableKey);
           if (!endpoints) return;
@@ -9416,7 +9715,7 @@
         },
         [api, loadReferenceRows, loadTable, resolveMutationConfig, setStatus, tableCatalog]
       );
-      const claimRequest = useCallback(
+      const claimRequest = useCallback2(
         async (requestId) => {
           if (!requestId) return;
           try {
@@ -9434,14 +9733,14 @@
         },
         [api, loadKanban, loadTable, role, setStatus]
       );
-      const openInvoiceRequest = useCallback(
+      const openInvoiceRequest = useCallback2(
         (row, event) => {
           if (!row || !row.request_id) return;
           openRequestDetails(row.request_id, event);
         },
         [openRequestDetails]
       );
-      const moveRequestFromKanban = useCallback(
+      const moveRequestFromKanban = useCallback2(
         async (row, targetGroup, explicitStatus) => {
           const requestId = String(row?.id || "").trim();
           if (!requestId) return;
@@ -9492,7 +9791,7 @@
         },
         [loadKanban, loadTable, openRequestDetails, role, setStatus, submitRequestStatusChange, userId]
       );
-      const downloadInvoicePdf = useCallback(
+      const downloadInvoicePdf = useCallback2(
         async (row, statusKey = "invoices") => {
           if (!row || !row.id || !token) return;
           try {
@@ -9528,25 +9827,25 @@
         },
         [setStatus, token]
       );
-      const downloadRequestInvoicePdf = useCallback(
+      const downloadRequestInvoicePdf = useCallback2(
         async (row) => {
           await downloadInvoicePdf(row, "requestModal");
         },
         [downloadInvoicePdf]
       );
-      const resetAdminRoute = useCallback(() => {
+      const resetAdminRoute = useCallback2(() => {
         const nextUrl = "/admin.html";
         if (window.location.pathname !== nextUrl || window.location.search) {
           window.history.replaceState(null, "", nextUrl);
         }
       }, []);
-      const goBackFromRequestWorkspace = useCallback(() => {
+      const goBackFromRequestWorkspace = useCallback2(() => {
         const targetSection = canAccessSection(role, "requests") ? "requests" : "kanban";
         resetAdminRoute();
         setActiveSection(targetSection);
         refreshSection(targetSection);
       }, [refreshSection, resetAdminRoute, role]);
-      const openReassignModal = useCallback(
+      const openReassignModal = useCallback2(
         (row) => {
           const options = getLawyerOptions();
           if (!options.length) {
@@ -9566,14 +9865,14 @@
         },
         [getLawyerOptions, setStatus]
       );
-      const closeReassignModal = useCallback(() => {
+      const closeReassignModal = useCallback2(() => {
         setReassignModal({ open: false, requestId: null, trackNumber: "", lawyerId: "" });
         setStatus("reassignForm", "", "");
       }, [setStatus]);
-      const updateReassignLawyer = useCallback((event) => {
+      const updateReassignLawyer = useCallback2((event) => {
         setReassignModal((prev) => ({ ...prev, lawyerId: event.target.value }));
       }, []);
-      const submitReassignModal = useCallback(
+      const submitReassignModal = useCallback2(
         async (event) => {
           event.preventDefault();
           if (!reassignModal.requestId) return;
@@ -9597,7 +9896,7 @@
         },
         [api, closeReassignModal, loadTable, reassignModal.lawyerId, reassignModal.requestId, setStatus]
       );
-      const defaultFilterValue = useCallback(
+      const defaultFilterValue = useCallback2(
         (fieldDef) => {
           if (!fieldDef) return "";
           if (fieldDef.type === "boolean") return "true";
@@ -9609,7 +9908,7 @@
         },
         [getFieldOptions]
       );
-      const openFilterModal = useCallback(
+      const openFilterModal = useCallback2(
         (tableKey) => {
           const fields = getFilterFields(tableKey);
           if (!fields.length) {
@@ -9630,7 +9929,7 @@
         },
         [defaultFilterValue, getFilterFields, setStatus]
       );
-      const openFilterEditModal = useCallback(
+      const openFilterEditModal = useCallback2(
         (tableKey, index) => {
           const tableState = tablesRef.current[tableKey] || createTableState();
           const target = (tableState.filters || [])[index];
@@ -9652,11 +9951,11 @@
         },
         [getFieldDef, setStatus]
       );
-      const closeFilterModal = useCallback(() => {
+      const closeFilterModal = useCallback2(() => {
         setFilterModal((prev) => ({ ...prev, open: false, editIndex: null }));
         setStatus("filter", "", "");
       }, [setStatus]);
-      const updateFilterField = useCallback(
+      const updateFilterField = useCallback2(
         (event) => {
           const fieldName = event.target.value;
           const fields = getFilterFields(filterModal.tableKey);
@@ -9672,11 +9971,11 @@
         },
         [defaultFilterValue, filterModal.tableKey, getFilterFields]
       );
-      const updateFilterOp = useCallback((event) => {
+      const updateFilterOp = useCallback2((event) => {
         const op = event.target.value;
         setFilterModal((prev) => ({ ...prev, op }));
       }, []);
-      const updateFilterValue = useCallback((event) => {
+      const updateFilterValue = useCallback2((event) => {
         setFilterModal((prev) => ({ ...prev, rawValue: event.target.value }));
       }, []);
       const { applyFilterModal, clearFiltersFromModal, removeFilterChip } = useTableFilterActions({
@@ -9689,7 +9988,7 @@
         setTableState,
         tablesRef
       });
-      const selectConfigNode = useCallback(
+      const selectConfigNode = useCallback2(
         (tableKey) => {
           resetAdminRoute();
           setConfigActiveKey(tableKey);
@@ -9698,7 +9997,7 @@
         },
         [loadCurrentConfigTable, resetAdminRoute]
       );
-      const activateSection = useCallback(
+      const activateSection = useCallback2(
         (section) => {
           const nextSection = canAccessSection(role, section) ? section : "dashboard";
           resetAdminRoute();
@@ -9707,7 +10006,7 @@
         },
         [refreshSection, resetAdminRoute, role]
       );
-      const applyRequestsQuickFilterPreset = useCallback(
+      const applyRequestsQuickFilterPreset = useCallback2(
         async (filters, statusMessage) => {
           if (!canAccessSection(role, "requests")) return;
           const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
@@ -9725,7 +10024,7 @@
         },
         [loadTable, resetAdminRoute, role, setStatus, setTableState, tablesRef]
       );
-      const applyKanbanQuickFilterPreset = useCallback(
+      const applyKanbanQuickFilterPreset = useCallback2(
         async (filters, statusMessage) => {
           const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
           resetAdminRoute();
@@ -9742,19 +10041,19 @@
         },
         [loadKanban, resetAdminRoute, setStatus, setTableState, tablesRef]
       );
-      const openRequestsWithUnreadAlerts = useCallback(async () => {
+      const openRequestsWithUnreadAlerts = useCallback2(async () => {
         await applyRequestsQuickFilterPreset([{ field: "has_unread_updates", op: "=", value: true }], "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0437\u0430\u044F\u0432\u043A\u0438 \u0441 \u043D\u043E\u0432\u044B\u043C\u0438 \u043E\u043F\u043E\u0432\u0435\u0449\u0435\u043D\u0438\u044F\u043C\u0438");
       }, [applyRequestsQuickFilterPreset]);
-      const openRequestsWithDeadlineAlerts = useCallback(async () => {
+      const openRequestsWithDeadlineAlerts = useCallback2(async () => {
         await applyRequestsQuickFilterPreset([{ field: "deadline_alert", op: "=", value: true }], "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0437\u0430\u044F\u0432\u043A\u0438 \u0441 \u0433\u043E\u0440\u044F\u0449\u0438\u043C\u0438 \u0434\u0435\u0434\u043B\u0430\u0439\u043D\u0430\u043C\u0438");
       }, [applyRequestsQuickFilterPreset]);
-      const openKanbanWithUnreadAlerts = useCallback(async () => {
+      const openKanbanWithUnreadAlerts = useCallback2(async () => {
         await applyKanbanQuickFilterPreset([{ field: "has_unread_updates", op: "=", value: true }], "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0437\u0430\u044F\u0432\u043A\u0438 \u0441 \u043D\u043E\u0432\u044B\u043C\u0438 \u043E\u043F\u043E\u0432\u0435\u0449\u0435\u043D\u0438\u044F\u043C\u0438");
       }, [applyKanbanQuickFilterPreset]);
-      const openKanbanWithDeadlineAlerts = useCallback(async () => {
+      const openKanbanWithDeadlineAlerts = useCallback2(async () => {
         await applyKanbanQuickFilterPreset([{ field: "deadline_alert", op: "=", value: true }], "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0437\u0430\u044F\u0432\u043A\u0438 \u0441 \u0433\u043E\u0440\u044F\u0449\u0438\u043C\u0438 \u0434\u0435\u0434\u043B\u0430\u0439\u043D\u0430\u043C\u0438");
       }, [applyKanbanQuickFilterPreset]);
-      const applyServiceRequestsQuickFilterPreset = useCallback(
+      const applyServiceRequestsQuickFilterPreset = useCallback2(
         async (filters, statusMessage) => {
           const nextFilters = Array.isArray(filters) ? filters.filter((item) => item && item.field) : [];
           resetAdminRoute();
@@ -9771,7 +10070,7 @@
         },
         [loadTable, resetAdminRoute, setStatus, setTableState, tablesRef]
       );
-      const openServiceRequestsWithUnreadAlerts = useCallback(async () => {
+      const openServiceRequestsWithUnreadAlerts = useCallback2(async () => {
         if (String(role || "").toUpperCase() === "LAWYER") {
           await applyServiceRequestsQuickFilterPreset(
             [{ field: "lawyer_unread", op: "=", value: true }],
@@ -9784,7 +10083,7 @@
           "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u043D\u0435\u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0440\u043E\u0441\u044B \u043A\u043B\u0438\u0435\u043D\u0442\u0430"
         );
       }, [applyServiceRequestsQuickFilterPreset, role]);
-      const markServiceRequestRead = useCallback(
+      const markServiceRequestRead = useCallback2(
         async (serviceRequestId) => {
           const rowId = String(serviceRequestId || "").trim();
           if (!rowId) return;
@@ -9800,7 +10099,7 @@
         },
         [api, loadDashboard, loadTable, role, setStatus]
       );
-      const loadTotpStatus = useCallback(
+      const loadTotpStatus = useCallback2(
         async (tokenOverride) => {
           const activeToken = tokenOverride !== void 0 ? tokenOverride : token;
           if (!activeToken) return;
@@ -9819,7 +10118,7 @@
         },
         [api, token]
       );
-      const openAccountModal = useCallback(async () => {
+      const openAccountModal = useCallback2(async () => {
         if (!token || !userId) {
           setStatus("account", "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C: \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F", "error");
           return;
@@ -9855,7 +10154,7 @@
           setStatus("account", "\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F: " + error.message, "error");
         }
       }, [api, email, setStatus, token, userId]);
-      const closeAccountModal = useCallback(() => {
+      const closeAccountModal = useCallback2(() => {
         setAccountModal((prev) => ({
           ...prev,
           open: false,
@@ -9871,7 +10170,7 @@
         }));
         setStatus("account", "", "");
       }, [setStatus]);
-      const updateAccountField = useCallback((event) => {
+      const updateAccountField = useCallback2((event) => {
         const fieldName = String(event?.target?.name || "");
         if (!fieldName) return;
         setAccountModal((prev) => ({
@@ -9882,7 +10181,7 @@
           }
         }));
       }, []);
-      const submitAccountModal = useCallback(
+      const submitAccountModal = useCallback2(
         async (event) => {
           event.preventDefault();
           if (!token || !userId) return;
@@ -9949,7 +10248,7 @@
         },
         [accountModal.form, accountModal.initial, api, setStatus, token, userId]
       );
-      const closeTotpSetupModal = useCallback(() => {
+      const closeTotpSetupModal = useCallback2(() => {
         setTotpSetupModal({
           open: false,
           secret: "",
@@ -9960,10 +10259,10 @@
         });
         setStatus("totpSetup", "", "");
       }, [setStatus]);
-      const updateTotpSetupCode = useCallback((event) => {
+      const updateTotpSetupCode = useCallback2((event) => {
         setTotpSetupModal((prev) => ({ ...prev, code: event.target.value }));
       }, []);
-      const copyTotpSecret = useCallback(async () => {
+      const copyTotpSecret = useCallback2(async () => {
         const value = String(totpSetupModal.secret || "").trim();
         if (!value) return;
         try {
@@ -9977,7 +10276,7 @@
           setStatus("totpSetup", "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043B\u044E\u0447", "error");
         }
       }, [setStatus, totpSetupModal.secret]);
-      const copyTotpUri = useCallback(async () => {
+      const copyTotpUri = useCallback2(async () => {
         const value = String(totpSetupModal.uri || "").trim();
         if (!value) return;
         try {
@@ -9991,7 +10290,7 @@
           setStatus("totpSetup", "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C URI", "error");
         }
       }, [setStatus, totpSetupModal.uri]);
-      const setupTotp = useCallback(async () => {
+      const setupTotp = useCallback2(async () => {
         try {
           const setup = await api("/api/admin/auth/totp/setup", { method: "POST", body: {} });
           const secret = String(setup?.secret || "").trim();
@@ -10020,7 +10319,7 @@
           setStatus("login", "\u041E\u0448\u0438\u0431\u043A\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 2FA: " + error.message, "error");
         }
       }, [api, setStatus]);
-      const submitTotpSetup = useCallback(
+      const submitTotpSetup = useCallback2(
         async (event) => {
           event.preventDefault();
           const secret = String(totpSetupModal.secret || "").trim();
@@ -10051,7 +10350,7 @@
         },
         [api, closeTotpSetupModal, loadTotpStatus, setStatus, totpSetupModal.code, totpSetupModal.secret]
       );
-      const regenerateTotpBackupCodes = useCallback(async () => {
+      const regenerateTotpBackupCodes = useCallback2(async () => {
         try {
           const code = String(window.prompt("\u0412\u0432\u0435\u0434\u0438\u0442\u0435 TOTP \u043A\u043E\u0434 (\u0438\u043B\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0439 \u043A\u043E\u0434) \u0434\u043B\u044F \u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438", "") || "").trim();
           if (!code) return;
@@ -10064,7 +10363,7 @@
           setStatus("login", "\u041E\u0448\u0438\u0431\u043A\u0430 \u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 backup-\u043A\u043E\u0434\u043E\u0432: " + error.message, "error");
         }
       }, [api, loadTotpStatus, setStatus]);
-      const disableTotp = useCallback(async () => {
+      const disableTotp = useCallback2(async () => {
         try {
           const code = String(window.prompt("\u0412\u0432\u0435\u0434\u0438\u0442\u0435 TOTP \u043A\u043E\u0434 (\u0438\u043B\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0439 \u043A\u043E\u0434) \u0434\u043B\u044F \u043E\u0442\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F 2FA", "") || "").trim();
           if (!code) return;
@@ -10076,7 +10375,7 @@
           setStatus("login", "\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0442\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F 2FA: " + error.message, "error");
         }
       }, [api, loadTotpStatus, setStatus]);
-      const logout = useCallback(() => {
+      const logout = useCallback2(() => {
         localStorage.removeItem(LS_TOKEN);
         setToken("");
         setRole("");
@@ -10138,7 +10437,7 @@
         });
         setActiveSection("dashboard");
       }, [resetKanbanState, resetRequestWorkspaceState, resetTablesState]);
-      const login = useCallback(
+      const login = useCallback2(
         async (emailInput, passwordInput, totpCodeInput) => {
           try {
             setStatus("login", "\u0412\u044B\u043F\u043E\u043B\u043D\u044F\u0435\u043C \u0432\u0445\u043E\u0434...", "");
@@ -10175,7 +10474,7 @@
         },
         [api, setStatus]
       );
-      useEffect3(() => {
+      useEffect4(() => {
         const authRedirectReason = sessionStorage.getItem(ADMIN_AUTH_REDIRECT_REASON_KEY) || "";
         if (authRedirectReason === "expired") {
           setStatus("login", "\u0421\u0435\u0441\u0441\u0438\u044F \u0438\u0441\u0442\u0435\u043A\u043B\u0430. \u0412\u043E\u0439\u0434\u0438\u0442\u0435 \u0441\u043D\u043E\u0432\u0430.", "error");
@@ -10199,7 +10498,7 @@
         setEmail(payload.email);
         setUserId(String(payload.sub || ""));
       }, [isAdminTokenExpired, setStatus]);
-      useEffect3(() => {
+      useEffect4(() => {
         if (!token || !role) return;
         let cancelled = false;
         let deferredBootstrapCleanup = null;
@@ -10232,7 +10531,7 @@
           if (typeof deferredBootstrapCleanup === "function") deferredBootstrapCleanup();
         };
       }, [bootstrapReferenceData, isRequestWorkspaceRoute, loadDashboard, loadTotpStatus, role, routeInfo.section, token]);
-      useEffect3(() => {
+      useEffect4(() => {
         if (!token || !role) return;
         if (initialRouteHandledRef.current) return;
         initialRouteHandledRef.current = true;
@@ -10254,7 +10553,7 @@
           }
         }
       }, [isRequestWorkspaceRoute, loadRequestModalData, refreshSection, resetAdminRoute, role, routeInfo.requestId, routeInfo.section, token]);
-      useEffect3(() => {
+      useEffect4(() => {
         if (!token) {
           setSmsProviderHealth(null);
           return;
@@ -10266,7 +10565,7 @@
         if (activeSection !== "config" || configActiveKey !== "otp_sessions") return;
         loadSmsProviderHealth(void 0, { silent: true });
       }, [activeSection, configActiveKey, loadSmsProviderHealth, role, token]);
-      useEffect3(() => {
+      useEffect4(() => {
         if (!dictionaryTableItems.length) {
           if (configActiveKey) setConfigActiveKey("");
           return;
@@ -10274,13 +10573,13 @@
         const hasCurrent = dictionaryTableItems.some((item) => item.key === configActiveKey);
         if (!hasCurrent) setConfigActiveKey(dictionaryTableItems[0].key);
       }, [configActiveKey, dictionaryTableItems]);
-      useEffect3(() => {
+      useEffect4(() => {
         try {
           window.localStorage.setItem("law-admin-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
         } catch (_) {
         }
       }, [sidebarCollapsed]);
-      const updateMenuTreeScrollbar = useCallback(() => {
+      const updateMenuTreeScrollbar = useCallback2(() => {
         const node = menuTreeRef.current;
         if (!node) {
           setMenuTreeScrollbar({ visible: false, top: 0, height: 0 });
@@ -10299,7 +10598,7 @@
         const thumbTop = Math.round(node.scrollTop / maxScroll * maxThumbOffset);
         setMenuTreeScrollbar({ visible: true, top: thumbTop, height: thumbHeight });
       }, []);
-      useEffect3(() => {
+      useEffect4(() => {
         if (!referencesExpanded || sidebarCollapsed) {
           setMenuTreeScrollbar({ visible: false, top: 0, height: 0 });
           return void 0;
@@ -10321,7 +10620,7 @@
           window.removeEventListener("resize", updateMenuTreeScrollbar);
         };
       }, [referencesExpanded, sidebarCollapsed, dictionaryTableItems.length, updateMenuTreeScrollbar]);
-      useEffect3(() => {
+      useEffect4(() => {
         const handlePointerMove = (event) => {
           const drag = menuTreeDragRef.current;
           const node = menuTreeRef.current;
@@ -10346,7 +10645,7 @@
           window.removeEventListener("pointercancel", stopDrag);
         };
       }, []);
-      const startMenuTreeScrollbarDrag = useCallback((event) => {
+      const startMenuTreeScrollbarDrag = useCallback2((event) => {
         const node = menuTreeRef.current;
         if (!node) return;
         const maxScrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
@@ -10362,11 +10661,11 @@
         event.preventDefault();
       }, [menuTreeScrollbar.height, menuTreeScrollbar.top]);
       const anyOverlayOpen = recordModal.open || filterModal.open || reassignModal.open || kanbanSortModal.open || totpSetupModal.open || accountModal.open;
-      useEffect3(() => {
+      useEffect4(() => {
         document.body.classList.toggle("modal-open", anyOverlayOpen);
         return () => document.body.classList.remove("modal-open");
       }, [anyOverlayOpen]);
-      useEffect3(() => {
+      useEffect4(() => {
         const onEsc = (event) => {
           if (event.key !== "Escape") return;
           setRecordModal((prev) => ({ ...prev, open: false }));
@@ -10379,7 +10678,7 @@
         document.addEventListener("keydown", onEsc);
         return () => document.removeEventListener("keydown", onEsc);
       }, [closeAccountModal, closeKanbanSortModal, closeTotpSetupModal]);
-      useEffect3(() => {
+      useEffect4(() => {
         const root2 = document.getElementById("admin-root");
         if (!root2) return void 0;
         const applyInputHints = () => {
@@ -10869,6 +11168,9 @@
           onClose: closeRecordModal,
           onChange: updateRecordField,
           onUploadField: uploadRecordFieldFile,
+          onUploadFieldWithCrop: uploadRecordFieldFile,
+          onRecropAvatar: recropAvatar,
+          onApplyRecrop: applyRecrop,
           onSubmit: submitRecordModal,
           OverlayComponent: Overlay,
           IconButtonComponent: IconButton,

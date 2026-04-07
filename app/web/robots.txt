@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /admin
+Disallow: /cabinet
+Disallow: /api/
+
+Sitemap: https://ruakb.online/sitemap.xml

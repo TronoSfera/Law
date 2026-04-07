@@ -792,90 +792,143 @@
     .featured-team-track {
       display: grid;
       grid-auto-flow: column;
-      grid-auto-columns: minmax(280px, 34%);
-      gap: 0.85rem;
+      grid-auto-columns: 220px;
+      gap: 1rem;
       overflow-x: auto;
       overflow-y: hidden;
-      scroll-snap-type: x proximity;
-      scrollbar-width: thin;
-      padding: 0.15rem 0.1rem 0.4rem;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      padding: 0.5rem 0.25rem 1rem;
+    }
+
+    .featured-team-track::-webkit-scrollbar {
+      display: none;
     }
 
     .featured-card {
       scroll-snap-align: start;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: linear-gradient(165deg, rgba(32, 43, 57, 0.95), rgba(17, 24, 32, 0.96));
-      display: grid;
-      grid-template-columns: 150px 1fr;
-      gap: 0.95rem;
-      padding: 0.85rem;
-      min-height: 188px;
-      box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
-      animation: rise 0.45s ease forwards;
+      position: relative;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      background: linear-gradient(175deg, rgba(30, 42, 58, 0.96), rgba(16, 23, 33, 0.98));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      padding: 1.4rem 1rem 1.2rem;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255,255,255,0.04) inset;
+      animation: rise 0.42s ease forwards;
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(10px);
+      transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+      cursor: default;
+    }
+
+    .featured-card:hover {
+      border-color: rgba(212, 169, 104, 0.25);
+      box-shadow: 0 14px 42px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(212, 169, 104, 0.12);
+      transform: translateY(-3px);
+    }
+
+    /* Avatar wrapper keeps the golden ring glow */
+    .featured-avatar-wrap {
+      position: relative;
+      margin-bottom: 0.9rem;
+      flex: 0 0 auto;
     }
 
     .featured-avatar {
-      width: 146px;
-      height: 146px;
+      width: 96px;
+      height: 96px;
       border-radius: 50%;
       object-fit: cover;
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      box-shadow: 0 0 0 1px rgba(212, 169, 104, 0.42), 0 0 0 5px rgba(212, 169, 104, 0.08);
-      background: rgba(255, 255, 255, 0.04);
-      align-self: center;
+      border: 2px solid rgba(212, 169, 104, 0.45);
+      box-shadow: 0 0 0 4px rgba(212, 169, 104, 0.1), 0 6px 18px rgba(0,0,0,0.35);
+      background: rgba(30, 42, 58, 0.8);
+      display: block;
+    }
+
+    /* Initials placeholder when no avatar */
+    .featured-avatar-initials {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      border: 2px solid rgba(212, 169, 104, 0.45);
+      box-shadow: 0 0 0 4px rgba(212, 169, 104, 0.1), 0 6px 18px rgba(0,0,0,0.35);
+      background: linear-gradient(135deg, #1e3558, #0f1e32);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: rgba(212, 169, 104, 0.85);
+      letter-spacing: 0.01em;
+      user-select: none;
+    }
+
+    .featured-chip {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      border-radius: 999px;
+      padding: 0.16rem 0.44rem;
+      border: 1px solid rgba(212, 169, 104, 0.4);
+      background: rgba(212, 169, 104, 0.14);
+      color: #f4d7a8;
+      font-size: 0.66rem;
+      font-weight: 700;
+      white-space: nowrap;
+      backdrop-filter: blur(4px);
     }
 
     .featured-card-body {
       min-width: 0;
-      display: grid;
-      align-content: start;
-      gap: 0.35rem;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      text-align: center;
     }
 
     .featured-card-top {
       display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.5rem;
+      align-items: center;
+      justify-content: center;
     }
 
     .featured-card-top h3 {
       margin: 0;
-      font-size: 1rem;
-      line-height: 1.25;
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1.3;
       color: #eef4ff;
       overflow-wrap: anywhere;
     }
 
-    .featured-chip {
-      flex: 0 0 auto;
-      border-radius: 999px;
-      padding: 0.18rem 0.5rem;
-      border: 1px solid rgba(212, 169, 104, 0.35);
-      background: rgba(212, 169, 104, 0.12);
-      color: #f4d7a8;
-      font-size: 0.72rem;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
     .featured-meta {
       margin: 0;
-      color: #a6b5c8;
-      font-size: 0.84rem;
-      line-height: 1.35;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.16);
+      border: 1px solid rgba(37, 99, 235, 0.28);
+      color: #93b4e8;
+      font-size: 0.76rem;
+      font-weight: 500;
+      line-height: 1.3;
       overflow-wrap: anywhere;
     }
 
     .featured-caption {
-      margin: 0.1rem 0 0;
-      color: #dde8f6;
-      font-size: 0.9rem;
-      line-height: 1.5;
+      margin: 0.2rem 0 0;
+      color: #8ea5be;
+      font-size: 0.81rem;
+      line-height: 1.55;
       overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .featured-caption > :first-child {
@@ -887,7 +940,7 @@
     }
 
     .featured-caption p {
-      margin: 0.14rem 0;
+      margin: 0;
     }
 
     .featured-caption ul {
@@ -979,7 +1032,7 @@
       }
 
       .featured-team-track {
-        grid-auto-columns: minmax(300px, 52%);
+        grid-auto-columns: 200px;
       }
     }
 
@@ -1064,7 +1117,7 @@
       }
 
       .featured-team-track {
-        grid-auto-columns: 86%;
+        grid-auto-columns: 186px;
       }
 
       .simple-list {
@@ -1090,14 +1143,14 @@
         top: calc(100% - 3px);
       }
 
-      .featured-card {
-        grid-template-columns: 114px 1fr;
-        min-height: 156px;
+      .featured-team-track {
+        grid-auto-columns: 172px;
       }
 
-      .featured-avatar {
-        width: 106px;
-        height: 106px;
+      .featured-avatar,
+      .featured-avatar-initials {
+        width: 80px;
+        height: 80px;
       }
 
       .hero {

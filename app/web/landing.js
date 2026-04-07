@@ -522,16 +522,42 @@
       }
 
       featuredTeamTrack.innerHTML = "";
-      items.forEach((item) => {
+      items.forEach((item, idx) => {
         const card = document.createElement("article");
         card.className = "featured-card";
+        card.style.animationDelay = (idx * 0.06) + "s";
 
-        const avatar = document.createElement("img");
-        avatar.className = "featured-avatar";
-        avatar.src = String(item.avatar_url || "");
-        avatar.alt = String(item.name || "Сотрудник");
-        avatar.loading = "lazy";
-        card.appendChild(avatar);
+        // Avatar wrap (holds photo or initials + optional pinned chip)
+        const avatarWrap = document.createElement("div");
+        avatarWrap.className = "featured-avatar-wrap";
+
+        const rawAvatarUrl = String(item.avatar_url || "").trim();
+        if (rawAvatarUrl) {
+          const avatar = document.createElement("img");
+          avatar.className = "featured-avatar";
+          avatar.src = rawAvatarUrl;
+          avatar.alt = String(item.name || "Сотрудник");
+          avatar.loading = "lazy";
+          avatarWrap.appendChild(avatar);
+        } else {
+          const initBox = document.createElement("div");
+          initBox.className = "featured-avatar-initials";
+          const nameParts = String(item.name || "").trim().split(/\s+/);
+          const initials = nameParts.length >= 2
+            ? (nameParts[0][0] + nameParts[1][0]).toUpperCase()
+            : (nameParts[0] || "?")[0].toUpperCase();
+          initBox.textContent = initials;
+          avatarWrap.appendChild(initBox);
+        }
+
+        if (item.pinned) {
+          const chip = document.createElement("span");
+          chip.className = "featured-chip";
+          chip.textContent = "Рекомендуем";
+          avatarWrap.appendChild(chip);
+        }
+
+        card.appendChild(avatarWrap);
 
         const body = document.createElement("div");
         body.className = "featured-card-body";
@@ -541,12 +567,6 @@
         const name = document.createElement("h3");
         name.textContent = String(item.name || "Сотрудник");
         top.appendChild(name);
-        if (item.pinned) {
-          const chip = document.createElement("span");
-          chip.className = "featured-chip";
-          chip.textContent = "Рекомендуем";
-          top.appendChild(chip);
-        }
         body.appendChild(top);
 
         const metaText = String(item.primary_topic_name || "").trim();
@@ -557,11 +577,13 @@
           body.appendChild(meta);
         }
 
-        const caption = document.createElement("div");
-        caption.className = "featured-caption";
-        const captionText = String(item.caption || "").trim() || "Практический опыт в сложных юридических делах и сопровождении споров.";
-        caption.innerHTML = markdownToHtml(captionText);
-        body.appendChild(caption);
+        const captionText = String(item.caption || "").trim();
+        if (captionText) {
+          const caption = document.createElement("div");
+          caption.className = "featured-caption";
+          caption.innerHTML = markdownToHtml(captionText);
+          body.appendChild(caption);
+        }
 
         card.appendChild(body);
         featuredTeamTrack.appendChild(card);

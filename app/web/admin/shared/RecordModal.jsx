@@ -1,5 +1,6 @@
 import { DropdownField } from "./DropdownField.jsx";
 import { resolveAvatarSrc, roleLabel } from "./utils.js";
+import { AvatarCropEditor } from "./AvatarCropEditor.jsx";
 
 const { useEffect, useRef, useState } = React;
 
@@ -16,6 +17,9 @@ export function RecordModal({
   onChange,
   onSubmit,
   onUploadField,
+  onUploadFieldWithCrop,
+  onRecropAvatar,
+  onApplyRecrop,
   OverlayComponent,
   IconButtonComponent,
   UserAvatarComponent,
@@ -27,8 +31,12 @@ export function RecordModal({
   const StatusLine = StatusLineComponent;
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
   const [userEditing, setUserEditing] = useState(false);
+  const [cropFile, setCropFile] = useState(null); // File waiting for crop selection
+  const [cropInitial, setCropInitial] = useState(null); // {x,y,zoom} restored from avatar_crop_json
+  const isRecropRef = useRef(false); // true when cropFile came from existing original (re-crop flow)
   const avatarUploadRef = useRef(null);
   const visibleFields = (fields || []).filter((field) => {
+    if (field.hidden) return false;
     if (typeof field.visibleWhen !== "function") return true;
     try {
       return Boolean(field.visibleWhen(form || {}));
@@ -259,58 +267,112 @@ export function RecordModal({
         </div>
         <form className={"stack" + (isUserModal ? " record-user-scroll" : "")} id="record-modal-form" onSubmit={onSubmit}>
           {isUserModal ? (
-            <div className="record-user-top">
+            <div className={"record-user-top" + (cropFile ? " record-user-top--crop-mode" : "")}>
               <div className="record-user-avatar-area">
-                <button
-                  type="button"
-                  className={"record-user-avatar-shell" + (avatarPreviewSrc ? " interactive" : "")}
-                  onClick={() => {
-                    if (avatarPreviewSrc) setAvatarPreviewOpen(true);
-                  }}
-                  disabled={!avatarPreviewSrc}
-                  aria-label={avatarPreviewSrc ? "Открыть аватар крупно" : "Аватар не загружен"}
-                >
-                  <UserAvatar name={userName} email={userEmail} avatarUrl={avatarValue} accessToken={accessToken} size={148} />
-                </button>
-                {avatarField && (isCreateMode || userEditing) ? (
+                {cropFile ? (
+                  // Crop editor takes over the avatar area while selecting focus
+                  <AvatarCropEditor
+                    imageFile={cropFile}
+                    initialCrop={cropInitial}
+                    onApply={({ file, cropJson }) => {
+                      const wasRecrop = isRecropRef.current;
+                      isRecropRef.current = false;
+                      setCropFile(null);
+                      setCropInitial(null);
+                      if (wasRecrop && onApplyRecrop) {
+                        // Re-crop flow: just send new crop params, no re-upload
+                        onApplyRecrop(cropJson);
+                      } else if (onUploadFieldWithCrop) {
+                        onUploadFieldWithCrop(avatarField, file, cropJson);
+                      } else if (onUploadField) {
+                        onUploadField(avatarField, file);
+                      }
+                    }}
+                    onCancel={() => {
+                      isRecropRef.current = false;
+                      setCropFile(null);
+                      setCropInitial(null);
+                    }}
+                  />
+                ) : (
                   <>
-                    <input
-                      ref={avatarUploadRef}
-                      type="file"
-                      accept={avatarField.accept || "image/*"}
-                      style={{ display: "none" }}
-                      onChange={(event) => {
-                        const file = event.target.files && event.target.files[0];
-                        if (file && onUploadField) onUploadField(avatarField, file);
-                        event.target.value = "";
+                    <button
+                      type="button"
+                      className={"record-user-avatar-shell" + (avatarPreviewSrc ? " interactive" : "")}
+                      onClick={() => {
+                        if (avatarPreviewSrc) setAvatarPreviewOpen(true);
                       }}
-                    />
-                    <div className="record-user-avatar-toolbar">
-                      <IconButton
-                        icon={
-                          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                            <path d="M12 5a1 1 0 0 1 1 1v6.17l2.59-2.58a1 1 0 1 1 1.41 1.42l-4.29 4.29a1 1 0 0 1-1.42 0L7 11.01a1 1 0 1 1 1.41-1.42L11 12.17V6a1 1 0 0 1 1-1Zm-7 12a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z" fill="currentColor" />
-                          </svg>
-                        }
-                        tooltip="Загрузить аватар"
-                        onClick={() => avatarUploadRef.current?.click()}
-                      />
-                      <IconButton
-                        icon={
-                          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                            <path d="M6.7 6.7a1 1 0 0 1 1.4 0L12 10.58l3.9-3.88a1 1 0 1 1 1.4 1.42L13.42 12l3.88 3.9a1 1 0 1 1-1.42 1.4L12 13.42l-3.9 3.88a1 1 0 0 1-1.4-1.42L10.58 12 6.7 8.1a1 1 0 0 1 0-1.4Z" fill="currentColor" />
-                          </svg>
-                        }
-                        tooltip="Сбросить аватар"
-                        onClick={() => {
-                          onChange(avatarField.key, "");
-                          setAvatarPreviewOpen(false);
-                        }}
-                        disabled={!avatarValue}
-                      />
-                    </div>
+                      disabled={!avatarPreviewSrc}
+                      aria-label={avatarPreviewSrc ? "Открыть аватар крупно" : "Аватар не загружен"}
+                    >
+                      <UserAvatar name={userName} email={userEmail} avatarUrl={avatarValue} accessToken={accessToken} size={148} />
+                    </button>
+                    {avatarField && (isCreateMode || userEditing) ? (
+                      <>
+                        <input
+                          ref={avatarUploadRef}
+                          type="file"
+                          accept={avatarField.accept || "image/*"}
+                          style={{ display: "none" }}
+                          onChange={(event) => {
+                            const file = event.target.files && event.target.files[0];
+                            if (file) {
+                              setCropInitial(null); // new upload → start from center
+                              setCropFile(file);
+                            }
+                            event.target.value = "";
+                          }}
+                        />
+                        <div className="record-user-avatar-toolbar">
+                          <IconButton
+                            icon={
+                              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                                <path d="M12 5a1 1 0 0 1 1 1v6.17l2.59-2.58a1 1 0 1 1 1.41 1.42l-4.29 4.29a1 1 0 0 1-1.42 0L7 11.01a1 1 0 1 1 1.41-1.42L11 12.17V6a1 1 0 0 1 1-1Zm-7 12a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z" fill="currentColor" />
+                              </svg>
+                            }
+                            tooltip="Загрузить аватар"
+                            onClick={() => avatarUploadRef.current?.click()}
+                          />
+                          {avatarValue && form?.avatar_original_key && onRecropAvatar ? (
+                            <IconButton
+                              icon={
+                                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                                  <path d="M7 3a1 1 0 0 1 1 1v1h8V4a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h1V4a1 1 0 0 1 1-1Zm-2 6v10h14V9H5Zm4 2h2v2H9v-2Zm4 0h2v2h-2v-2Zm-4 4h2v2H9v-2Zm4 0h2v2h-2v-2Z" fill="currentColor" />
+                                </svg>
+                              }
+                              tooltip="Изменить кадрирование"
+                              onClick={() => {
+                                isRecropRef.current = true;
+                                // Restore previously saved crop so editor opens at last position
+                                let saved = null;
+                                try {
+                                  saved = form?.avatar_crop_json
+                                    ? JSON.parse(form.avatar_crop_json)
+                                    : null;
+                                } catch (_) {}
+                                setCropInitial(saved);
+                                onRecropAvatar(avatarField, form, setCropFile);
+                              }}
+                            />
+                          ) : null}
+                          <IconButton
+                            icon={
+                              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                                <path d="M6.7 6.7a1 1 0 0 1 1.4 0L12 10.58l3.9-3.88a1 1 0 1 1 1.4 1.42L13.42 12l3.88 3.9a1 1 0 1 1-1.42 1.4L12 13.42l-3.9 3.88a1 1 0 0 1-1.4-1.42L10.58 12 6.7 8.1a1 1 0 0 1 0-1.4Z" fill="currentColor" />
+                              </svg>
+                            }
+                            tooltip="Сбросить аватар"
+                            onClick={() => {
+                              onChange(avatarField.key, "");
+                              setAvatarPreviewOpen(false);
+                            }}
+                            disabled={!avatarValue}
+                          />
+                        </div>
+                      </>
+                    ) : null}
                   </>
-                ) : null}
+                )}
               </div>
               <div className="record-user-summary">
                 <div className="record-user-summary-head">

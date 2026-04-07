@@ -524,12 +524,15 @@ def get_requests_kanban_service(
                 columns_by_key[fallback_key] = {"key": fallback_key, "label": fallback_label, "sort_order": fallback_order}
                 columns_catalog.append(columns_by_key[fallback_key])
         elif status_group not in columns_by_key:
-            columns_by_key[status_group] = {
-                "key": status_group,
-                "label": status_group_name or status_group,
-                "sort_order": int(status_group_order or 999),
-            }
-            columns_catalog.append(columns_by_key[status_group])
+            # status_group_id references a deleted/non-existent StatusGroup —
+            # remap to a heuristic fallback column instead of creating a phantom UUID column
+            fallback_key, fallback_label, fallback_order = fallback_group_for_status(status_code, status_meta)
+            status_group = fallback_key
+            status_group_name = fallback_label
+            status_group_order = fallback_order
+            if fallback_key not in columns_by_key:
+                columns_by_key[fallback_key] = {"key": fallback_key, "label": fallback_label, "sort_order": fallback_order}
+                columns_catalog.append(columns_by_key[fallback_key])
 
         available_transitions = []
         topic_rules = transitions_by_topic.get(topic_code) or []
@@ -541,7 +544,7 @@ def get_requests_kanban_service(
                     continue
                 to_meta = status_meta_or_default(status_meta_map, to_status)
                 target_group = str(to_meta.get("status_group_id") or "").strip()
-                if not target_group:
+                if not target_group or target_group not in columns_by_key:
                     target_group, fallback_label, fallback_order = fallback_group_for_status(to_status, to_meta)
                     if target_group not in columns_by_key:
                         columns_by_key[target_group] = {"key": target_group, "label": fallback_label, "sort_order": fallback_order}
@@ -563,7 +566,7 @@ def get_requests_kanban_service(
                     continue
                 to_meta = status_meta_or_default(status_meta_map, to_status)
                 target_group = str(to_meta.get("status_group_id") or "").strip()
-                if not target_group:
+                if not target_group or target_group not in columns_by_key:
                     target_group, fallback_label, fallback_order = fallback_group_for_status(to_status, to_meta)
                     if target_group not in columns_by_key:
                         columns_by_key[target_group] = {"key": target_group, "label": fallback_label, "sort_order": fallback_order}

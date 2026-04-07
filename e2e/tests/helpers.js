@@ -246,6 +246,18 @@ async function createRequestViaLanding(page, options = {}) {
     throw new Error("Не найдена доступная тема для E2E-создания заявки");
   }
 
+  // Ensure the CREATE_REQUEST cookie is active before posting.
+  // A prior createRequestViaLanding call may have replaced it with VIEW_REQUEST.
+  await page.context().addCookies([
+    {
+      name: PUBLIC_COOKIE_NAME,
+      value: createPublicCookieToken(phone),
+      url: `${baseUrl}/`,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+
   const createResponse = await page.request.post(`${baseUrl}/api/public/requests`, {
     headers: {
       Origin: baseUrl,
