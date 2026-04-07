@@ -48,7 +48,7 @@ def list_featured_staff(
         .filter(
             LandingFeaturedStaff.enabled.is_(True),
             AdminUser.is_active.is_(True),
-            AdminUser.role.in_(("ADMIN", "LAWYER")),
+            AdminUser.role.in_(("ADMIN", "LAWYER", "CURATOR")),
         )
         .order_by(
             LandingFeaturedStaff.pinned.desc(),
@@ -62,7 +62,7 @@ def list_featured_staff(
     result = []
     for slot, user in rows:
         role_code = str(user.role or "").upper()
-        role_label = "Администратор" if role_code == "ADMIN" else "Юрист"
+        role_label = "Администратор" if role_code == "ADMIN" else "Куратор" if role_code == "CURATOR" else "Юрист"
         primary_topic_code = str(user.primary_topic_code or "").strip() or None
         raw_avatar_url = str(user.avatar_url or "").strip()
         avatar_url = raw_avatar_url
@@ -104,7 +104,7 @@ def get_featured_staff_avatar(
             LandingFeaturedStaff.enabled.is_(True),
             AdminUser.id == user_uuid,
             AdminUser.is_active.is_(True),
-            AdminUser.role.in_(("ADMIN", "LAWYER")),
+            AdminUser.role.in_(("ADMIN", "LAWYER", "CURATOR")),
             AdminUser.avatar_url.is_not(None),
             and_(AdminUser.avatar_url != ""),
         )

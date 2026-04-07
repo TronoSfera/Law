@@ -100,7 +100,7 @@ def _enrich_landing_featured_staff(rows: list[dict[str, Any]], db: Session) -> l
             bool(row.get("enabled"))
             and user is not None
             and bool(user.is_active)
-            and str(getattr(user, "role", "") or "").upper() in ("ADMIN", "LAWYER")
+            and str(getattr(user, "role", "") or "").upper() in ("ADMIN", "LAWYER", "CURATOR")
         )
         result.append({**row, "visible_on_landing": visible})
     return result
