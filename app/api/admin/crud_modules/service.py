@@ -83,6 +83,29 @@ from .payloads import (
 )
 
 
+def _enrich_landing_featured_staff(rows: list[dict[str, Any]], db: Session) -> list[dict[str, Any]]:
+    """Add computed `visible_on_landing` field: True only when enabled AND the linked
+    admin_user has is_active=True and role in ADMIN/LAWYER (mirrors the public API filter)."""
+    user_ids = [row.get("admin_user_id") for row in rows if row.get("admin_user_id")]
+    if not user_ids:
+        return [{**row, "visible_on_landing": False} for row in rows]
+    user_map: dict[str, AdminUser] = {
+        str(u.id): u
+        for u in db.query(AdminUser).filter(AdminUser.id.in_(user_ids)).all()
+    }
+    result = []
+    for row in rows:
+        user = user_map.get(str(row.get("admin_user_id", "")))
+        visible = (
+            bool(row.get("enabled"))
+            and user is not None
+            and bool(user.is_active)
+            and str(getattr(user, "role", "") or "").upper() in ("ADMIN", "LAWYER")
+        )
+        result.append({**row, "visible_on_landing": visible})
+    return result
+
+
 def _ensure_lawyer_owns_admin_user_row_or_403(admin: dict, row_id: str) -> None:
     if not _is_lawyer(admin):
         return
@@ -238,7 +261,10 @@ def query_table_service(table_name: str, uq: UniversalQuery, db: Session, admin:
     query = apply_universal_query(base_query, model, uq)
     total = query.count()
     rows = query.offset(uq.page.offset).limit(uq.page.limit).all()
-    return {"rows": [_strip_hidden_fields(normalized, _row_to_dict(row)) for row in rows], "total": total}
+    row_dicts = [_strip_hidden_fields(normalized, _row_to_dict(row)) for row in rows]
+    if normalized == "landing_featured_staff":
+        row_dicts = _enrich_landing_featured_staff(row_dicts, db)
+    return {"rows": row_dicts, "total": total}
 
 
 def get_row_service(table_name: str, row_id: str, db: Session, admin: dict) -> dict[str, Any]:
@@ -292,6 +318,9 @@ def get_row_service(table_name: str, row_id: str, db: Session, admin: dict) -> d
                 if lawyer is not None:
                     payload["assigned_lawyer_name"] = lawyer.name or lawyer.email or assigned_lawyer_id
                     payload["assigned_lawyer_phone"] = _serialize_value(getattr(lawyer, "phone", None))
+    if normalized == "landing_featured_staff":
+        [enriched] = _enrich_landing_featured_staff([payload], db)
+        payload = enriched
     return payload
 
 

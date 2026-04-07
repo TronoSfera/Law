@@ -468,6 +468,20 @@ def _table_columns_meta(table_name: str, model: type) -> list[dict[str, Any]]:
         if reference is not None:
             item["reference"] = reference
         out.append(item)
+    # Computed field: shows whether the entry will actually appear on the landing carousel
+    if table_name == "landing_featured_staff":
+        out.append({
+            "name": "visible_on_landing",
+            "label": "Выводится",
+            "kind": "boolean",
+            "nullable": False,
+            "editable": False,
+            "sortable": False,
+            "filterable": False,
+            "required_on_create": False,
+            "has_default": True,
+            "is_primary_key": False,
+        })
     return out
 
 
