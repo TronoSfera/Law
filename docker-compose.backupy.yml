@@ -1,0 +1,15 @@
+services:
+  backupy-agent:
+    image: ghcr.io/tronosfera/backupy-agent:0.1.8
+    container_name: law-backupy-agent
+    restart: unless-stopped
+    environment:
+      BACKUPY_SERVER_URL: ${BACKUPY_SERVER_URL:-https://backupy.tronosfera.ru}
+      BACKUPY_AGENT_KEY: ${BACKUPY_AGENT_KEY:?set BACKUPY_AGENT_KEY in .env}
+      BACKUPY_STATE_DIR: /var/lib/backupy
+      BACKUPY_LOG_LEVEL: ${BACKUPY_LOG_LEVEL:-info}
+    volumes:
+      - backupy_agent_state:/var/lib/backupy
+
+volumes:
+  backupy_agent_state:

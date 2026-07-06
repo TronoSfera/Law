@@ -25,8 +25,8 @@ CONFIRM_TOKEN ?= ROTATE-PROD-SECRETS
 CERTBOT_DOMAINS = -d "$(DOMAIN)" -d "$(WWW_DOMAIN)" $(if $(strip $(SECOND_DOMAIN)),-d "$(SECOND_DOMAIN)") $(if $(strip $(SECOND_WWW_DOMAIN)),-d "$(SECOND_WWW_DOMAIN)")
 
 LOCAL_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.local.yml
-PROD_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml
-CERT_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.prod.cert.yml
+PROD_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.backupy.yml
+CERT_COMPOSE = docker compose -f docker-compose.yml -f docker-compose.prod.nginx.yml -f docker-compose.backupy.yml -f docker-compose.prod.cert.yml
 
 help:
 	@echo "Targets:"
@@ -108,6 +108,7 @@ local-s3-proxy-smoke:
 
 check-prod-files:
 	@test -f docker-compose.prod.nginx.yml || (echo "[ERROR] Missing docker-compose.prod.nginx.yml. Run: git pull"; exit 1)
+	@test -f docker-compose.backupy.yml || (echo "[ERROR] Missing docker-compose.backupy.yml. Run: git pull"; exit 1)
 	@test -f frontend/nginx.prod.conf || (echo "[ERROR] Missing frontend/nginx.prod.conf. Run: git pull"; exit 1)
 	@test -f scripts/ops/minio_tls_bootstrap.sh || (echo "[ERROR] Missing scripts/ops/minio_tls_bootstrap.sh. Run: git pull"; exit 1)
 	@test -f scripts/ops/s3_proxy_upload_smoke.sh || (echo "[ERROR] Missing scripts/ops/s3_proxy_upload_smoke.sh. Run: git pull"; exit 1)
