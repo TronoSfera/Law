@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legal Case Tracker — Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0e1621;
+  --bg-card: #17212b;
+  --accent: #3390ec;
+  --accent-light: #66b3ff;
+  --text-primary: #ffffff;
+  --text-muted: #8b9bab;
+  --border-subtle: rgba(51,144,236,0.1);
+  --border-accent: rgba(51,144,236,0.3);
+  --glow: rgba(51,144,236,0.15);
+  --success: #4dbe93;
+  --warning: #e6a83a;
+  --danger: #e05555;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+html {
+  scroll-snap-type: y mandatory;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  background: var(--bg-primary);
+  font-family: 'Inter', sans-serif;
+  color: var(--text-primary);
+}
+
+section {
+  min-height: 100vh;
+  min-height: 100dvh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: clamp(2rem,5vw,4rem) clamp(1.5rem,6vw,6rem);
+  position: relative;
+  overflow: hidden;
+}
+
+.slide-inner { width:100%; max-width:1100px; margin:0 auto; }
+
+/* Progress bar */
+#progress-bar {
+  position: fixed; top:0; left:0; height:3px;
+  background: linear-gradient(90deg,var(--accent),var(--accent-light));
+  z-index:1000; transition: width .4s ease; width:8.33%;
+}
+
+/* Nav dots */
+#nav-dots {
+  position: fixed; right:1.2rem; top:50%; transform:translateY(-50%);
+  display:flex; flex-direction:column; gap:.5rem; z-index:1000;
+}
+.nav-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:rgba(255,255,255,.2); cursor:pointer;
+  transition:transform .2s,background .2s; border:none; outline:none;
+}
+.nav-dot.active { background:var(--accent); transform:scale(1.6); }
+
+/* Slide counter */
+#slide-counter {
+  position:fixed; bottom:1.2rem; right:1.5rem;
+  font-size:.75rem; color:var(--text-muted);
+  z-index:1000; font-variant-numeric:tabular-nums;
+}
+
+/* Gradient bg */
+.gradient-bg::before {
+  content:''; position:absolute; inset:0;
+  background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(51,144,236,.15),transparent 60%);
+  pointer-events:none; animation:gPulse 8s infinite ease-in-out;
+}
+@keyframes gPulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+
+/* Card base */
+.card {
+  background:var(--bg-card); border-radius:16px;
+  border:1px solid var(--border-subtle);
+  padding:clamp(1.2rem,2.5vw,2rem);
+  transition:transform .25s,box-shadow .25s,border-color .25s;
+}
+.card:hover {
+  transform:translateY(-4px) scale(1.015);
+  box-shadow:0 8px 40px var(--glow);
+  border-color:var(--border-accent);
+}
+
+/* Gradient text */
+.gt { background:linear-gradient(135deg,#fff,#8b9bab); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.ga { background:linear-gradient(135deg,var(--accent),var(--accent-light)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+
+/* Stat num */
+.stat-num {
+  font-weight:900;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  line-height:1;
+}
+
+/* Reveal */
+.reveal { opacity:0; transform:translateY(40px); transition:opacity .6s ease,transform .6s ease; }
+.reveal.visible { opacity:1; transform:translateY(0); }
+.reveal-delay-1{transition-delay:.1s}
+.reveal-delay-2{transition-delay:.2s}
+.reveal-delay-3{transition-delay:.3s}
+.reveal-delay-4{transition-delay:.4s}
+.reveal-delay-5{transition-delay:.5s}
+
+/* Section titles */
+.s-title { font-size:clamp(1.6rem,3vw,2.6rem); font-weight:800; letter-spacing:-.02em; margin-bottom:.4rem; }
+.s-sub { font-size:.95rem; color:var(--text-muted); margin-bottom:2.2rem; }
+
+/* ─── SLIDE 1 TITLE ─── */
+#s1 { text-align:center; }
+.logo-wrap {
+  width:84px; height:84px; border-radius:22px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  display:flex; align-items:center; justify-content:center;
+  margin:0 auto 1.6rem; font-size:2.4rem;
+  animation:logoPulse 4s infinite ease-in-out;
+}
+@keyframes logoPulse {
+  0%,100%{box-shadow:0 0 20px rgba(51,144,236,.3)}
+  50%{box-shadow:0 0 55px rgba(51,144,236,.65)}
+}
+.s1-title { font-size:clamp(2.8rem,6vw,5.5rem); font-weight:900; letter-spacing:-.03em; line-height:1.05; margin-bottom:.9rem; }
+.s1-tag { font-size:.85rem; color:var(--text-muted); margin-bottom:2.4rem; }
+.tags { display:flex; flex-wrap:wrap; gap:.55rem; justify-content:center; }
+.tag {
+  padding:.3rem .9rem; border-radius:999px;
+  background:rgba(51,144,236,.1); border:1px solid var(--border-accent);
+  font-size:.78rem; color:var(--accent-light); font-weight:500;
+}
+
+/* Prod badge */
+.prod-badge {
+  display:inline-flex; align-items:center; gap:.4rem;
+  background:rgba(77,190,147,.1); border:1px solid rgba(77,190,147,.3);
+  color:var(--success); font-size:.78rem; font-weight:600;
+  padding:.3rem .9rem; border-radius:999px; margin-top:1.6rem;
+}
+.prod-dot { width:7px; height:7px; border-radius:50%; background:var(--success); animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ─── SLIDE 2 PROBLEM ─── */
+#s2 .slide-inner { display:grid; grid-template-columns:1fr auto; gap:3rem; align-items:center; }
+.prob-list { display:flex; flex-direction:column; gap:1.5rem; }
+.prob-item { display:flex; gap:1rem; align-items:flex-start; }
+.prob-icon { font-size:1.8rem; flex-shrink:0; margin-top:.1rem; }
+.prob-item h3 { font-size:clamp(.95rem,1.5vw,1.1rem); font-weight:700; margin-bottom:.22rem; }
+.prob-item p { font-size:.84rem; color:var(--text-muted); line-height:1.5; }
+.stat-card {
+  background:var(--bg-card); border:1px solid var(--border-accent);
+  border-radius:20px; padding:2.5rem 2rem; text-align:center;
+  min-width:200px; box-shadow:0 0 40px var(--glow);
+}
+.stat-card .stat-num { font-size:clamp(3.5rem,6vw,5rem); display:block; }
+.stat-card p { font-size:.82rem; color:var(--text-muted); margin-top:.6rem; line-height:1.4; }
+
+/* ─── SLIDE 3 SOLUTION ─── */
+.grid22 { display:grid; grid-template-columns:repeat(2,1fr); gap:1.2rem; }
+.grid23 { display:grid; grid-template-columns:repeat(3,1fr); gap:1.2rem; }
+.feat-icon {
+  font-size:1.9rem; background:rgba(51,144,236,.12); border-radius:12px;
+  width:50px; height:50px; display:flex; align-items:center; justify-content:center; margin-bottom:.4rem;
+}
+.feat-card h3 { font-size:1.05rem; font-weight:700; margin-bottom:.45rem; }
+.feat-card p { font-size:.83rem; color:var(--text-muted); line-height:1.55; }
+
+/* ─── SLIDE 4 PRODUCT DEMO ─── */
+.demo-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:.8rem;
+  margin-top:1.4rem;
+}
+.mockup {
+  border-radius:12px; border:1px solid var(--border-accent);
+  box-shadow:0 4px 24px rgba(51,144,236,.1);
+  overflow:hidden; background:var(--bg-card);
+  transition:transform .25s,box-shadow .25s;
+}
+.mockup:hover{transform:translateY(-3px);box-shadow:0 8px 36px rgba(51,144,236,.22)}
+.mockup-inner { padding:.75rem; max-height:230px; overflow:hidden; }
+.mkbar {
+  height:26px; background:rgba(51,144,236,.08); border-radius:6px;
+  display:flex; align-items:center; gap:.35rem; padding:0 .6rem; margin-bottom:.7rem;
+}
+.mkdot { width:7px; height:7px; border-radius:50%; }
+.mkrow {
+  height:10px; border-radius:4px; background:rgba(255,255,255,.06); margin-bottom:.3rem;
+}
+.mkrow.a{background:rgba(51,144,236,.2);width:55%}
+.mkrow.w{width:90%}.mkrow.m{width:70%}.mkrow.s{width:40%}
+.mklabel {
+  display:inline-block; margin-top:.5rem; font-size:.66rem;
+  background:rgba(77,190,147,.12); color:var(--success);
+  border-radius:4px; padding:.12rem .45rem;
+}
+.mkbadge {
+  display:inline-flex; align-items:center; gap:.3rem;
+  font-size:.68rem; color:var(--text-muted);
+  background:rgba(51,144,236,.07); border:1px solid var(--border-subtle);
+  border-radius:999px; padding:.18rem .55rem; margin-bottom:.5rem;
+}
+.mk-nav-row { display:flex; gap:.4rem; }
+.mk-nav-item { flex:1; height:24px; border-radius:5px; background:rgba(255,255,255,.05); }
+.mk-nav-item.a{background:rgba(51,144,236,.18)}
+.mk-stat-row { display:flex; gap:.4rem; margin:.3rem 0; }
+.mk-stat {
+  flex:1; border-radius:7px; padding:.35rem .4rem;
+  background:rgba(255,255,255,.04); border:1px solid var(--border-subtle);
+  display:flex; flex-direction:column; gap:.2rem;
+}
+.mk-status-row { display:flex; gap:.35rem; align-items:center; border-radius:6px; padding:.3rem .4rem; background:rgba(255,255,255,.03); border:1px solid var(--border-subtle); }
+.mk-sdot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+
+/* ─── SLIDE 5 COMPARISON ─── */
+.cmp-table { width:100%; border-collapse:collapse; margin-top:1.8rem; }
+.cmp-table th {
+  font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+  padding:.65rem 1rem; color:var(--text-muted); text-align:left;
+  border-bottom:1px solid var(--border-subtle);
+}
+.cmp-table th:first-child { width:36%; }
+.cmp-table th.hl { color:var(--accent); }
+.cmp-table td {
+  padding:.6rem 1rem; font-size:.85rem; border-bottom:1px solid rgba(255,255,255,.04);
+}
+.cmp-table td:first-child { color:var(--text-muted); font-size:.82rem; }
+.cmp-table tr:hover td { background:rgba(51,144,236,.04); }
+.cmp-table td.hl { color:var(--text-primary); }
+.check { color:var(--success); font-size:1rem; }
+.cross { color:var(--danger); font-size:.9rem; opacity:.7; }
+.part { color:var(--warning); font-size:.9rem; }
+.cmp-header-row th.hl { background:rgba(51,144,236,.07); border-radius:8px 8px 0 0; }
+
+/* ─── SLIDE 6 TECH ─── */
+.tech-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-top:1.8rem; }
+.tech-card {
+  background:var(--bg-card); border:1px solid var(--border-subtle);
+  border-radius:14px; padding:1.2rem 1.4rem;
+  transition:transform .2s,border-color .2s;
+}
+.tech-card:hover{transform:translateY(-3px);border-color:var(--border-accent)}
+.tech-cat { font-size:.64rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin-bottom:.7rem; }
+.tech-items { list-style:none; display:flex; flex-direction:column; gap:.3rem; }
+.tech-items li { font-size:.83rem; color:var(--text-muted); display:flex; align-items:center; gap:.4rem; }
+.tech-items li::before { content:'▸'; color:var(--accent); font-size:.6rem; }
+
+/* ─── SLIDE 7 ARCH ─── */
+.arch { display:flex; flex-direction:column; gap:0; margin-top:1.8rem; }
+.arch-row {
+  display:grid;
+  grid-template-columns: 76px 1fr;
+  align-items: center;
+  width:100%;
+}
+.arch-boxes { display:flex; align-items:center; justify-content:center; gap:.55rem; }
+.arch-down { color:var(--border-accent); font-size:1.4rem; display:flex; justify-content:center; width:100%; padding:.2rem 0; padding-left:76px; }
+.ab {
+  background:var(--bg-card); border:1px solid var(--border-subtle);
+  border-radius:9px; padding:.55rem 1rem; font-size:.78rem;
+  text-align:center; min-width:95px; color:var(--text-muted);
+}
+.ab.p { border-color:var(--border-accent); color:var(--text-primary); background:rgba(51,144,236,.07); font-weight:600; }
+.ab.lbl { font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); background:transparent; border-color:transparent; }
+.arch-arr { color:var(--text-muted); font-size:1rem; }
+
+/* ─── RICH SCREENSHOT MOCKUPS ─── */
+.scr { font-size:.72rem; line-height:1.4; }
+.scr-topbar {
+  display:flex; align-items:center; gap:.4rem; padding:.45rem .7rem;
+  background:rgba(255,255,255,.03); border-bottom:1px solid rgba(255,255,255,.06);
+  margin-bottom:.55rem;
+}
+.scr-dots { display:flex; gap:.28rem; }
+.scr-dot { width:7px; height:7px; border-radius:50%; }
+.scr-title-bar { flex:1; font-size:.68rem; color:var(--text-muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.scr-badge {
+  display:inline-flex; align-items:center; gap:.3rem; font-size:.66rem; font-weight:600;
+  padding:.15rem .5rem; border-radius:4px;
+}
+.scr-badge.blue { background:rgba(51,144,236,.15); color:var(--accent-light); }
+.scr-badge.green { background:rgba(77,190,147,.15); color:var(--success); }
+.scr-badge.amber { background:rgba(230,168,58,.15); color:var(--warning); }
+.scr-badge.red { background:rgba(224,85,85,.15); color:var(--danger); }
+.scr-badge.grey { background:rgba(255,255,255,.07); color:var(--text-muted); }
+.scr-kpi-row { display:flex; gap:.4rem; margin-bottom:.45rem; }
+.scr-kpi {
+  flex:1; border-radius:7px; padding:.45rem .5rem;
+  background:rgba(255,255,255,.04); border:1px solid var(--border-subtle);
+}
+.scr-kpi-val { font-size:.95rem; font-weight:800; line-height:1; }
+.scr-kpi-lbl { font-size:.6rem; color:var(--text-muted); margin-top:.15rem; }
+.scr-sbar { height:5px; border-radius:999px; display:flex; gap:2px; overflow:hidden; margin:.4rem 0; }
+.scr-sbar-seg { height:100%; border-radius:999px; }
+.scr-row {
+  display:flex; align-items:center; gap:.4rem; padding:.35rem .4rem;
+  border-radius:6px; border:1px solid rgba(255,255,255,.05);
+  background:rgba(255,255,255,.025); margin-bottom:.28rem;
+}
+.scr-sdot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.scr-name { flex:1; color:var(--text-primary); font-size:.7rem; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.scr-meta { font-size:.62rem; color:var(--text-muted); white-space:nowrap; }
+.scr-divider { height:1px; background:rgba(255,255,255,.05); margin:.4rem 0; }
+.scr-timeline { display:flex; flex-direction:column; gap:0; }
+.scr-tl-step { display:flex; gap:.5rem; align-items:flex-start; }
+.scr-tl-track { display:flex; flex-direction:column; align-items:center; width:12px; flex-shrink:0; padding-top:2px; }
+.scr-tl-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.scr-tl-line { width:1px; flex:1; min-height:14px; background:rgba(255,255,255,.1); margin:2px 0; }
+.scr-tl-content { flex:1; padding-bottom:.4rem; }
+.scr-tl-label { font-size:.68rem; font-weight:600; }
+.scr-tl-sub { font-size:.6rem; color:var(--text-muted); }
+.scr-chat-msg { border-radius:7px; padding:.35rem .5rem; margin-bottom:.25rem; font-size:.68rem; line-height:1.4; max-width:90%; }
+.scr-chat-msg.in { background:rgba(51,144,236,.15); border:1px solid rgba(51,144,236,.2); align-self:flex-start; }
+.scr-chat-msg.out { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); align-self:flex-end; margin-left:auto; }
+.scr-chat-wrap { display:flex; flex-direction:column; gap:0; }
+.scr-file { display:flex; align-items:center; gap:.4rem; padding:.3rem .45rem; border-radius:6px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); font-size:.65rem; color:var(--text-muted); }
+.scr-section-label { font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin:.5rem 0 .3rem; }
+.scr-sidebar { display:flex; gap:.5rem; }
+.scr-nav { display:flex; flex-direction:column; gap:.25rem; width:30px; flex-shrink:0; }
+.scr-nav-item { height:22px; border-radius:5px; background:rgba(255,255,255,.05); }
+.scr-nav-item.a { background:rgba(51,144,236,.2); }
+.scr-content { flex:1; display:flex; flex-direction:column; gap:.3rem; }
+
+/* ─── SLIDE 8 MARKET ─── */
+.market-row { display:grid; grid-template-columns:repeat(3,1fr); gap:1.4rem; margin-top:1.8rem; }
+.mkt-card {
+  background:var(--bg-card); border:1px solid var(--border-subtle);
+  border-radius:16px; padding:2rem 1.5rem; text-align:center;
+  transition:transform .25s,box-shadow .25s,border-color .25s;
+}
+.mkt-card:hover{transform:translateY(-4px);box-shadow:0 8px 40px var(--glow);border-color:var(--border-accent)}
+.mkt-card .mi { font-size:2.2rem; margin-bottom:.7rem; }
+.mkt-card .stat-num { font-size:clamp(2rem,4vw,3rem); display:block; margin-bottom:.45rem; }
+.mkt-card p { font-size:.8rem; color:var(--text-muted); line-height:1.4; }
+.mkt-note {
+  margin-top:1.4rem; background:var(--bg-card);
+  border:1px solid var(--border-subtle); border-radius:12px; padding:1.2rem 1.5rem;
+  font-size:.85rem; color:var(--text-muted); line-height:1.6; text-align:center;
+}
+.mkt-note strong { color:var(--text-primary); }
+
+/* ─── SLIDE 9 BMODEL ─── */
+.biz-row { display:grid; grid-template-columns:repeat(3,1fr); gap:1.2rem; margin-top:1.8rem; }
+.biz-card {
+  background:var(--bg-card); border:1px solid var(--border-subtle);
+  border-radius:16px; padding:1.8rem 1.5rem; position:relative; overflow:hidden;
+  transition:transform .25s,box-shadow .25s;
+}
+.biz-card::before { content:''; position:absolute; left:0;top:0;bottom:0; width:3px; border-radius:3px 0 0 3px; }
+.biz-card:nth-child(1)::before{background:var(--accent)}
+.biz-card:nth-child(2)::before{background:var(--success)}
+.biz-card:nth-child(3)::before{background:var(--warning)}
+.biz-card:hover{transform:translateY(-4px);box-shadow:0 8px 30px var(--glow)}
+.biz-card .bi { font-size:1.9rem; margin-bottom:.8rem; }
+.biz-card h3 { font-size:1rem; font-weight:700; margin-bottom:.45rem; }
+.biz-card p { font-size:.8rem; color:var(--text-muted); line-height:1.5; margin-bottom:.8rem; }
+.biz-price {
+  font-size:.82rem; font-weight:700; color:var(--accent-light);
+  background:rgba(51,144,236,.1); border:1px solid var(--border-subtle);
+  border-radius:6px; padding:.28rem .65rem; display:inline-block;
+}
+
+/* ─── SLIDE 10 ROADMAP ─── */
+.roadmap {
+  position:relative; display:flex; justify-content:space-between;
+  align-items:flex-start; margin-top:3rem; padding-top:2.5rem;
+}
+.rm-line { position:absolute; top:.5rem; left:0; right:0; height:2px; background:var(--border-subtle); }
+.rm-fill { position:absolute; top:.5rem; left:0; width:75%; height:2px; background:linear-gradient(90deg,var(--accent),var(--accent-light)); }
+.rm-phase {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  text-align:center; position:relative; gap:.7rem; padding:0 .5rem;
+}
+.rm-dot {
+  width:13px; height:13px; border-radius:50%;
+  background:var(--bg-card); border:2px solid var(--text-muted);
+  position:absolute; top:-2.5rem; z-index:2;
+}
+.rm-dot.done{background:var(--accent);border-color:var(--accent);box-shadow:0 0 12px rgba(51,144,236,.5)}
+.rm-dot.cur{background:var(--bg-card);border-color:var(--accent);box-shadow:0 0 14px rgba(51,144,236,.4)}
+.rm-q { font-size:.68rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); }
+.rm-phase h3 { font-size:.88rem; font-weight:700; }
+.rm-phase p { font-size:.74rem; color:var(--text-muted); line-height:1.4; }
+
+/* Metrics strip (roadmap slide) */
+.metrics-strip {
+  display:flex; gap:1.2rem; flex-wrap:wrap; margin-bottom:2rem;
+}
+.metric-pill {
+  display:flex; align-items:center; gap:.5rem;
+  background:var(--bg-card); border:1px solid var(--border-subtle);
+  border-radius:10px; padding:.45rem 1rem; font-size:.82rem;
+}
+.metric-pill .mp-val { font-weight:800; color:var(--accent-light); font-size:.95rem; }
+.metric-pill .mp-lbl { color:var(--text-muted); }
+
+/* ─── SLIDE 11 TEAM + INVEST ─── */
+#s11 .slide-inner { display:grid; grid-template-columns:1fr 1fr; gap:4rem; align-items:start; }
+.team-list { display:flex; flex-direction:column; gap:1.2rem; }
+.tm { display:flex; align-items:center; gap:1rem; }
+.tm-avatar {
+  width:58px; height:58px; border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.15rem; font-weight:800; color:#fff; flex-shrink:0;
+}
+.tm-info h3 { font-size:.95rem; font-weight:700; }
+.tm-info p { font-size:.79rem; color:var(--text-muted); }
+.inv-card {
+  background:var(--bg-card); border:1px solid var(--border-accent);
+  border-radius:20px; padding:2rem;
+  box-shadow:0 0 40px var(--glow);
+}
+.inv-label { font-size:.7rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:.5rem; }
+.inv-amount { font-size:clamp(2rem,4vw,3rem); font-weight:900; background:linear-gradient(135deg,var(--accent),var(--accent-light)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.inv-run { font-size:.82rem; color:var(--text-muted); margin-bottom:1.5rem; }
+.pie-wrap { display:flex; align-items:center; gap:1.4rem; }
+.pie {
+  width:128px; height:128px; border-radius:50%; flex-shrink:0;
+  background:conic-gradient(var(--accent) 0% 50%,var(--success) 50% 80%,var(--warning) 80% 100%);
+  box-shadow:0 0 20px var(--glow); position:relative;
+}
+.pie::after { content:''; position:absolute; inset:28%; border-radius:50%; background:var(--bg-card); }
+.pie-leg { display:flex; flex-direction:column; gap:.45rem; }
+.pie-item { display:flex; align-items:center; gap:.45rem; font-size:.76rem; }
+.pie-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+/* ─── SLIDE 12 CONTACTS ─── */
+#s12 { text-align:center; }
+.c-logo {
+  width:70px; height:70px; border-radius:18px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  display:flex; align-items:center; justify-content:center;
+  margin:0 auto 1.2rem; font-size:2rem;
+  animation:logoPulse 4s infinite ease-in-out;
+}
+.c-name { font-size:clamp(2rem,5vw,3.5rem); font-weight:900; letter-spacing:-.03em; margin-bottom:.5rem; }
+.c-links { display:flex; flex-wrap:wrap; justify-content:center; gap:.9rem; margin:1.5rem 0 2rem; }
+.c-link {
+  display:flex; align-items:center; gap:.4rem;
+  color:var(--text-muted); text-decoration:none; font-size:.88rem;
+  padding:.5rem 1rem; border-radius:10px;
+  border:1px solid var(--border-subtle); background:var(--bg-card);
+  transition:color .2s,border-color .2s;
+}
+.c-link:hover{color:var(--accent-light);border-color:var(--border-accent)}
+.cta {
+  display:inline-block; padding:.85rem 2.5rem; border-radius:12px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  color:#fff; font-size:1rem; font-weight:700; text-decoration:none;
+  transition:transform .2s,box-shadow .2s; cursor:pointer; border:none; letter-spacing:-.01em;
+}
+.cta:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(51,144,236,.4)}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:1024px){
+  .tech-grid{grid-template-columns:repeat(2,1fr)}
+  .market-row,.biz-row{gap:1rem}
+  #s11 .slide-inner{gap:2.5rem}
+  .demo-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:768px){
+  section{padding:1.5rem 1.2rem}
+  #s2 .slide-inner{grid-template-columns:1fr}
+  .stat-card{margin:0 auto;max-width:200px}
+  .grid22,.grid23,.tech-grid,.market-row,.biz-row{grid-template-columns:1fr}
+  .demo-grid{grid-template-columns:1fr}
+  .arch-row{grid-template-columns:60px 1fr}
+  .arch-down{padding-left:60px}
+  #s11 .slide-inner{grid-template-columns:1fr;gap:2rem}
+  .roadmap{flex-direction:column;gap:1.5rem;padding-top:0}
+  .rm-line,.rm-fill{display:none}
+  .rm-phase{flex-direction:row;text-align:left;align-items:flex-start;gap:1rem;padding:0}
+  .rm-dot{position:static;margin-top:.15rem;flex-shrink:0}
+  #nav-dots{display:none}
+  .s1-title{font-size:2.2rem}
+  .s-title{font-size:1.6rem}
+  .metrics-strip{gap:.7rem}
+}
+@media(max-width:400px){
+  section{padding:1rem .8rem}
+  .s1-title{font-size:1.8rem}
+  .s-title{font-size:1.4rem}
+}
+@media(max-height:500px) and (orientation:landscape){
+  .grid22,.grid23,.tech-grid{grid-template-columns:repeat(2,1fr)}
+  .logo-wrap{width:50px;height:50px;font-size:1.4rem}
+  section{padding:1rem 2rem;justify-content:flex-start}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<nav id="nav-dots" aria-label="Навигация"></nav>
+<div id="slide-counter">1 / 12</div>
+
+<main>
+
+<!-- ─── S1: TITLE ─── -->
+<section id="s1" class="gradient-bg">
+<div class="slide-inner">
+  <div class="logo-wrap reveal">⚖️</div>
+  <h1 class="s1-title reveal reveal-delay-1">
+    <span class="gt">Legal</span><span class="ga">Case</span>&nbsp;<span class="gt">Tracker</span>
+  </h1>
+  <p class="s1-tag reveal reveal-delay-2">Полная CRM для юридической компании — от первичной заявки до закрытия и биллинга</p>
+  <div class="tags reveal reveal-delay-3">
+    <span class="tag">OTP без регистрации</span>
+    <span class="tag">SLA-мониторинг</span>
+    <span class="tag">Умное назначение</span>
+    <span class="tag">Self-hosted · 152-ФЗ</span>
+    <span class="tag">Real-time чат</span>
+  </div>
+  <div class="reveal reveal-delay-4" style="display:flex;justify-content:center;margin-top:1.6rem">
+    <div class="prod-badge"><span class="prod-dot"></span> Production · ruakb.ru</div>
+  </div>
+</div>
+</section>
+
+<!-- ─── S2: PROBLEM ─── -->
+<section id="s2">
+<div class="slide-inner">
+  <div class="prob-list">
+    <h2 class="s-title reveal"><span class="ga">Проблема</span></h2>
+    <p class="s-sub reveal reveal-delay-1" style="margin-bottom:.5rem">Как сейчас работают юридические компании</p>
+
+    <div class="prob-item reveal reveal-delay-1">
+      <span class="prob-icon">📋</span>
+      <div>
+        <h3>Excel и мессенджеры</h3>
+        <p>Заявки в таблицах, переписка в Telegram — нет единого источника правды. Данные теряются.</p>
+      </div>
+    </div>
+    <div class="prob-item reveal reveal-delay-2">
+      <span class="prob-icon">⏱️</span>
+      <div>
+        <h3>Нет контроля сроков</h3>
+        <p>Клиенты не знают статус. SLA нарушаются без уведомлений — теряется доверие и повторные обращения.</p>
+      </div>
+    </div>
+    <div class="prob-item reveal reveal-delay-3">
+      <span class="prob-icon">🔒</span>
+      <div>
+        <h3>Данные в иностранных облаках</h3>
+        <p>Google Drive, Notion, Slack. Нарушение 152-ФЗ, риск утечек персональных данных клиентов.</p>
+      </div>
+    </div>
+    <div class="prob-item reveal reveal-delay-4">
+      <span class="prob-icon">💸</span>
+      <div>
+        <h3>Ручной расчёт выплат</h3>
+        <p>Нет автоматического учёта выручки, загрузки юристов и начисления зарплат по каждой заявке.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-card reveal reveal-delay-2">
+    <span class="stat-num">~90%</span>
+    <p>юридических компаний<br>не имеют специализированной<br>отраслевой CRM</p>
+  </div>
+</div>
+</section>
+
+<!-- ─── S3: SOLUTION ─── -->
+<section id="s3">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Решение</span></h2>
+  <p class="s-sub reveal reveal-delay-1">Единая платформа — три роли — полный цикл</p>
+
+  <div class="grid23">
+    <div class="card feat-card reveal reveal-delay-1">
+      <div class="feat-icon">👤</div>
+      <h3>Кабинет без регистрации</h3>
+      <p>Клиент отслеживает заявку по OTP через SMS. JWT-cookie на 7 дней — не нужно вводить код повторно.</p>
+    </div>
+    <div class="card feat-card reveal reveal-delay-2">
+      <div class="feat-icon">💬</div>
+      <h3>Защищённый чат с юристом</h3>
+      <p>Переписка с шифрованием, запрос документов, обмен файлами, генерация договоров и счетов прямо в диалоге.</p>
+    </div>
+    <div class="card feat-card reveal reveal-delay-3">
+      <div class="feat-icon">🤖</div>
+      <h3>Умное авто-назначение</h3>
+      <p>Авто-распределение через 24 ч по теме и минимальной нагрузке юриста. Ручной захват для срочных дел.</p>
+    </div>
+    <div class="card feat-card reveal reveal-delay-2">
+      <div class="feat-icon">👥</div>
+      <h3>Управление командой</h3>
+      <p>Руководитель видит загрузку каждого юриста, просрочки и эскалации — всё в одном дашборде в реальном времени.</p>
+    </div>
+    <div class="card feat-card reveal reveal-delay-3">
+      <div class="feat-icon">🔄</div>
+      <h3>Смена юриста и куратор</h3>
+      <p>Клиент может запросить помощь куратора или замену юриста в рамках одного контракта без потери истории.</p>
+    </div>
+    <div class="card feat-card reveal reveal-delay-4">
+      <div class="feat-icon">🛡️</div>
+      <h3>Самохостинг · 152-ФЗ</h3>
+      <p>Весь стек на серверах клиента в России. Полный аудит-лог, шифрование файлов, SLA-контроль и Telegram-уведомления.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ─── S4: PRODUCT DEMO ─── -->
+<section id="s4">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Продукт</span></h2>
+  <p class="s-sub reveal reveal-delay-1">6 экранов · все роли · полный функционал</p>
+
+  <div class="demo-grid">
+
+    <!-- ══ 1: Кабинет клиента ══ -->
+    <div class="mockup reveal reveal-delay-1">
+      <div class="mockup-inner scr">
+        <div class="scr-topbar">
+          <div class="scr-dots"><div class="scr-dot" style="background:#ff5f57"></div><div class="scr-dot" style="background:#febc2e"></div><div class="scr-dot" style="background:#28c840"></div></div>
+          <div class="scr-title-bar">ruakb.ru · Заявка №247</div>
+          <span class="scr-badge green">● В работе</span>
+        </div>
+        <div style="font-size:.73rem;font-weight:700;margin-bottom:.25rem">Трудовые споры — Петров А.В.</div>
+        <div style="display:flex;gap:.28rem;margin-bottom:.4rem">
+          <span class="scr-badge blue">Иванова А.К.</span>
+          <span class="scr-badge grey">15.03.2026</span>
+        </div>
+        <div class="scr-section-label">Ход дела</div>
+        <div class="scr-timeline">
+          <div class="scr-tl-step">
+            <div class="scr-tl-track"><div class="scr-tl-dot" style="background:var(--success)"></div><div class="scr-tl-line"></div></div>
+            <div class="scr-tl-content"><div class="scr-tl-label" style="color:var(--success)">Принята</div><div class="scr-tl-sub">14.03 09:12</div></div>
+          </div>
+          <div class="scr-tl-step">
+            <div class="scr-tl-track"><div class="scr-tl-dot" style="background:var(--success)"></div><div class="scr-tl-line"></div></div>
+            <div class="scr-tl-content"><div class="scr-tl-label" style="color:var(--success)">Юрист назначен</div><div class="scr-tl-sub">14.03 11:30</div></div>
+          </div>
+          <div class="scr-tl-step">
+            <div class="scr-tl-track"><div class="scr-tl-dot" style="background:var(--accent);box-shadow:0 0 6px rgba(51,144,236,.6)"></div></div>
+            <div class="scr-tl-content"><div class="scr-tl-label" style="color:var(--accent)">● В работе</div><div class="scr-tl-sub">Ожидайте документы</div></div>
+          </div>
+        </div>
+        <div class="scr-file" style="margin-top:.4rem">📎 Договор_трудовой_v2.pdf <span style="margin-left:auto;color:var(--accent)">↓</span></div>
+        <div class="mklabel" style="margin-top:.4rem">Кабинет клиента</div>
+      </div>
+    </div>
+
+    <!-- ══ 2: Дашборд администратора ══ -->
+    <div class="mockup reveal reveal-delay-2">
+      <div class="mockup-inner scr" style="padding:.65rem">
+        <div class="scr-topbar" style="margin:0 -.65rem .45rem;padding:.38rem .65rem">
+          <div class="scr-dots"><div class="scr-dot" style="background:#ff5f57"></div><div class="scr-dot" style="background:#febc2e"></div><div class="scr-dot" style="background:#28c840"></div></div>
+          <div class="scr-title-bar">Администратор — Дашборд</div>
+        </div>
+        <div class="scr-sidebar">
+          <div class="scr-nav"><div class="scr-nav-item a"></div><div class="scr-nav-item"></div><div class="scr-nav-item"></div><div class="scr-nav-item"></div><div class="scr-nav-item"></div></div>
+          <div class="scr-content">
+            <div class="scr-kpi-row">
+              <div class="scr-kpi"><div class="scr-kpi-val" style="color:var(--accent-light)">42</div><div class="scr-kpi-lbl">Всего</div></div>
+              <div class="scr-kpi"><div class="scr-kpi-val" style="color:var(--success)">18</div><div class="scr-kpi-lbl">Актив</div></div>
+              <div class="scr-kpi"><div class="scr-kpi-val" style="color:var(--danger)">3</div><div class="scr-kpi-lbl">Просрочки</div></div>
+              <div class="scr-kpi"><div class="scr-kpi-val" style="color:#d4a86a;font-size:.68rem">285k</div><div class="scr-kpi-lbl">₽ выр.</div></div>
+            </div>
+            <div class="scr-sbar">
+              <div class="scr-sbar-seg" style="width:38%;background:rgba(51,144,236,.55)"></div>
+              <div class="scr-sbar-seg" style="width:28%;background:rgba(77,190,147,.5)"></div>
+              <div class="scr-sbar-seg" style="width:18%;background:rgba(230,168,58,.45)"></div>
+              <div class="scr-sbar-seg" style="flex:1;background:rgba(255,255,255,.08)"></div>
+            </div>
+            <div class="scr-row"><div class="scr-sdot" style="background:var(--accent)"></div><div class="scr-name">Петров А.В. — Корпоративное</div><span class="scr-badge amber" style="font-size:.56rem;padding:.08rem .3rem">⚠ SLA</span></div>
+            <div class="scr-row"><div class="scr-sdot" style="background:var(--success)"></div><div class="scr-name">Козлова М.П. — Семейное</div><div class="scr-meta">Иванова</div></div>
+            <div class="scr-row"><div class="scr-sdot" style="background:var(--accent)"></div><div class="scr-name">Сидоров К.И. — Трудовые</div><div class="scr-meta">Смирнов</div></div>
+            <div class="scr-row" style="opacity:.45"><div class="scr-sdot" style="background:rgba(255,255,255,.15)"></div><div class="scr-name">Новиков Д.Е. — Налоговое</div><span class="scr-badge grey" style="font-size:.56rem;padding:.08rem .3rem">Новая</span></div>
+          </div>
+        </div>
+        <div class="mklabel" style="margin-top:.35rem">Дашборд администратора</div>
+      </div>
+    </div>
+
+    <!-- ══ 3: Кабинет юриста ══ -->
+    <div class="mockup reveal reveal-delay-3">
+      <div class="mockup-inner scr">
+        <div class="scr-topbar">
+          <div class="scr-dots"><div class="scr-dot" style="background:#ff5f57"></div><div class="scr-dot" style="background:#febc2e"></div><div class="scr-dot" style="background:#28c840"></div></div>
+          <div class="scr-title-bar">Иванова А.К. — Мои заявки</div>
+          <span class="scr-badge blue">8 дел</span>
+        </div>
+        <div style="display:flex;gap:.28rem;margin-bottom:.4rem">
+          <span class="scr-badge blue">Активные (5)</span>
+          <span class="scr-badge grey">Новые (2)</span>
+          <span class="scr-badge grey">Архив</span>
+        </div>
+        <div class="scr-row" style="border-color:rgba(224,85,85,.3);background:rgba(224,85,85,.05)">
+          <div class="scr-sdot" style="background:var(--danger)"></div>
+          <div style="flex:1"><div class="scr-name">Петров А.В.</div><div class="scr-meta">Корпоративное · 2д 14ч</div></div>
+          <span class="scr-badge red" style="font-size:.56rem;padding:.08rem .3rem">⚠ Просрочка</span>
+        </div>
+        <div class="scr-row">
+          <div class="scr-sdot" style="background:var(--accent)"></div>
+          <div style="flex:1"><div class="scr-name">Козлова М.П.</div><div class="scr-meta">Семейное · 5ч</div></div>
+          <span class="scr-badge green" style="font-size:.56rem;padding:.08rem .3rem">В работе</span>
+        </div>
+        <div class="scr-row">
+          <div class="scr-sdot" style="background:rgba(255,255,255,.2)"></div>
+          <div style="flex:1"><div class="scr-name">Новиков Д.Е.</div><div class="scr-meta">Налоговое · только что</div></div>
+          <span class="scr-badge blue" style="font-size:.56rem;padding:.08rem .3rem">● Новое</span>
+        </div>
+        <div class="scr-divider"></div>
+        <div class="scr-section-label">Чат · Петров А.В.</div>
+        <div class="scr-chat-wrap">
+          <div class="scr-chat-msg out">Александр, нужны документы об увольнении</div>
+          <div class="scr-chat-msg in" style="font-size:.62rem">Прикрепляю приказ и трудовую книжку</div>
+        </div>
+        <div class="scr-file" style="margin-top:.25rem">📎 prikaz_uvolnenie.pdf <span style="margin-left:auto;color:var(--accent)">↓</span></div>
+        <div class="mklabel" style="margin-top:.35rem">Кабинет юриста</div>
+      </div>
+    </div>
+
+    <!-- ══ 4: Канбан ══ -->
+    <div class="mockup reveal reveal-delay-2">
+      <div class="mockup-inner scr" style="padding:.65rem">
+        <div class="scr-topbar" style="margin:0 -.65rem .45rem;padding:.38rem .65rem">
+          <div class="scr-dots"><div class="scr-dot" style="background:#ff5f57"></div><div class="scr-dot" style="background:#febc2e"></div><div class="scr-dot" style="background:#28c840"></div></div>
+          <div class="scr-title-bar">Канбан — все заявки</div>
+          <span class="scr-badge grey">42 заявки</span>
+        </div>
+        <!-- Kanban columns -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem;height:155px;overflow:hidden">
+
+          <!-- Новые -->
+          <div style="display:flex;flex-direction:column;gap:.28rem">
+            <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:.15rem .3rem;border-bottom:2px solid rgba(255,255,255,.12);margin-bottom:.1rem">Новые · 7</div>
+            <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:.3rem .35rem;font-size:.62rem">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Романов Е.С.</div>
+              <div style="color:var(--text-muted)">Налоговое</div>
+              <span class="scr-badge grey" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">Новая</span>
+            </div>
+            <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:.3rem .35rem;font-size:.62rem">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Фёдоров В.А.</div>
+              <div style="color:var(--text-muted)">Семейное</div>
+              <span class="scr-badge grey" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">Без юриста</span>
+            </div>
+          </div>
+
+          <!-- Назначены -->
+          <div style="display:flex;flex-direction:column;gap:.28rem">
+            <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);padding:.15rem .3rem;border-bottom:2px solid rgba(51,144,236,.3);margin-bottom:.1rem">Назначены · 11</div>
+            <div style="background:rgba(51,144,236,.06);border:1px solid rgba(51,144,236,.15);border-radius:6px;padding:.3rem .35rem;font-size:.62rem">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Сидоров К.И.</div>
+              <div style="color:var(--text-muted)">Трудовые · Смирнов</div>
+              <span class="scr-badge blue" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">1д 4ч</span>
+            </div>
+            <div style="background:rgba(51,144,236,.06);border:1px solid rgba(51,144,236,.15);border-radius:6px;padding:.3rem .35rem;font-size:.62rem">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Малинина О.Р.</div>
+              <div style="color:var(--text-muted)">Корп. · Иванова</div>
+              <span class="scr-badge blue" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">6ч</span>
+            </div>
+          </div>
+
+          <!-- В работе -->
+          <div style="display:flex;flex-direction:column;gap:.28rem">
+            <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--success);padding:.15rem .3rem;border-bottom:2px solid rgba(77,190,147,.3);margin-bottom:.1rem">В работе · 18</div>
+            <div style="background:rgba(77,190,147,.06);border:1px solid rgba(77,190,147,.15);border-radius:6px;padding:.3rem .35rem;font-size:.62rem">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Козлова М.П.</div>
+              <div style="color:var(--text-muted)">Семейное · Иванова</div>
+              <span class="scr-badge green" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">Счёт выставлен</span>
+            </div>
+            <div style="background:rgba(224,85,85,.06);border:1px solid rgba(224,85,85,.2);border-radius:6px;padding:.3rem .35rem;font-size:.62rem">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Петров А.В.</div>
+              <div style="color:var(--text-muted)">Корп. · Смирнов</div>
+              <span class="scr-badge red" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">⚠ SLA</span>
+            </div>
+          </div>
+
+          <!-- Закрыто -->
+          <div style="display:flex;flex-direction:column;gap:.28rem">
+            <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:.15rem .3rem;border-bottom:2px solid rgba(255,255,255,.1);margin-bottom:.1rem;opacity:.7">Закрыто · 6</div>
+            <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:.3rem .35rem;font-size:.62rem;opacity:.6">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Белов И.Н.</div>
+              <div style="color:var(--text-muted)">Трудовые</div>
+              <span class="scr-badge grey" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">Оплачено</span>
+            </div>
+            <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:.3rem .35rem;font-size:.62rem;opacity:.6">
+              <div style="font-weight:600;color:var(--text-primary);margin-bottom:.15rem">Кузьмина Т.В.</div>
+              <div style="color:var(--text-muted)">Семейное</div>
+              <span class="scr-badge grey" style="font-size:.55rem;padding:.07rem .28rem;margin-top:.2rem">Закрыто</span>
+            </div>
+          </div>
+        </div>
+        <div class="mklabel" style="margin-top:.35rem">Канбан-доска заявок</div>
+      </div>
+    </div>
+
+    <!-- ══ 5: Чат + документы ══ -->
+    <div class="mockup reveal reveal-delay-3">
+      <div class="mockup-inner scr">
+        <div class="scr-topbar">
+          <div class="scr-dots"><div class="scr-dot" style="background:#ff5f57"></div><div class="scr-dot" style="background:#febc2e"></div><div class="scr-dot" style="background:#28c840"></div></div>
+          <div class="scr-title-bar">Чат · Заявка №247 · Петров А.В.</div>
+          <span class="scr-badge green">🔒 Зашифровано</span>
+        </div>
+        <div class="scr-chat-wrap" style="gap:.2rem">
+          <div class="scr-chat-msg in">Добрый день, Александр! Готовы начать работу по вашему делу.</div>
+          <div class="scr-chat-msg out" style="font-size:.63rem">Хорошо. Что нужно от меня?</div>
+          <div class="scr-chat-msg in" style="font-size:.63rem">
+            Пожалуйста, загрузите трудовой договор и приказ об увольнении.
+            <div style="margin-top:.3rem;padding:.25rem .35rem;background:rgba(51,144,236,.12);border-radius:5px;border:1px solid rgba(51,144,236,.2);font-size:.6rem;color:var(--accent-light)">📋 Запрос документов · 2 файла</div>
+          </div>
+          <div class="scr-chat-msg out" style="font-size:.63rem">Прикрепляю</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.22rem;margin-top:.3rem">
+          <div class="scr-file">📎 trudovoy_dogovor.pdf <span style="margin-left:auto;color:var(--success)">✓ Загружен</span></div>
+          <div class="scr-file">📎 prikaz_uvolnenie.pdf <span style="margin-left:auto;color:var(--success)">✓ Загружен</span></div>
+        </div>
+        <div style="margin-top:.35rem;padding:.3rem .4rem;background:rgba(77,190,147,.08);border:1px solid rgba(77,190,147,.2);border-radius:7px;font-size:.63rem;display:flex;align-items:center;gap:.4rem">
+          <span style="font-size:.9rem">📄</span>
+          <div><div style="font-weight:600;color:var(--success)">Счёт №38 сгенерирован</div><div style="color:var(--text-muted)">15 000 ₽ · Срок: 20.03.2026</div></div>
+          <span style="margin-left:auto;color:var(--accent);font-size:.7rem">↓</span>
+        </div>
+        <div class="mklabel" style="margin-top:.35rem">Чат + документооборот</div>
+      </div>
+    </div>
+
+    <!-- ══ 6: Нагрузка команды ══ -->
+    <div class="mockup reveal reveal-delay-4">
+      <div class="mockup-inner scr" style="padding:.65rem">
+        <div class="scr-topbar" style="margin:0 -.65rem .45rem;padding:.38rem .65rem">
+          <div class="scr-dots"><div class="scr-dot" style="background:#ff5f57"></div><div class="scr-dot" style="background:#febc2e"></div><div class="scr-dot" style="background:#28c840"></div></div>
+          <div class="scr-title-bar">Администратор — Команда юристов</div>
+        </div>
+        <!-- Table header -->
+        <div style="display:grid;grid-template-columns:1fr 36px 36px 50px 70px;gap:.3rem;font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:0 .3rem .3rem;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:.3rem">
+          <div>Юрист</div><div>Актив</div><div>Проср.</div><div>Выручка</div><div>Загрузка</div>
+        </div>
+        <!-- Rows -->
+        <div style="display:grid;grid-template-columns:1fr 36px 36px 50px 70px;gap:.3rem;align-items:center;padding:.28rem .3rem;border-radius:5px;background:rgba(255,255,255,.03);font-size:.66rem;margin-bottom:.22rem">
+          <div style="font-weight:600">Иванова А.К.</div>
+          <div style="color:var(--accent-light);font-weight:700;text-align:center">8</div>
+          <div style="color:var(--danger);font-weight:700;text-align:center">1</div>
+          <div style="color:#d4a86a;font-size:.62rem">84 000 ₽</div>
+          <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden"><div style="width:80%;height:100%;background:rgba(51,144,236,.6);border-radius:999px"></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 36px 36px 50px 70px;gap:.3rem;align-items:center;padding:.28rem .3rem;border-radius:5px;background:rgba(255,255,255,.03);font-size:.66rem;margin-bottom:.22rem">
+          <div style="font-weight:600">Смирнов П.В.</div>
+          <div style="color:var(--accent-light);font-weight:700;text-align:center">6</div>
+          <div style="color:var(--text-muted);text-align:center">—</div>
+          <div style="color:#d4a86a;font-size:.62rem">62 000 ₽</div>
+          <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden"><div style="width:60%;height:100%;background:rgba(77,190,147,.55);border-radius:999px"></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 36px 36px 50px 70px;gap:.3rem;align-items:center;padding:.28rem .3rem;border-radius:5px;background:rgba(230,168,58,.05);border:1px solid rgba(230,168,58,.15);font-size:.66rem;margin-bottom:.22rem">
+          <div style="font-weight:600">Орлов Д.С.</div>
+          <div style="color:var(--accent-light);font-weight:700;text-align:center">12</div>
+          <div style="color:var(--danger);font-weight:700;text-align:center">2</div>
+          <div style="color:#d4a86a;font-size:.62rem">108 000 ₽</div>
+          <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden"><div style="width:95%;height:100%;background:rgba(230,168,58,.7);border-radius:999px"></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 36px 36px 50px 70px;gap:.3rem;align-items:center;padding:.28rem .3rem;border-radius:5px;background:rgba(255,255,255,.03);font-size:.66rem">
+          <div style="font-weight:600">Белова Е.М.</div>
+          <div style="color:var(--accent-light);font-weight:700;text-align:center">4</div>
+          <div style="color:var(--text-muted);text-align:center">—</div>
+          <div style="color:#d4a86a;font-size:.62rem">31 000 ₽</div>
+          <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden"><div style="width:38%;height:100%;background:rgba(77,190,147,.45);border-radius:999px"></div></div>
+        </div>
+        <div style="margin-top:.35rem;display:flex;gap:.4rem">
+          <span class="scr-badge amber" style="font-size:.6rem">⚠ Орлов перегружен — перераспределить</span>
+        </div>
+        <div class="mklabel" style="margin-top:.3rem">Нагрузка команды</div>
+      </div>
+    </div>
+
+    <!-- WIREFRAME FALLBACK (hidden, для отката)
+    <div class="mockup wireframe-client">…</div>
+    <div class="mockup wireframe-admin">…</div>
+    <div class="mockup wireframe-lawyer">…</div>
+    -->
+
+  </div>
+</div>
+</section>
+
+<!-- ─── S5: COMPARISON ─── -->
+<section id="s5">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Конкурентный анализ</span></h2>
+  <p class="s-sub reveal reveal-delay-1">Почему не подходят существующие решения</p>
+
+  <div class="reveal reveal-delay-2" style="overflow-x:auto">
+    <table class="cmp-table">
+      <thead>
+        <tr class="cmp-header-row">
+          <th>Критерий</th>
+          <th class="hl">Legal Case Tracker</th>
+          <th>amoCRM</th>
+          <th>Bitrix24</th>
+          <th>Excel + Telegram</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Self-hosted (свои серверы)</td>
+          <td class="hl"><span class="check">✓</span> Полный</td>
+          <td><span class="cross">✗</span> Только SaaS</td>
+          <td><span class="part">~</span> Enterprise</td>
+          <td><span class="cross">✗</span> Сторонние</td>
+        </tr>
+        <tr>
+          <td>Соответствие 152-ФЗ</td>
+          <td class="hl"><span class="check">✓</span> Встроено</td>
+          <td><span class="part">~</span> Частично</td>
+          <td><span class="part">~</span> Частично</td>
+          <td><span class="cross">✗</span> Нет</td>
+        </tr>
+        <tr>
+          <td>OTP-кабинет без регистрации</td>
+          <td class="hl"><span class="check">✓</span> Да</td>
+          <td><span class="cross">✗</span> Нет</td>
+          <td><span class="cross">✗</span> Нет</td>
+          <td><span class="cross">✗</span> Нет</td>
+        </tr>
+        <tr>
+          <td>Юридический SLA и статусы</td>
+          <td class="hl"><span class="check">✓</span> Настраивается</td>
+          <td><span class="part">~</span> Общий</td>
+          <td><span class="part">~</span> Общий</td>
+          <td><span class="cross">✗</span> Нет</td>
+        </tr>
+        <tr>
+          <td>Авто-назначение юристов</td>
+          <td class="hl"><span class="check">✓</span> По теме + нагрузке</td>
+          <td><span class="part">~</span> Базовое</td>
+          <td><span class="part">~</span> Базовое</td>
+          <td><span class="cross">✗</span> Нет</td>
+        </tr>
+        <tr>
+          <td>Биллинг и расчёт зарплат</td>
+          <td class="hl"><span class="check">✓</span> Встроен</td>
+          <td><span class="cross">✗</span> Интеграция</td>
+          <td><span class="part">~</span> Платный модуль</td>
+          <td><span class="cross">✗</span> Вручную</td>
+        </tr>
+        <tr>
+          <td>Цена внедрения</td>
+          <td class="hl">От 150 000 ₽</td>
+          <td>От 999 ₽/мес/польз.</td>
+          <td>От 1 990 ₽/мес/польз.</td>
+          <td>0 ₽ + риски</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+
+<!-- ─── S6: TECH STACK ─── -->
+<section id="s6">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Технологии</span></h2>
+  <p class="s-sub reveal reveal-delay-1">Надёжный self-hosted стек · 50 000+ строк кода · 113 API-эндпоинтов</p>
+
+  <div class="tech-grid">
+    <div class="tech-card reveal reveal-delay-1">
+      <div class="tech-cat">Frontend</div>
+      <ul class="tech-items">
+        <li>React 18 + Vite</li>
+        <li>Vanilla CSS (нет фреймворков)</li>
+        <li>WebSocket (чат)</li>
+        <li>JWT Cookie Auth</li>
+      </ul>
+    </div>
+    <div class="tech-card reveal reveal-delay-1">
+      <div class="tech-cat">Backend</div>
+      <ul class="tech-items">
+        <li>Python 3.12 + FastAPI</li>
+        <li>SQLAlchemy + Alembic</li>
+        <li>Pydantic v2</li>
+        <li>OTP + JWT + RBAC</li>
+      </ul>
+    </div>
+    <div class="tech-card reveal reveal-delay-2">
+      <div class="tech-cat">Database</div>
+      <ul class="tech-items">
+        <li>PostgreSQL 16 · 27 таблиц</li>
+        <li>Redis (cache + pub/sub)</li>
+        <li>Alembic · 36 миграций</li>
+      </ul>
+    </div>
+    <div class="tech-card reveal reveal-delay-2">
+      <div class="tech-cat">Jobs & Queue</div>
+      <ul class="tech-items">
+        <li>Celery + Redis broker</li>
+        <li>Celery Beat (cron)</li>
+        <li>SLA timers · auto-assign</li>
+        <li>Telegram Bot уведомления</li>
+      </ul>
+    </div>
+    <div class="tech-card reveal reveal-delay-3">
+      <div class="tech-cat">Storage & Infra</div>
+      <ul class="tech-items">
+        <li>MinIO (S3-compatible)</li>
+        <li>Docker + Compose</li>
+        <li>Nginx · SSL/TLS · Certbot</li>
+        <li>Email микросервис</li>
+      </ul>
+    </div>
+    <div class="tech-card reveal reveal-delay-3">
+      <div class="tech-cat">Security</div>
+      <ul class="tech-items">
+        <li>152-ФЗ compliant</li>
+        <li>Полный аудит-лог</li>
+        <li>RBAC · шифрование файлов</li>
+        <li>40 тест-файлов · DAST</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ─── S7: ARCHITECTURE ─── -->
+<section id="s7">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Архитектура</span></h2>
+  <p class="s-sub reveal reveal-delay-1">Изолированная инфраструктура на серверах клиента в РФ</p>
+
+  <div class="arch reveal reveal-delay-2">
+
+    <div class="arch-row">
+      <div class="ab lbl">Клиенты</div>
+      <div class="arch-boxes">
+        <div class="ab">🌐 Браузер<br><span style="font-size:.7rem;color:rgba(255,255,255,.35)">Клиент (OTP)</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab">🔧 Браузер<br><span style="font-size:.7rem;color:rgba(255,255,255,.35)">Юрист / Админ</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab">📱 Telegram Bot<br><span style="font-size:.7rem;color:rgba(255,255,255,.35)">Уведомления</span></div>
+      </div>
+    </div>
+    <div class="arch-down">↓</div>
+
+    <div class="arch-row">
+      <div class="ab lbl">Gateway</div>
+      <div class="arch-boxes">
+        <div class="ab p" style="min-width:220px">🚪 Nginx + SSL/TLS<br><span style="font-size:.7rem;opacity:.7">Reverse proxy · Certbot</span></div>
+      </div>
+    </div>
+    <div class="arch-down">↓</div>
+
+    <div class="arch-row">
+      <div class="ab lbl">Services</div>
+      <div class="arch-boxes">
+        <div class="ab p">⚡ FastAPI<br><span style="font-size:.7rem;opacity:.7">113 endpoints</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab p">💬 Chat<br><span style="font-size:.7rem;opacity:.7">WebSocket</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab p">📧 Email<br><span style="font-size:.7rem;opacity:.7">SMTP micro</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab p">🔄 Celery<br><span style="font-size:.7rem;opacity:.7">SLA · assign</span></div>
+      </div>
+    </div>
+    <div class="arch-down">↓</div>
+
+    <div class="arch-row">
+      <div class="ab lbl">Data</div>
+      <div class="arch-boxes">
+        <div class="ab">🐘 PostgreSQL<br><span style="font-size:.7rem;opacity:.6">27 таблиц</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab">⚡ Redis<br><span style="font-size:.7rem;opacity:.6">cache + queue</span></div>
+        <div class="arch-arr">·</div>
+        <div class="ab">🗄️ MinIO S3<br><span style="font-size:.7rem;opacity:.6">файлы клиентов</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<!-- ─── S8: MARKET ─── -->
+<section id="s8">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Рынок</span></h2>
+  <p class="s-sub reveal reveal-delay-1">Юридические услуги — один из крупнейших сегментов сферы услуг в России</p>
+
+  <div class="market-row">
+    <div class="mkt-card reveal reveal-delay-1">
+      <div class="mi">🏢</div>
+      <span class="stat-num">72 000</span>
+      <p>потенциальных клиентов —<br>юрфирмы и адвокатские бюро<br>5–200 сотрудников</p>
+    </div>
+    <div class="mkt-card reveal reveal-delay-2">
+      <div class="mi">💰</div>
+      <span class="stat-num">700B ₽</span>
+      <p>объём рынка<br>юридических услуг в 2025 г.</p>
+    </div>
+    <div class="mkt-card reveal reveal-delay-3">
+      <div class="mi">📈</div>
+      <span class="stat-num">+23%</span>
+      <p>ежегодный рост<br>цифровых инструментов<br>в юридическом секторе</p>
+    </div>
+  </div>
+
+  <div class="mkt-note reveal reveal-delay-4">
+    <strong>Целевой сегмент:</strong> частные юридические бюро и адвокатские конторы 5–50 сотрудников,
+    которые ведут заявки в Excel или мессенджерах и не могут использовать западные SaaS-решения из-за требований 152-ФЗ.
+  </div>
+</div>
+</section>
+
+<!-- ─── S9: BUSINESS MODEL ─── -->
+<section id="s9">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Бизнес-модель</span></h2>
+  <p class="s-sub reveal reveal-delay-1">Три источника выручки — от разового до регулярного</p>
+
+  <div class="biz-row">
+    <div class="biz-card reveal reveal-delay-1">
+      <div class="bi">🚀</div>
+      <h3>Внедрение</h3>
+      <p>Развёртывание на сервере клиента, настройка тем, статусов и шаблонов счетов, обучение команды. Разовый платёж.</p>
+      <span class="biz-price">от 150 000 ₽</span>
+    </div>
+    <div class="biz-card reveal reveal-delay-2">
+      <div class="bi">🔧</div>
+      <h3>Поддержка + обновления</h3>
+      <p>Ежемесячная подписка: обновления безопасности, новые функции (ПЭП, конструктор), техподдержка 8×5.</p>
+      <span class="biz-price">15 000 ₽ / мес</span>
+    </div>
+    <div class="biz-card reveal reveal-delay-3">
+      <div class="bi">☁️</div>
+      <h3>Облачный тариф</h3>
+      <p>Полный хостинг на российских серверах. 152-ФЗ «из коробки», готово к работе за 24 часа после заказа.</p>
+      <span class="biz-price">от 8 000 ₽ / мес</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ─── S10: ROADMAP + METRICS ─── -->
+<section id="s10">
+<div class="slide-inner">
+  <h2 class="s-title reveal"><span class="ga">Прогресс и дорожная карта</span></h2>
+  <p class="s-sub reveal reveal-delay-1">65 коммитов за последние 3 месяца · Production с начала 2026</p>
+
+  <div class="metrics-strip reveal reveal-delay-2">
+    <div class="metric-pill"><span class="mp-val">113</span><span class="mp-lbl">API эндпоинтов</span></div>
+    <div class="metric-pill"><span class="mp-val">27</span><span class="mp-lbl">таблиц БД</span></div>
+    <div class="metric-pill"><span class="mp-val">50k+</span><span class="mp-lbl">строк кода</span></div>
+    <div class="metric-pill"><span class="mp-val">40</span><span class="mp-lbl">тест-файлов</span></div>
+    <div class="metric-pill"><span class="mp-val">36</span><span class="mp-lbl">DB миграций</span></div>
+    <div class="metric-pill"><span class="mp-val">65</span><span class="mp-lbl">коммитов / 3 мес</span></div>
+  </div>
+
+  <div class="roadmap reveal reveal-delay-3">
+    <div class="rm-line"></div>
+    <div class="rm-fill"></div>
+
+    <div class="rm-phase">
+      <div class="rm-dot done"></div>
+      <div class="rm-q">Q1 2026</div>
+      <h3>MVP в продакшн</h3>
+      <p>FastAPI, React, OTP, роли, статусы, SLA, файлы, авто-назначение, чат</p>
+    </div>
+    <div class="rm-phase">
+      <div class="rm-dot done"></div>
+      <div class="rm-q">Q2 2026</div>
+      <h3>Безопасность</h3>
+      <p>152-ФЗ, аудит-лог, шифрование, пентест DAST, E2E тесты</p>
+    </div>
+    <div class="rm-phase">
+      <div class="rm-dot cur"></div>
+      <div class="rm-q">Q2 2026</div>
+      <h3>UX Direction 2</h3>
+      <p>Новый дашборд с аналитикой, коллапсируемый сайдбар, анимации</p>
+    </div>
+    <div class="rm-phase">
+      <div class="rm-dot"></div>
+      <div class="rm-q">Q3–Q4 2026</div>
+      <h3>ПЭП + Конструктор</h3>
+      <p>Электронная подпись, конструктор шаблонов договоров, мобильное приложение</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ─── S11: TEAM + INVEST ─── -->
+<section id="s11">
+<div class="slide-inner">
+  <div>
+    <h2 class="s-title reveal"><span class="ga">Команда</span></h2>
+    <p class="s-sub reveal reveal-delay-1" style="margin-bottom:2rem">Fullstack-разработка и юридическая экспертиза</p>
+
+    <div class="team-list">
+      <div class="tm reveal reveal-delay-1">
+        <div class="tm-avatar">TS</div>
+        <div class="tm-info">
+          <h3>TronoSfera</h3>
+          <p>Lead Engineer · Fullstack · Автор 100% кодовой базы</p>
+        </div>
+      </div>
+      <div class="tm reveal reveal-delay-2">
+        <div class="tm-avatar" style="background:linear-gradient(135deg,#4dbe93,#66b3ff)">ЮЭ</div>
+        <div class="tm-info">
+          <h3>Юридический эксперт</h3>
+          <p>Консультации по 152-ФЗ, предметная область, SLA-политики</p>
+        </div>
+      </div>
+      <div class="tm reveal reveal-delay-3">
+        <div class="tm-avatar" style="background:linear-gradient(135deg,#e6a83a,#e05555)">UX</div>
+        <div class="tm-info">
+          <h3>UX-консультант</h3>
+          <p>Проектирование интерфейсов, UX Direction 1 и 2</p>
+        </div>
+      </div>
+      <div class="tm reveal reveal-delay-4">
+        <div class="tm-avatar" style="background:linear-gradient(135deg,#8b9bab,#3390ec)">ДП</div>
+        <div class="tm-info">
+          <h3>Деловой партнёр</h3>
+          <p>Продажи, внедрения, работа с юридическими компаниями</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="inv-card reveal reveal-delay-2">
+    <div class="inv-label">Инвестиционный раунд — Seed</div>
+    <div class="inv-amount">10 000 000 ₽</div>
+    <div class="inv-run">18 месяцев рэнвея · Первые клиенты уже в продакшн</div>
+
+    <div class="pie-wrap">
+      <div class="pie"></div>
+      <div class="pie-leg">
+        <div class="pie-item">
+          <div class="pie-dot" style="background:var(--accent)"></div>
+          <span style="color:var(--text-muted)">50%</span>
+          <span>Разработка (ПЭП, мобайл)</span>
+        </div>
+        <div class="pie-item">
+          <div class="pie-dot" style="background:var(--success)"></div>
+          <span style="color:var(--text-muted)">30%</span>
+          <span>Маркетинг и продажи</span>
+        </div>
+        <div class="pie-item">
+          <div class="pie-dot" style="background:var(--warning)"></div>
+          <span style="color:var(--text-muted)">20%</span>
+          <span>Инфраструктура и масштаб</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ─── S12: CONTACTS ─── -->
+<section id="s12" class="gradient-bg">
+<div class="slide-inner" style="text-align:center">
+  <div class="c-logo reveal">⚖️</div>
+  <h2 class="c-name reveal reveal-delay-1">
+    <span class="gt">Legal</span><span class="ga">Case</span>&nbsp;<span class="gt">Tracker</span>
+  </h2>
+  <p class="reveal reveal-delay-2" style="color:var(--text-muted);font-size:1rem;margin-bottom:.4rem">
+    Production: <strong style="color:var(--accent-light)">ruakb.ru</strong>
+  </p>
+  <p class="reveal reveal-delay-2" style="color:var(--text-muted);font-size:.85rem">
+    Юридическая CRM для компаний, которым важны данные и результат
+  </p>
+
+  <div class="c-links reveal reveal-delay-3">
+    <a href="https://ruakb.ru" class="c-link" target="_blank">🌐 ruakb.ru</a>
+    <a href="https://ruakb.online" class="c-link" target="_blank">🌐 ruakb.online</a>
+    <a href="mailto:hello@ruakb.ru" class="c-link">✉️ hello@ruakb.ru</a>
+    <a href="https://t.me/tronosfera" class="c-link" target="_blank">📱 Telegram</a>
+  </div>
+
+  <button class="cta reveal reveal-delay-4" onclick="window.location.href='mailto:hello@ruakb.ru'">
+    Готовы обсудить? →
+  </button>
+</div>
+</section>
+
+</main>
+
+<script>
+const TOTAL = 12;
+let current = 1;
+
+// Build nav dots
+const dotsEl = document.getElementById('nav-dots');
+for (let i = 1; i <= TOTAL; i++) {
+  const d = document.createElement('button');
+  d.className = 'nav-dot' + (i===1?' active':'');
+  d.setAttribute('aria-label','Слайд '+i);
+  d.addEventListener('click', () => goTo(i));
+  dotsEl.appendChild(d);
+}
+
+function updateUI(n) {
+  current = n;
+  document.getElementById('progress-bar').style.width = (n/TOTAL*100)+'%';
+  document.getElementById('slide-counter').textContent = n+' / '+TOTAL;
+  document.querySelectorAll('.nav-dot').forEach((d,i) => d.classList.toggle('active', i+1===n));
+}
+
+function goTo(n) {
+  const el = document.getElementById('s'+n);
+  if (el) { el.scrollIntoView({behavior:'smooth'}); updateUI(n); }
+}
+
+// Observe slides
+const so = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting && e.intersectionRatio > 0.5) {
+      const n = parseInt(e.target.id.replace('s',''));
+      if (!isNaN(n)) updateUI(n);
+    }
+  });
+}, {threshold:0.5});
+
+const ro = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('visible'); ro.unobserve(e.target); }
+  });
+}, {threshold:0.1});
+
+for (let i=1;i<=TOTAL;i++) { const s=document.getElementById('s'+i); if(s) so.observe(s); }
+document.querySelectorAll('.reveal').forEach(el => ro.observe(el));
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  const map = {ArrowDown:1,ArrowRight:1,' ':1,PageDown:1,ArrowUp:-1,ArrowLeft:-1,PageUp:-1};
+  const d = map[e.key];
+  if (d!==undefined) { e.preventDefault(); goTo(Math.max(1,Math.min(TOTAL,current+d))); }
+  if (e.key==='Home') goTo(1);
+  if (e.key==='End') goTo(TOTAL);
+});
+
+// Wheel (debounced)
+let wt = null;
+document.addEventListener('wheel', e => {
+  if (wt) return;
+  goTo(Math.max(1,Math.min(TOTAL,current+(e.deltaY>0?1:-1))));
+  wt = setTimeout(()=>wt=null, 300);
+},{passive:true});
+
+// Touch
+let ty = 0;
+document.addEventListener('touchstart', e => ty=e.touches[0].clientY,{passive:true});
+document.addEventListener('touchend', e => {
+  const d = ty - e.changedTouches[0].clientY;
+  if (Math.abs(d)>50) goTo(Math.max(1,Math.min(TOTAL,current+(d>0?1:-1))));
+},{passive:true});
+</script>
+</body>
+</html>
